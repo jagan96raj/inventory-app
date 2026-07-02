@@ -1,0 +1,86 @@
+"""Processing service facade — re-exports split modules (Spec v16.0.13)."""
+from app.services.processing.deps import (
+    OPERATION_ALREADY_VOIDED_MSG,
+    add_inventory,
+    get_inventory_row,
+    subtract_inventory,
+    _get_bag_type,
+    _subtract_for_void,
+)
+from app.services.processing.allocation import (
+    _owner_key_from_stored_input,
+    _owner_weights_for_job_allocation,
+    format_owner_allocation_weights,
+    validate_processing_owner_mix,
+)
+from app.services.processing.batch_helpers import batch_has_content
+from app.services.processing.constants import *  # noqa: F403
+from app.services.processing.mass_balance import (
+    compute_job_available_reprocess_kg,
+    compute_job_committed_balance_reprocess_kg,
+    compute_job_committed_balance_return_kg,
+    compute_job_fresh_input_kg,
+    compute_job_outflow_kg,
+    validate_balance_reprocess,
+    validate_processing_mass_balance,
+)
+from app.services.processing.serialization import (
+    compute_processing_summary,
+    fetch_processing_list_summaries,
+    load_processing_job,
+    serialize_processing_job,
+    serialize_processing_job_list_item,
+)
+from app.services.processing.batch import (
+    _apply_batch,
+    complete_job,
+    create_job,
+    submit_batch,
+    void_processing_batch,
+)
+
+__all__ = [
+    "BALANCE_REPROCESS_NO_RETURN_MSG",
+    "BALANCE_REPROCESS_NO_STOCK_MSG",
+    "DIFFERENT_OWNER_AFTER_OUTPUT_MSG",
+    "JOB_WORK_OUTPUT_MISSING_MSG",
+    "MIXED_EXTERNAL_OWNER_MSG",
+    "MIXED_JOB_NO_MORE_INPUT_MSG",
+    "MIXED_OWNER_WEIGHTS_COLLAPSED_MSG",
+    "MIXED_OWNERS_FIRST_BATCH_ONLY_MSG",
+    "NO_INPUT_FOR_OUTPUT_MSG",
+    "OPERATION_ALREADY_VOIDED_MSG",
+    "OUTPUT_ALLOCATION_LOCKED_MSG",
+    "OUTPUT_ALLOCATION_MODE_REQUIRED_MSG",
+    "POWDER_DEST_NOT_CONFIGURED_MSG",
+    "POWDER_OUTPUT_LINE_MSG",
+    "PROCESSING_OUTPUT_TOLERANCE_KG",
+    "SINGLE_OWNER_NOT_IN_JOB_INPUT_MSG",
+    "_apply_batch",
+    "_get_bag_type",
+    "_owner_key_from_stored_input",
+    "_owner_weights_for_job_allocation",
+    "_subtract_for_void",
+    "add_inventory",
+    "batch_has_content",
+    "complete_job",
+    "compute_job_available_reprocess_kg",
+    "compute_job_committed_balance_reprocess_kg",
+    "compute_job_committed_balance_return_kg",
+    "compute_job_fresh_input_kg",
+    "compute_job_outflow_kg",
+    "compute_processing_summary",
+    "create_job",
+    "fetch_processing_list_summaries",
+    "format_owner_allocation_weights",
+    "get_inventory_row",
+    "load_processing_job",
+    "serialize_processing_job",
+    "serialize_processing_job_list_item",
+    "submit_batch",
+    "subtract_inventory",
+    "validate_balance_reprocess",
+    "validate_processing_mass_balance",
+    "validate_processing_owner_mix",
+    "void_processing_batch",
+]

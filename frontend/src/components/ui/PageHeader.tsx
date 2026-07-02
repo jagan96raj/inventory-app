@@ -1,0 +1,76 @@
+import { Fragment, type ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { ChevronRight, Home } from "lucide-react";
+import { cn } from "../../lib/cn";
+
+type Crumb = { to?: string; label: string };
+
+type Props = {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+  breadcrumbs?: Crumb[];
+  eyebrow?: ReactNode;
+  className?: string;
+};
+
+function deriveCrumbs(pathname: string): Crumb[] {
+  const parts = pathname.split("/").filter(Boolean);
+  const out: Crumb[] = [];
+  let acc = "";
+  for (const p of parts) {
+    acc += "/" + p;
+    out.push({ to: acc, label: decodeURIComponent(p).replace(/-/g, " ") });
+  }
+  return out;
+}
+
+export default function PageHeader({
+  title,
+  subtitle,
+  actions,
+  breadcrumbs,
+  eyebrow,
+  className,
+}: Props) {
+  const { pathname } = useLocation();
+  const crumbs = breadcrumbs ?? deriveCrumbs(pathname);
+  return (
+    <header className={cn("mb-6 flex flex-col gap-3", className)}>
+      <nav aria-label="Breadcrumb" className="flex items-center text-sm text-indigo-600/80 dark:text-indigo-300/80">
+        <Link to="/" className="inline-flex items-center gap-1 hover:text-primary-700 dark:hover:text-primary-200">
+          <Home className="h-3.5 w-3.5" />
+          <span className="sr-only">Home</span>
+        </Link>
+        {crumbs.map((c, i) => (
+          <Fragment key={`${c.label}-${i}`}>
+            <ChevronRight className="mx-1 h-3.5 w-3.5 opacity-60" aria-hidden="true" />
+            {c.to && i < crumbs.length - 1 ? (
+              <Link to={c.to} className="capitalize hover:text-primary-700 dark:hover:text-primary-200">
+                {c.label}
+              </Link>
+            ) : (
+              <span className="capitalize font-medium text-violet-800 dark:text-violet-200">{c.label}</span>
+            )}
+          </Fragment>
+        ))}
+      </nav>
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-end">
+        <div className="min-w-0">
+          {eyebrow && (
+            <p className="mb-1 text-sm font-medium uppercase tracking-wider text-primary-600 dark:text-primary-300">
+              {eyebrow}
+            </p>
+          )}
+          <h1 className="truncate bg-gradient-to-r from-primary-900 via-indigo-800 to-violet-800 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-3xl dark:from-primary-100 dark:via-indigo-100 dark:to-violet-100">
+            {title}
+          </h1>
+          {subtitle && (
+            <p className="mt-1 text-base text-indigo-700/85 sm:max-w-2xl dark:text-indigo-200/85">{subtitle}</p>
+          )}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      </div>
+    </header>
+  );
+}

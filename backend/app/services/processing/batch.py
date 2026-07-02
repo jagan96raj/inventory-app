@@ -1,0 +1,698 @@
+"""Processing service — batch."""
+from decimal import Decimal
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, joinedload
+
+from app.models.entities import (
+    BagType,
+    BookSettings,
+    Brand,
+    Customer,
+    CustomerPartyType,
+    InventoryOwnerType,
+    ProcessingBalanceReturnLine,
+    ProcessingBatch,
+    ProcessingInputLine,
+    ProcessingInputSource,
+    ProcessingJob,
+    ProcessingJobStatus,
+    ProcessingOutputAllocationMode,
+    ProcessingOutputLine,
+    ProcessingWasteAllocation,
+    Product,
+    User,
+)
+from app.services.fulfillment import get_inventory_row
+from app.services.inventory_lock import inventory_row_key, lock_inventory_rows
+import app.services.processing as _processing
+from app.services.owner_allocation import (
+    OwnerKey,
+    owner_key_from_line,
+    proportional_split_bags,
+    proportional_split_kg,
+)
+from app.utils import calc_quantity_kg, validate_bags_loose
+from app.utils.time import utc_now
+
+from app.services.processing.allocation import (
+    _effective_owner_weights_for_output,
+    _job_has_any_output,
+    _job_input_owner_keys,
+    _job_owner_mode,
+    _owner_inventory_args,
+    _owner_key_from_stored_input,
+    _owner_key_from_stored_owner_line,
+    _owner_type_value,
+    _owner_weights_for_job_allocation,
+    _reject_conflicting_allocation_body,
+    _resolve_and_lock_allocation_on_input,
+    _split_processing_line_across_owners,
+    _job_output_allocation_mode,
+    _validate_input_batch_allowed,
+)
+from app.services.processing.batch_helpers import (
+    _batch_has_outflow,
+    _is_balance_reprocess,
+    _kg_to_bags_loose,
+    _parse_input_source,
+    batch_has_content,
+)
+from app.services.processing.constants import (
+    BALANCE_REPROCESS_NO_STOCK_MSG,
+    JOB_WORK_OUTPUT_MISSING_MSG,
+    NO_INPUT_FOR_OUTPUT_MSG,
+    OUTPUT_ALLOCATION_MODE_REQUIRED_MSG,
+)
+from app.services.processing.deps import OPERATION_ALREADY_VOIDED_MSG
+from app.services.processing.mass_balance import (
+    validate_balance_reprocess,
+    validate_processing_mass_balance,
+)
+from app.services.processing.powder import (
+    _allocate_powder_to_owners,
+    _batch_powder_inventory_tuple,
+    _ensure_waste_allocation_row,
+    _resolve_powder_for_batch,
+    _store_powder_line_on_batch,
+    _validate_no_powder_output_lines,
+)
+
+def _get_open_job(db: Session, job_id: int) -> ProcessingJob:
+    job = db.get(ProcessingJob, job_id)
+    if not job:
+        raise ValueError("Processing job not found")
+    if job.status != ProcessingJobStatus.open:
+        raise ValueError("Processing job is not open")
+    return job
+
+def create_job(db: Session, *, input_product_id: int, input_brand_id: int) -> ProcessingJob:
+    existing = db.scalar(
+        select(ProcessingJob).where(
+            ProcessingJob.input_product_id == input_product_id,
+            ProcessingJob.input_brand_id == input_brand_id,
+            ProcessingJob.status == ProcessingJobStatus.open,
+        )
+    )
+    if existing:
+        raise ValueError("An open processing job already exists for this product and brand")
+
+    job = ProcessingJob(
+        input_product_id=input_product_id,
+        input_brand_id=input_brand_id,
+        status=ProcessingJobStatus.open,
+    )
+    db.add(job)
+    db.commit()
+    return _processing.load_processing_job(db, job.id)
+
+def _apply_batch(
+    db: Session,
+    job: ProcessingJob,
+    *,
+    input_lines: list[dict],
+    output_lines: list[dict],
+    balance_return_lines: list[dict],
+    dust_kg: Decimal,
+    stone_kg: Decimal,
+    sack_weight_waste_kg: Decimal,
+    powder_kg: Decimal,
+    powder_line_data: dict | None,
+    miscellaneous_waste_kg: Decimal,
+    output_allocation_mode: str | None = None,
+    single_allocation_owner_type: str | None = None,
+    single_allocation_customer_id: int | None = None,
+) -> ProcessingBatch:
+    if not batch_has_content(
+        input_lines=input_lines,
+        output_lines=output_lines,
+        balance_return_lines=balance_return_lines,
+        dust_kg=dust_kg,
+        stone_kg=stone_kg,
+        sack_weight_waste_kg=sack_weight_waste_kg,
+        powder_kg=powder_kg,
+        miscellaneous_waste_kg=miscellaneous_waste_kg,
+    ):
+        raise ValueError(
+            "Batch must have at least one input line, output line, balance return line, or waste kg"
+        )
+
+    for field_name, value in (
+        ("dust_kg", dust_kg),
+        ("stone_kg", stone_kg),
+        ("sack_weight_waste_kg", sack_weight_waste_kg),
+        ("powder_kg", powder_kg),
+        ("miscellaneous_waste_kg", miscellaneous_waste_kg),
+    ):
+        if value < 0:
+            raise ValueError(f"{field_name} cannot be negative")
+
+    _validate_no_powder_output_lines(db, output_lines)
+
+    op_at = utc_now()
+    batch = ProcessingBatch(
+        job_id=job.id,
+        operation_at=op_at,
+        dust_kg=dust_kg,
+        stone_kg=stone_kg,
+        sack_weight_waste_kg=sack_weight_waste_kg,
+        powder_kg=Decimal("0"),
+        miscellaneous_waste_kg=miscellaneous_waste_kg,
+    )
+    db.add(batch)
+    db.flush()
+    _store_powder_line_on_batch(batch, powder_line_data, powder_kg)
+
+    if input_lines:
+        _validate_input_batch_allowed(db, job, input_lines)
+        _resolve_and_lock_allocation_on_input(
+            db,
+            job,
+            input_lines,
+            output_allocation_mode=output_allocation_mode,
+            single_allocation_owner_type=single_allocation_owner_type,
+            single_allocation_customer_id=single_allocation_customer_id,
+        )
+    elif output_allocation_mode is not None or single_allocation_owner_type is not None:
+        _reject_conflicting_allocation_body(
+            job,
+            output_allocation_mode=output_allocation_mode,
+            single_allocation_owner_type=single_allocation_owner_type,
+            single_allocation_customer_id=single_allocation_customer_id,
+        )
+
+    cumulative_weights = _owner_weights_for_job_allocation(db, job, input_lines)
+    has_outflow = _batch_has_outflow(
+        output_lines=output_lines,
+        balance_return_lines=balance_return_lines,
+        dust_kg=dust_kg,
+        stone_kg=stone_kg,
+        sack_weight_waste_kg=sack_weight_waste_kg,
+        powder_kg=powder_kg,
+        miscellaneous_waste_kg=miscellaneous_waste_kg,
+    )
+    if has_outflow and not cumulative_weights:
+        raise ValueError(NO_INPUT_FOR_OUTPUT_MSG)
+
+    owner_mode = _job_owner_mode(db, job)
+    if owner_mode == "mixed" and has_outflow and _job_output_allocation_mode(job) is None:
+        raise ValueError(OUTPUT_ALLOCATION_MODE_REQUIRED_MSG)
+
+    _reject_conflicting_allocation_body(
+        job,
+        output_allocation_mode=output_allocation_mode,
+        single_allocation_owner_type=single_allocation_owner_type,
+        single_allocation_customer_id=single_allocation_customer_id,
+    )
+
+    owner_weights = _effective_owner_weights_for_output(job, db, input_lines)
+    allocation_mode = _job_output_allocation_mode(job)
+
+    for idx, line in enumerate(input_lines):
+        owner_type, customer_id = _owner_inventory_args(owner_key_from_line(line))
+        try:
+            qty = _processing.subtract_inventory(
+                db,
+                job.input_product_id,
+                job.input_brand_id,
+                line["location_id"],
+                line["bag_type_id"],
+                line["bag_count"],
+                Decimal(line["loose_kg"]),
+                owner_type=owner_type,
+                customer_id=customer_id,
+            )
+        except ValueError as exc:
+            if _is_balance_reprocess(line.get("input_source")) and str(exc) == "Insufficient stock":
+                raise ValueError(BALANCE_REPROCESS_NO_STOCK_MSG) from exc
+            raise
+        db.add(
+            ProcessingInputLine(
+                batch_id=batch.id,
+                location_id=line["location_id"],
+                bag_type_id=line["bag_type_id"],
+                bag_count=line["bag_count"],
+                loose_kg=Decimal(line["loose_kg"]),
+                quantity_kg=qty,
+                line_index=idx,
+                input_source=_parse_input_source(line.get("input_source")),
+                owner_type=owner_type,
+                customer_id=customer_id,
+                job_work_order_id=line.get("job_work_order_id"),
+            )
+        )
+
+    out_line_idx = 0
+    created_output_owner_types: set[str] = set()
+    for line in output_lines:
+        bt = db.get(BagType, line["bag_type_id"])
+        if not bt:
+            raise ValueError("Bag type not found")
+        for owner_key, bags, loose in _split_processing_line_across_owners(
+            db, line, bt, owner_weights
+        ):
+            owner_type, customer_id = _owner_inventory_args(owner_key)
+            created_output_owner_types.add(_owner_type_value(owner_type))
+            qty = _processing.add_inventory(
+                db,
+                job.input_product_id,
+                line["brand_id"],
+                line["location_id"],
+                line["bag_type_id"],
+                bags,
+                loose,
+                owner_type=owner_type,
+                customer_id=customer_id,
+            )
+            db.add(
+                ProcessingOutputLine(
+                    batch_id=batch.id,
+                    brand_id=line["brand_id"],
+                    location_id=line["location_id"],
+                    bag_type_id=line["bag_type_id"],
+                    bag_count=bags,
+                    loose_kg=loose,
+                    quantity_kg=qty,
+                    line_index=out_line_idx,
+                    owner_type=owner_type,
+                    customer_id=customer_id,
+                )
+            )
+            out_line_idx += 1
+
+    if (
+        allocation_mode == ProcessingOutputAllocationMode.proportional
+        and len(cumulative_weights) >= 2
+        and output_lines
+    ):
+        has_jw_input = any(
+            key[0] == "job_work" and qty > 0 for key, qty in cumulative_weights.items()
+        )
+        if has_jw_input and "job_work" not in created_output_owner_types:
+            raise ValueError(JOB_WORK_OUTPUT_MISSING_MSG)
+
+    bal_line_idx = 0
+    for line in balance_return_lines:
+        bt = db.get(BagType, line["bag_type_id"])
+        if not bt:
+            raise ValueError("Bag type not found")
+        for owner_key, bags, loose in _split_processing_line_across_owners(
+            db, line, bt, owner_weights
+        ):
+            owner_type, customer_id = _owner_inventory_args(owner_key)
+            qty = _processing.add_inventory(
+                db,
+                job.input_product_id,
+                job.input_brand_id,
+                line["location_id"],
+                line["bag_type_id"],
+                bags,
+                loose,
+                owner_type=owner_type,
+                customer_id=customer_id,
+            )
+            db.add(
+                ProcessingBalanceReturnLine(
+                    batch_id=batch.id,
+                    location_id=line["location_id"],
+                    bag_type_id=line["bag_type_id"],
+                    bag_count=bags,
+                    loose_kg=loose,
+                    quantity_kg=qty,
+                    line_index=bal_line_idx,
+                    owner_type=owner_type,
+                    customer_id=customer_id,
+                )
+            )
+            bal_line_idx += 1
+
+    if owner_weights:
+        waste_rows: dict[OwnerKey, ProcessingWasteAllocation] = {}
+        for waste_field, waste_total in (
+            ("dust_kg", dust_kg),
+            ("stone_kg", stone_kg),
+            ("sack_weight_waste_kg", sack_weight_waste_kg),
+            ("miscellaneous_waste_kg", miscellaneous_waste_kg),
+        ):
+            if waste_total <= 0:
+                continue
+            split = proportional_split_kg(waste_total, owner_weights)
+            for owner_key, alloc_kg in split.items():
+                if alloc_kg <= 0:
+                    continue
+                wa = _ensure_waste_allocation_row(db, batch.id, owner_key, waste_rows)
+                current = getattr(wa, waste_field) or Decimal("0")
+                setattr(wa, waste_field, current + alloc_kg)
+
+        _allocate_powder_to_owners(db, batch, powder_kg, powder_line_data, owner_weights, waste_rows)
+    elif powder_kg > 0 and powder_line_data:
+        _allocate_powder_to_owners(
+            db, batch, powder_kg, powder_line_data, {("owned", None): powder_kg}, {}
+        )
+
+    return batch
+
+def submit_batch(
+    db: Session,
+    job_id: int,
+    *,
+    input_lines: list[dict],
+    output_lines: list[dict],
+    balance_return_lines: list[dict],
+    dust_kg: Decimal,
+    stone_kg: Decimal,
+    sack_weight_waste_kg: Decimal,
+    powder_kg: Decimal = Decimal("0"),
+    powder_line: dict | None = None,
+    miscellaneous_waste_kg: Decimal,
+    output_allocation_mode: str | None = None,
+    single_allocation_owner_type: str | None = None,
+    single_allocation_customer_id: int | None = None,
+) -> ProcessingJob:
+    job = _processing.load_processing_job(db, job_id)
+    if job.status != ProcessingJobStatus.open:
+        raise ValueError("Processing job is not open")
+    resolved_powder_kg, powder_line_data = _resolve_powder_for_batch(
+        db, powder_line=powder_line, powder_kg_legacy=powder_kg
+    )
+    try:
+        validate_balance_reprocess(job, input_lines, db)
+        validate_processing_mass_balance(
+            job,
+            pending_input_lines=input_lines,
+            pending_output_lines=output_lines,
+            pending_balance_return_lines=balance_return_lines,
+            pending_waste_fields={
+                "dust_kg": dust_kg,
+                "stone_kg": stone_kg,
+                "sack_weight_waste_kg": sack_weight_waste_kg,
+                "powder_kg": resolved_powder_kg,
+                "miscellaneous_waste_kg": miscellaneous_waste_kg,
+            },
+            db=db,
+        )
+        _apply_batch(
+            db,
+            job,
+            input_lines=input_lines,
+            output_lines=output_lines,
+            balance_return_lines=balance_return_lines,
+            dust_kg=dust_kg,
+            stone_kg=stone_kg,
+            sack_weight_waste_kg=sack_weight_waste_kg,
+            powder_kg=resolved_powder_kg,
+            powder_line_data=powder_line_data,
+            miscellaneous_waste_kg=miscellaneous_waste_kg,
+            output_allocation_mode=output_allocation_mode,
+            single_allocation_owner_type=single_allocation_owner_type,
+            single_allocation_customer_id=single_allocation_customer_id,
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return _processing.load_processing_job(db, job_id)
+
+def complete_job(
+    db: Session,
+    job_id: int,
+    *,
+    input_lines: list[dict],
+    output_lines: list[dict],
+    balance_return_lines: list[dict],
+    dust_kg: Decimal,
+    stone_kg: Decimal,
+    sack_weight_waste_kg: Decimal,
+    powder_kg: Decimal = Decimal("0"),
+    powder_line: dict | None = None,
+    miscellaneous_waste_kg: Decimal,
+    output_allocation_mode: str | None = None,
+    single_allocation_owner_type: str | None = None,
+    single_allocation_customer_id: int | None = None,
+) -> ProcessingJob:
+    job = _processing.load_processing_job(db, job_id)
+    if job.status != ProcessingJobStatus.open:
+        raise ValueError("Processing job is not open")
+    resolved_powder_kg, powder_line_data = _resolve_powder_for_batch(
+        db, powder_line=powder_line, powder_kg_legacy=powder_kg
+    )
+    has_body = batch_has_content(
+        input_lines=input_lines,
+        output_lines=output_lines,
+        balance_return_lines=balance_return_lines,
+        dust_kg=dust_kg,
+        stone_kg=stone_kg,
+        sack_weight_waste_kg=sack_weight_waste_kg,
+        powder_kg=resolved_powder_kg,
+        miscellaneous_waste_kg=miscellaneous_waste_kg,
+    )
+
+    if not has_body:
+        batch_count = db.scalar(
+            select(ProcessingBatch.id)
+            .where(ProcessingBatch.job_id == job_id, ProcessingBatch.voided_at.is_(None))
+            .limit(1)
+        )
+        if not batch_count:
+            raise ValueError("Cannot complete job without at least one batch")
+
+    try:
+        validate_balance_reprocess(job, input_lines, db)
+        validate_processing_mass_balance(
+            job,
+            pending_input_lines=input_lines if has_body else [],
+            pending_output_lines=output_lines if has_body else [],
+            pending_balance_return_lines=balance_return_lines if has_body else [],
+            pending_waste_fields={
+                "dust_kg": dust_kg if has_body else Decimal("0"),
+                "stone_kg": stone_kg if has_body else Decimal("0"),
+                "sack_weight_waste_kg": sack_weight_waste_kg if has_body else Decimal("0"),
+                "powder_kg": resolved_powder_kg if has_body else Decimal("0"),
+                "miscellaneous_waste_kg": miscellaneous_waste_kg if has_body else Decimal("0"),
+            },
+            db=db,
+        )
+        if has_body:
+            _apply_batch(
+                db,
+                job,
+                input_lines=input_lines,
+                output_lines=output_lines,
+                balance_return_lines=balance_return_lines,
+                dust_kg=dust_kg,
+                stone_kg=stone_kg,
+                sack_weight_waste_kg=sack_weight_waste_kg,
+                powder_kg=resolved_powder_kg,
+                powder_line_data=powder_line_data,
+                miscellaneous_waste_kg=miscellaneous_waste_kg,
+                output_allocation_mode=output_allocation_mode,
+                single_allocation_owner_type=single_allocation_owner_type,
+                single_allocation_customer_id=single_allocation_customer_id,
+            )
+        job.status = ProcessingJobStatus.completed
+        job.completed_at = utc_now()
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return _processing.load_processing_job(db, job_id)
+
+def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch) -> None:
+    if batch.powder_kg <= 0:
+        return
+    product_id, brand_id, location_id, bag_type_id, bt = _batch_powder_inventory_tuple(db, batch)
+    allocations = batch.waste_allocations or []
+    powder_splits = [
+        (wa.owner_type, wa.customer_id, wa.powder_kg)
+        for wa in allocations
+        if wa.powder_kg and wa.powder_kg > 0
+    ]
+    if not powder_splits:
+        powder_splits = [(InventoryOwnerType.owned, None, batch.powder_kg)]
+    for owner_type, customer_id, alloc_kg in powder_splits:
+        if alloc_kg <= 0:
+            continue
+        if bt.is_loose:
+            bag_count = 0
+            loose_kg = alloc_kg
+        else:
+            bag_count, loose_kg = _kg_to_bags_loose(bt, alloc_kg)
+        validate_bags_loose(bt, bag_count, loose_kg)
+        _processing._subtract_for_void(
+            db,
+            product_id,
+            brand_id,
+            location_id,
+            bag_type_id,
+            bag_count,
+            loose_kg,
+            owner_type=owner_type,
+            customer_id=customer_id,
+        )
+
+def _reconcile_job_after_batch_void(db: Session, job: ProcessingJob) -> None:
+    if job.status == ProcessingJobStatus.completed:
+        job.status = ProcessingJobStatus.open
+        job.completed_at = None
+    if len(_job_input_owner_keys(db, job)) < 2:
+        job.output_allocation_mode = None
+        job.single_allocation_owner_type = None
+        job.single_allocation_customer_id = None
+
+def void_processing_batch(db: Session, batch_id: int, *, actor: User | None = None) -> ProcessingJob:
+    batch = db.scalar(
+        select(ProcessingBatch)
+        .where(ProcessingBatch.id == batch_id)
+        .options(
+            joinedload(ProcessingBatch.input_lines),
+            joinedload(ProcessingBatch.output_lines),
+            joinedload(ProcessingBatch.balance_return_lines),
+            joinedload(ProcessingBatch.waste_allocations),
+        )
+        .with_for_update(of=ProcessingBatch)
+    )
+    if not batch:
+        raise ValueError("Processing batch not found")
+    if batch.voided_at is not None:
+        raise ValueError(OPERATION_ALREADY_VOIDED_MSG)
+
+    job = db.scalar(
+        select(ProcessingJob)
+        .where(ProcessingJob.id == batch.job_id)
+        .with_for_update(of=ProcessingJob)
+    )
+    if not job:
+        raise ValueError("Processing job not found")
+
+    lock_keys: list[tuple] = []
+    for line in batch.input_lines:
+        ot, cid = _owner_inventory_args(_owner_key_from_stored_input(line))
+        lock_keys.append(
+            inventory_row_key(
+                job.input_product_id,
+                job.input_brand_id,
+                line.location_id,
+                line.bag_type_id,
+                ot,
+                cid,
+            )
+        )
+    for line in batch.output_lines:
+        ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
+        lock_keys.append(
+            inventory_row_key(
+                job.input_product_id,
+                line.brand_id,
+                line.location_id,
+                line.bag_type_id,
+                ot,
+                cid,
+            )
+        )
+    for line in batch.balance_return_lines:
+        ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
+        lock_keys.append(
+            inventory_row_key(
+                job.input_product_id,
+                job.input_brand_id,
+                line.location_id,
+                line.bag_type_id,
+                ot,
+                cid,
+            )
+        )
+    if batch.powder_kg > 0:
+        product_id, brand_id, location_id, bag_type_id, _bt = _batch_powder_inventory_tuple(db, batch)
+        allocations = batch.waste_allocations or []
+        powder_splits = [
+            (wa.owner_type, wa.customer_id, wa.powder_kg)
+            for wa in allocations
+            if wa.powder_kg and wa.powder_kg > 0
+        ]
+        if not powder_splits:
+            lock_keys.append(
+                inventory_row_key(
+                    product_id,
+                    brand_id,
+                    location_id,
+                    bag_type_id,
+                    InventoryOwnerType.owned,
+                    None,
+                )
+            )
+        else:
+            for owner_type, customer_id, _alloc_kg in powder_splits:
+                lock_keys.append(
+                    inventory_row_key(
+                        product_id,
+                        brand_id,
+                        location_id,
+                        bag_type_id,
+                        owner_type,
+                        customer_id,
+                    )
+                )
+
+    lock_inventory_rows(db, lock_keys)
+
+    _void_powder_inventory_for_batch(db, batch)
+
+    for line in batch.output_lines:
+        ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
+        _processing._subtract_for_void(
+            db,
+            job.input_product_id,
+            line.brand_id,
+            line.location_id,
+            line.bag_type_id,
+            line.bag_count,
+            line.loose_kg,
+            owner_type=ot,
+            customer_id=cid,
+        )
+
+    for line in batch.balance_return_lines:
+        ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
+        _processing._subtract_for_void(
+            db,
+            job.input_product_id,
+            job.input_brand_id,
+            line.location_id,
+            line.bag_type_id,
+            line.bag_count,
+            line.loose_kg,
+            owner_type=ot,
+            customer_id=cid,
+        )
+
+    for line in batch.input_lines:
+        ot, cid = _owner_inventory_args(_owner_key_from_stored_input(line))
+        _processing.add_inventory(
+            db,
+            job.input_product_id,
+            job.input_brand_id,
+            line.location_id,
+            line.bag_type_id,
+            line.bag_count,
+            line.loose_kg,
+            owner_type=ot,
+            customer_id=cid,
+        )
+
+    batch.voided_at = utc_now()
+    _reconcile_job_after_batch_void(db, job)
+    db.commit()
+    result = _processing.load_processing_job(db, job.id)
+    if actor is not None:
+        from app.services.audit_log import AuditAction, AuditEntityType, record_audit_event
+
+        record_audit_event(
+            db,
+            user=actor,
+            action=AuditAction.PROCESSING_BATCH_VOIDED,
+            entity_type=AuditEntityType.PROCESSING_BATCH,
+            entity_id=batch_id,
+            entity_label=f"Batch #{batch_id} (job #{job.id})",
+            metadata={"job_id": job.id},
+        )
+    return result

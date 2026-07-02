@@ -1,0 +1,3328 @@
+# Inventory & Billing — Requirements (Snapshot)
+
+**Last updated:** 22 Jun 2026  
+**Spec range:** v5 (bills / payments / edit) through **v16.0.15** (CI pipeline); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments  
+**Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
+**Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
+**Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
+**Manual tests:** `TEST_PLAN.md`
+
+## Changelog
+- **v16.0.15** — CI pipeline (go-live drawback #38): `.github/workflows/ci.yml` — backend `unittest discover` + frontend `npm run build` on push/PR to `main`/`master`; optional `pip-audit` / `npm audit` (non-blocking). No production DB or deploy. See **Spec v16.0.15** below.
+- **v16.0.14** — Pin backend dependencies (go-live drawback #37): `requirements.txt` direct deps with `==` pins; `requirements.lock` full transitive freeze; README install/upgrade policy and optional `pip-audit`. No API, schema, or business logic changes. See **Spec v16.0.14** below.
+- **v16.0.13** — Split `processing.py` monolith (go-live drawback #36): `app/services/processing/` package (`allocation`, `powder`, `batch`, `batch_helpers`, `mass_balance`, `serialization`, `constants`, `deps`); `app.services.processing` facade re-exports unchanged public API. No migrations or business rule changes. See **Spec v16.0.13** below.
+- **v16.0.12** — Consolidate duplicate API layer (go-live drawback #35): migrate remaining `../api` imports to `api/client.ts`; `formatINR`/`displayQty` removed in favour of `lib/format.ts` (`formatInr`, `formatQtyKg`); `api.ts` is a re-export shim only. No backend or URL behaviour change. See **Spec v16.0.12** below.
+- **v16.0.11** — Fix `seed_bag_types.py` (go-live drawback #34): replace broken `names_equal` import with same case-insensitive existence check as `POST /api/seed/bag-types`; same `SEEDS` list; skip-if-exists only. API unchanged. See **Spec v16.0.11** below.
+- **v16.0.10** — Dead code cleanup (go-live drawback #33): remove confirmed unused backend helpers (`routers/helpers.py`, `list_processing_jobs`, `aggregate_owner_weights`) and frontend dead files (`Icons.tsx`, `pageTheme.ts`, `Drawer`, `ui/Tooltip`). No behavior change. See **Spec v16.0.10** below.
+- **v16.0.9** — Bill print & PDF (no GST, no e-invoice): company header on book settings (migration `044`); Print / Download PDF on bill detail; dedicated print layout with VOIDED watermark; client-side PDF via `html2pdf.js`. See **Spec v16.0.9** below.
+- **v16.0.8** — Scheduled PostgreSQL backup (go-live drawback #30): Windows PowerShell scripts `scripts/backup_db.ps1`, `register_backup_task.ps1`, `restore_db.ps1`; `BACKUP_DIR` / retention / schedule in `.env`; daily `pg_dump` via Docker; Task Scheduler helper. Ops scripts only — no in-app UI; cloud managed DB replaces this later. See **Spec v16.0.8** below.
+- **v16.0.7** — Disable user / soft ban (go-live drawback #29): `users.is_active` (migration `043`); inactive users blocked at login (403) and on next API call (401); owner Disable/Enable on Users page; DELETE unchanged; audit `user_disabled` / `user_enabled`. See **Spec v16.0.7** below.
+- **v16.0.6** — Login history (go-live drawback #28): append-only `login_events` table (migration `042`); `record_login_event` on sign-in/signup/OTP success and failures; `GET /api/login-history/events` (owner `AUDIT_VIEW`); `/histories/logins` UI. Complements v16.0.5 audit log — business mutations stay on audit only. See **Spec v16.0.6** below.
+- **v16.0.5** — Central audit log (go-live drawback #27): append-only `audit_events` table (migration `041`); `record_audit_event` on sensitive voids/edits/master deletes/user admin; `GET /api/audit/events` (owner `AUDIT_VIEW`); `/histories/audit` UI. Complements fulfillment audit — deliver/receive create events stay there only. See **Spec v16.0.5** below.
+- **v16.0.4** — Database connection pool tuning (go-live drawback #26): configurable `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`, `DB_POOL_RECYCLE` via `.env`; `create_db_engine()` in `database.py` with `pool_pre_ping=True`; startup logs effective pool settings (no password). See **Spec v16.0.4** below.
+- **v16.0.3** — Idempotency retention cleanup (go-live drawback #25): auto-delete old `idempotency_records` guard rows — completed older than `IDEMPOTENCY_RETENTION_DAYS` (90), stuck `in_progress` older than `IDEMPOTENCY_STALE_IN_PROGRESS_HOURS` (24); startup cleanup + throttled hourly on `claim_idempotency`; optional `scripts/cleanup_idempotency.py` for Task Scheduler. Guard table only — not bills/payments. See **Spec v16.0.3** below.
+- **v16.0.2** — Dashboard bundle API (go-live drawback #24): `GET /api/reports/dashboard-bundle` returns all six dashboard datasets in one response; `DashboardPage` uses single call instead of six parallel report requests; shared `_month_bill_totals` for summary + compare; individual `/api/reports/*` endpoints unchanged. See **Spec v16.0.2** below.
+- **v16.0.1** — Async master search on heavy forms (go-live drawback #23): form pages no longer bulk-fetch `BULK_FETCH_LIMIT` (500) masters on mount; `AsyncSearchCombobox` + `MASTER_SEARCH_LIMIT` (30) debounced server search; `masterSearch.ts` helpers; migrated BillForm, ProcessingJob/List, Inventory, operations pages, job work, book settings, fulfillment dialogs, `StockOwnerFields`; GET-by-id for products/brands/bag-types when label needed. See **Spec v16.0.1** below.
+- **v16.0** — Processing job list performance (go-live drawback #22): `GET /api/operations/processing` returns lightweight `ProcessingJobListItemOut` (`batches: []`, SQL aggregate summary `batch_count` + `total_output_kg`); no batch line joinedloads; detail `GET /api/operations/processing/{id}` unchanged full fidelity. See **Spec v16.0** below.
+- **v15.9** — Conditional bill void (go-live drawback #19): owner may void a finalized bill only when zero active payments, zero net fulfillment, and zero active linked cash-book entries; **409** with clear block messages otherwise; `BillStatus.voided` + `bills.voided_at` (migration `040`); `POST /api/bills/{id}/void` (idempotent, `X-Void-Authorization`, `X-Expected-Bill-Version`); extended `GET /api/bills/{id}/void-precheck` (`can_void`, `block_reasons[]`); voided bills excluded from lists/KPIs/reports/balances/picker; customer statement `bill_voided` event; `BillDetailPage` void UI. See **Spec v15.9** below.
+- **v15.8** — Atomic idempotency / anti double-submit (go-live drawback #14): `claim_idempotency` inserts `in_progress` row before mutation; concurrent duplicate `Idempotency-Key` gets **409** “Request already in progress”; completed replay returns cached response; business failure clears `in_progress` for retry; migration `039`; frontend `useSubmitGuard` disables Save while in flight. See **Spec v15.8** below.
+- **v15.7** — Destructive dev scripts locked (go-live drawback #12): `reset_db.py` and `clear_transactional_data.py` blocked unless `ALLOW_DESTRUCTIVE_SCRIPTS=true` **and** `DESTRUCTIVE_SCRIPT_CONFIRM=I_UNDERSTAND_DELETE_DATA` in `.env`, and `DATABASE_URL` host is localhost; default **disabled**; never on production; `seed_sample_data.py` documented dev-only (unguarded). See **Spec v15.7** below.
+- **v15.6** — Strong password policy (go-live drawback #9): new passwords require 8+ chars, uppercase, lowercase, digit, special character; `validate_password_strength` in `app/core/password_policy.py`; enforced on signup, user create/update, OTP new password; **400** on failure; existing weak passwords may still **login** until changed; UI hints on password fields. See **Spec v15.6** below.
+- **v15.5** — Login rate limit (go-live drawback #8): after `LOGIN_MAX_FAILED_ATTEMPTS` (default **5**) wrong passwords for an email, block further login/signup for `LOGIN_LOCKOUT_MINUTES` (default **15**); table `login_rate_limits` (migration `038`); `429` with retry message; successful login clears counter; allowlist **403** does not count as failure; complements **ALLOWED_EMAILS** (v15.1). See **Spec v15.5** below.
+- **v15.5.1** — Processing powder stock line per waste batch (amends **v14.7**): `ProcessingBatchSubmit.powder_line` (`brand_id`, `location_id`, `bag_type_id`, `bag_count`, `loose_kg`); persisted on `processing_batches` (migration `037`); inventory posts to chosen location; product resolved from masters (**Powder**) or book settings; legacy `powder_kg` + book-settings destination still supported for API compat. Waste tab **Powder stock** section; summary shows powder separate from audit waste with storage location. **Dashboard** Top customers / Sales by location tables: single-line labels (truncate + tooltip), nowrap numbers, `dashboard-summary-table` CSS. **Fix:** `ProcessingJobPage` blank screen (`completed` status guard). See **Spec v15.5.1** below.
+- **v15.4** — Logout revokes session immediately (go-live drawback #7): JWT includes `jti`; logout inserts into `revoked_tokens`; revoked tokens rejected on every request; migration `036`. `JWT_EXPIRE_HOURS` still applies to sessions never logged out. See **Spec v15.4** below.
+- **v15.3** — Master delete void authorization (go-live drawback #5): `DELETE` on products, brands, locations, bag types, customers requires `X-Void-Authorization` (owner + `masters_manage` RBAC unchanged); reference guards (v12.2) unchanged; UI uses `VoidConfirmDialog`. Bank accounts / expense categories out of scope. See **Spec v15.3** below.
+- **v15.2** — No inventory row hard-delete (go-live drawback #4): `DELETE /api/inventory/{id}` returns **403** for all roles including owner; stock removal only via stock disposal, bag change, fulfillment, processing, job work, transfers, and related voids; `prune_zero_inventory` after operations unchanged; `inventory_delete` permission removed. See **Spec v15.2** below.
+- **v15.1** — Signup lockdown (go-live drawback #2): `ALLOWED_EMAILS` allowlist blocks non-listed signup/login (403); optional `REQUIRE_ALLOWED_EMAILS=true` refuses startup when allowlist empty; login page hides public signup (“contact owner”); staff onboarded via allowlist + **Users** page (RBAC v15.0). See **Spec v15.1** below.
+- **v15.0** — Role-based access control (RBAC): `users.role` enum (`owner`, `writer`, `stock_manager`, `factory_manager`); backend `require_permission` guards (403); owner-only voids + user management API; frontend sidebar/route filtering, Users page, 403 toasts; migration `033`. See **Spec v15.0** below.
+- **v14.7** — Processing consolidated powder: `powder_kg` in waste section posts to configured book-settings inventory tuple (generic product, not job input product); powder in job Waste summary not Output by brand; reject Powder as output brand line; migration `029`. See **Spec v14.7** below.
+- **v14.2.1** — Inventory **Detail** table: **Owner** column first, **Product** second; both use **rowspan per product block** (owner + product pair only spans that product’s brand/bag lines — not one owner cell across all products). Summary view unchanged (owner in expand header). Frontend only — `InventoryStockViews.tsx` `OwnerProductGroupedTable`. See **Spec v14.2.1** below.
+- **v14.6.1** — Amends **v14.6**: mixed-job **output allocation choice on the input batch that creates the mix** (not first output batch). **Proportional** mode fully closes further input; **single owner 100%** allows more input from chosen owner only. Reuses migration `028` columns (`output_allocation_mode`, `single_allocation_owner_*`). API `ProcessingJobOut` adds `input_allowed_owner`; `input_locked` = mixed + proportional only. UI on Input tab (`ProcessingJobPage`); Output tab has no allocation UI. See **Spec v14.6.1** below.
+- **v14.6** — Mixed processing **output allocation choice** on first output batch: **proportional** (default; v14.4 bag/kg split) or **single owner 100%** (default owner = highest input kg; tie → owned over job_work; job_work tie → higher `customer_id`). Persist `output_allocation_mode` + `single_allocation_owner_*` on `processing_jobs` (migration `028`); lock for all later output batches. API `ProcessingBatchSubmit` allocation fields; `ProcessingJobOut` `output_allocation_locked`, `output_allocation_hint`. UI on Output tab (`ProcessingJobPage`). Billing manual — inventory attribution only. **Timing/UI superseded by v14.6.1** — see **Spec v14.6** below (migration unchanged).
+- **v14.5.2** — Fulfillment **audit log** (`GET /api/fulfillment/audit`, `/histories/fulfillment`): all deliver/receive/return events with bill, customer, product, location, void status; filters by bill type, event, status, bill number; void from audit page. Fix job-work **stock on hand** in deliver dialog (`serialize_fulfillment_line` uses line `stock_source` owner). Inventory: **Actions** header single-line alignment; **hide 0 kg rows** by default with **Zero kg rows** chip to show all. Frontend + minor API — no schema change. See **Spec v14.5.2** below.
+- **v14.5.1** — Sales bill job work stock UX: remove Charge type dropdown (auto `line_charge_type`: job_work → `processing_charge`, owned → `product_sale`); fix product/brand/bag pickers when `stock_source=job_work` (preserve stock source on line reset; shared `filterStockForOwner` with numeric-safe `customer_id` match); warn when bill customer has no custody stock at location; `GET /inventory/stock-at-location` optional `owner_type` + `customer_id` filters; qty/% display **2 decimal places** in processing + shared formatters. Frontend + minor API — no schema change. See **Spec v14.5.1** below.
+- **v14.5** — Processing job owner-mode rules: derive `single_owner` vs `mixed` from recorded input; lock further input on mixed jobs; single-owner exception (one different-owner batch before output); reject different owner after output; mixed owners only on first input batch; API `owner_mode`, `input_locked`, `has_output`, `input_rules_hint`. Logic-only — no schema change. See **Spec v14.5** below.
+- **v14.4.2** — Fix mixed processing output split when stored `processing_input_lines.owner_type` is read as string from PostgreSQL (job_work misclassified as owned). Enum-safe `_owner_type_value` / `_owner_key_from_stored_input`; fail-loud guards when weights collapse or job_work output missing; multi-owner support (owned + multiple internal `job_work` customers, each `customer_id` = separate owner key); `inventory_lock.py` + `fulfillment.get_inventory_row` enum-safe WHERE; API `owner_allocation_weights`; output-tab input-mix banner. Logic-only — no schema change. See **Spec v14.4.2** below.
+- **v14.4.1** — Processing mixed-owner split fix: owner weights for output/waste allocation use **cumulative job input kg** across all batches (not only current batch `input_lines`). Fixes UI workflow where input and output are submitted as separate batches (`input_lines: []` on output batch previously sent all output to owned). Logic-only — no schema change. See **Spec v14.4.1** below.
+- **v14.4** — Mixed processing owner split: bagged outputs use integer **bag** largest-remainder (`proportional_split_bags`); loose outputs, balance returns, and waste use **kg** largest-remainder (unchanged). Fixes mixed batches leaving fractional loose instead of whole bags (e.g. 113 bags → 86 owned + 27 job_work). Logic-only — **no schema change**. See **Spec v14.4** below.
+- **v14.3** — Job Work quantity UX + unified activity log: UI shows Ordered / In custody / Remaining (hides gross Received/Returned columns); returns persisted as `job_work_receipts` rows with `entry_type` (`receive` | `return`); activity log badges; void receive only. Migration `027_spec_v143_jw_activity_type`. See **Spec v14.3** below.
+- **v14.2** — Inventory page readability: Summary (default) vs Detail view toggle (`localStorage` `v14.inventory.view`); summary cards collapsed by location (`v14.inventory.collapsedLocations`); detail view one calm table per location with Owner column; clickable stat tiles and quick owner chips; client + API search. Frontend only — no schema changes. See **Spec v14.2** below.
+- **v14.1** — Bag change, product transfer, and stock disposal pass `owner_type` + `customer_id` (default `owned`); UI stock owner + customer select; bag change TO lines inherit FROM owner. Migration `026_spec_v141_operations_owner`. See **Spec v14.1** below.
+- **v14.0** — Job Work orders (receive for processing, no purchase bill / no customer balance on receive); owner-tagged inventory (`owned` | `job_work`); proportional owner split on processing batches; sales bill `stock_source` + `line_charge_type`; customer `party_type` (`internal` | `external`); JW statement API; **JW fulfillment** separated from JW orders (`/job-work/fulfillment`) for role-based access — bill fulfillment (`/fulfillment`) unchanged. Migration `025_spec_v14_job_work`. See **Spec v14.0** below.
+- **v13.2** — Void authorization on destructive actions; customer `alternate_phone` + name/phone search; bill create single-page form with optional past-only `bill_date`; authorized inventory qty edit with linked-activity warning; bank closing balance on list; accounts dashboard (`Stat` KPI tiles 3+2 grid, full-width single-line tables); cash book table alignment; payments/inventory/customer UI polish. See **Spec v13.2** below.
+- **v12.22** — Amendments to v12.1/v12.16: inventory quantity edit allowed with `X-Void-Authorization`; bill create accepts optional `bill_date` (≤ today). Migration `024_customer_alternate_phone`.
+- **v12.21** — Accounts dashboard, Cash Book, and multi-bank accounts. New `bank_accounts`, `expense_categories`, `cash_book_entries`, `book_settings` tables; `payments.bank_account_id` added with backfill. Customer Statement page; bill-linked expenses (e.g. freight); voidable entries, optimistic concurrency, idempotency, system timestamps, pagination.
+- **v12.20** — Health and readiness checks; `/health/ready` pings database (#32).
+- **v12.19** — Configurable CORS origins via `CORS_ORIGINS` env var (#31).
+- **v12.18** — App-wide list pagination; slim bills list + summary; no N+1 opposite_due on list (#30).
+- **v12.17** — Void bag change / product transfer / stock disposal; reverse inventory (#28).
+- **v12.16** — System timestamps only; server sets bill date and event times on create (#26).
+- **v12.15** — Idempotency keys on mutation POSTs; replay-safe duplicate submit protection (#25).
+- **v12.14** — Remove `abs(adjustment)`; enforce non-negative adjustment in recalc + DB CHECK (#23).
+- **v12.13** — Complete bill concurrency protection: row lock + optimistic `version` stale-write check (#22 follow-on).
+- **v12.12** — Schema `ge=0` / `gt=0` guards on input quantities, rates, money (#22).
+- **v12.11** — Bill row lock on concurrent edit/payment/fulfillment/void writes; blocked concurrent writer gets clear retry message (#21).
+- **v12.10** — GET bills read-only; no `recalc_bill_totals` on list/detail (#20).
+- **v12.9** — Bag type `weight_per_bag_kg` and `is_loose` immutable after creation (#19). Name-only PUT; create flow review & confirm in UI.
+- **v13.1** — Frontend readability polish and modal-first workflows. Larger typography, tables, and tabs; sales/purchase visual differentiation; fulfillment grouping and action modals; inventory location/product grouping; master, add-stock, and processing-job forms in dialogs; processing job summary redesigned (compact At a glance + collapsible batch log). No backend changes.
+- **v13.0** — Full frontend redesign. No backend or business-rule changes. All v5.x–v12.x guards preserved and visualized in the new UI.
+
+## Snapshot index
+
+| Area | Spec | Implementation |
+|------|------|----------------|
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6** | `routers/auth.py`, `/login`, `/signup`, JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy |
+| Dashboard | v11.1, **v15.5.1**, **v16.0.2** | `services/reports.py`, `DashboardPage.tsx` — bill-date KPIs; `dashboard-bundle` single API call |
+| Processing | v9–v9.4, **v14.0**, **v14.4**, **v14.4.1**, **v14.4.2**, **v14.5**, **v14.6**, **v14.6.1**, **v14.7**, **v15.5.1**, **v16.0** | `services/processing.py`; list aggregate summary; detail full batches |
+| Payments | v5.1–v5.4, v12.12, v13.2 | `services/payments.py`, void + set-off cascade; `VoidConfirmDialog` + `X-Void-Authorization` |
+| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1** | sales lines: `stock_source`; auto `line_charge_type`; `BillFormPage` job work stock pickers |
+| Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2** | deliver/return owner-aware; audit log API + `/histories/fulfillment`; JW stock-on-hand fix on deliver |
+| Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment |
+| Customers | v12.2, v13.2, **v14.0** | `party_type` internal/external; mixed processing rules |
+| Job Work orders | **v14.0**, **v14.3** | `services/job_work.py`, `routers/job_work.py`, JW-000001 counter; `/job-work` list/create/detail; activity log (receive + return events) |
+| Job Work fulfillment | **v14.0**, **v14.3** | `GET /api/job-work/fulfillment/orders`; receive/return/void receive on `/job-work/fulfillment`; `entry_type` on receipt rows — **not** bill `/fulfillment` |
+| Operations | v7, v12.17, **v14.1** | bag change / transfer / disposal owner-aware; `StockOwnerFields`; migration 026 |
+| Accounts | v12.21, v13.2 | bank list returns `balance` (closing); dashboard `Stat` tiles + full-width single-line tables; cash book aligned tables |
+| Cleanup | v12.6 | Removed legacy `bill_service`, `fulfillment_service`, `inventory_calc`, `models.py` |
+
+**Stack:** React + Vite + TypeScript (port 5173) | FastAPI (port 8000) | PostgreSQL | `VITE_API_URL` optional (Vite proxy recommended)
+
+## Codebase layout (active, post v12.6)
+
+### Backend services (`backend/app/services/`)
+
+| Module | Responsibility |
+|--------|----------------|
+| `bills.py` | Finalize, edit, void (v15.9), totals, `next_bill_number` / `preview_bill_number` (v12.7) |
+| `fulfillment.py` | Deliver/receive/return, void (v12.5), stock changes |
+| `payments.py` | Create payment, set-off, void (v5.4) |
+| `operations.py` | Bag change, transfer, disposal, inventory add/subtract; void reverse (v12.17); owner-aware ops (v14.1) |
+| `processing.py` | Jobs, batches, mass-balance (v9.3), reprocess guards (v9.4), owner split (v14.0); list serializer (v16.0) |
+| `job_work.py` | JW orders, receive/return events, void receive, customer statement (v14.0, v14.3 activity log) |
+| `owner_allocation.py` | Largest-remainder proportional kg split (v14.0) + bag split (v14.4) |
+| `reports.py` | Business dashboard (v11.1) + legacy sales reports |
+| `inventory_lock.py` | `SELECT … FOR UPDATE` helpers (v12.3); enum-safe `Inventory.owner_type` compare (v14.4.2) |
+| `bill_lock.py` | Bill row lock helpers for write paths (v12.11) |
+| `bill_concurrency.py` | Bill version stale-write checks (v12.13) |
+| `audit_log.py` | Central audit trail `record_audit_event` + list query (v16.0.5) |
+| `login_history.py` | Sign-in attempt history `record_login_event` + list query (v16.0.6) |
+| `idempotency.py` | Atomic idempotency claim + replay cache for mutation POSTs (v12.15, **v15.8**, **v16.0.3** retention cleanup) |
+| `utils/time.py` | `business_today`, `utc_now` — server timestamp source (v12.16) |
+| `master_delete.py` | Master delete guards (v12.2) |
+| `void_auth.py` | Shared void/edit authorization gate (v13.2) |
+| `inventory_usage.py` | Linked activity counts for inventory row (v13.2) |
+| `customer_search.py` | Customer name + phone search helper (v13.2) |
+| `login_rate_limit.py` | Per-email failed-login counter and lockout (v15.5) |
+| `destructive_guard.py` | Block wipe scripts unless explicit `.env` flags (v15.7) |
+
+### Models (`backend/app/models/`)
+
+- **`entities.py`** — all ORM models (single source of truth)
+- **`__init__.py`** — re-exports for `from app.models import …`
+- **Removed (v12.6):** orphan `backend/app/models.py`
+
+### Database migrations (`alembic upgrade head`)
+
+| Revision | Spec | Change |
+|----------|------|--------|
+| 013 | v10 | users / auth |
+| 014 | v10.1 | password_hash |
+| 015 | v5.4 | payments.voided_at |
+| 016 | v12.3 | inventory CHECK non-negative |
+| 017 | v12.5 | fulfillment_entries.voided_at |
+| 018 | v12.7 | bill_number_counters |
+| 023 | v12.21 | bank_accounts, expense_categories, cash_book_entries, book_settings; payments.bank_account_id |
+| 024 | v12.22 | customers.alternate_phone |
+| 025 | v14.0 | owner-tagged inventory, job work tables, bill/processing owner fields |
+| 026 | v14.1 | owner on bag_changes, product_transfers, stock_disposals |
+| 027 | v14.3 | `job_work_receipts.entry_type` (`receive` \| `return`); index `(line_id, entry_type, received_at)` |
+| 028 | v14.6 | `processing_jobs.output_allocation_mode`, `single_allocation_owner_*` |
+| 029 | v14.7 | `processing_batches.powder_kg`; `book_settings.powder_*` destination FKs |
+| 030 | v14.7 | Seed powder destination in `book_settings` |
+| 031 | v14.8 | `processing_batches.voided_at` |
+| 032 | v14.9 | `processing_waste_allocations.powder_kg` (owner split) |
+| 033 | v15.0 | `users.role` enum; seed `jaganraj@rajagro.com` → owner |
+| 034 | v15.1 | `users.login_otp_*` columns |
+| 035 | v15.1 | `users.password_plain` |
+| 036 | v15.4 | `revoked_tokens` (logout JWT jti blocklist) |
+| 037 | v15.5.1 | `processing_batches.powder_*` line columns (brand, location, bag type, bag count, loose kg) |
+| 038 | v15.5 | `login_rate_limits` (per-email failed attempts + lockout) |
+| 039 | v15.8 | `idempotency_records.status` (`in_progress` \| `completed`); nullable response until complete |
+| 040 | v15.9 | `BillStatus.voided`; `bills.voided_at` |
+| 041 | v16.0.5 | `audit_events` (central audit log) |
+| 042 | v16.0.6 | `login_events` (login history) |
+| 043 | v16.0.7 | `users.is_active` (disable user / soft ban) |
+| 044 | v16.0.9 | `book_settings` company header (bill print) |
+
+## API surface (summary)
+
+**Auth:** `POST /api/auth/signup|login|logout`, `GET /api/auth/me` (Google endpoint reserved); **v15.4** logout revokes JWT `jti` server-side; **v15.5** login rate limit (`429` when locked)
+
+**Masters:** CRUD `/api/products`, `/brands`, `/locations`, `/bag-types`, `/customers`
+
+**Inventory:** `GET/POST /api/inventory`, `GET /api/inventory/stock-at-location`, `GET /api/inventory/{id}/usage`, `PUT /api/inventory/{id}` — qty change requires `X-Void-Authorization` + idempotency (v12.22); identity fields immutable
+
+**Bills:** `GET /api/bills`, `GET /api/bills/next-number` (preview), `POST /api/bills`, `PATCH /api/bills/{id}`, `GET /api/bills/{id}/void-precheck`, `POST /api/bills/{id}/void` (owner + `X-Void-Authorization`, v15.9)
+
+**Payments:** `GET/POST /api/payments`, `GET /api/payments/setoff-preview`, `POST /api/payments/{id}/void` (requires `X-Void-Authorization`)
+
+**Fulfillment (bills):** `GET /api/fulfillment/bills|lines|entries`, `POST /api/fulfillment`, `POST /api/fulfillment/bill-event`, `POST /api/fulfillment/{id}/void`
+
+**Job Work:** `GET/POST /api/job-work`, `GET /api/job-work/{id}`, `GET /api/job-work/fulfillment/orders`, `POST /api/job-work/receive`, `POST /api/job-work/receipts/{id}/void`, `POST /api/job-work/return`, `GET /api/job-work/customers/{id}/statement`
+
+**Operations:** `POST/GET /api/operations/bag-change|product-transfer|stock-disposal|processing/…`
+
+**Reports:** `GET /api/reports/dashboard-bundle` (v16.0.2 — all dashboard data); `GET /api/reports/business-*`, `by-*`, `bills-export`; legacy `sales-*` retained
+
+## Frontend routes (summary)
+
+`/dashboard` (default) · `/home` · masters (`/products` … `/inventory`) · `/sales-bills`, `/purchase-bills` (+ `/new`, `/:id`, `/:id/edit`, `/:id/payment`) · `/payments` · `/job-work` (+ `/new`, `/:id`) · `/job-work/fulfillment` · `/fulfillment` (bill deliver/receive) · `/histories/fulfillment` (bill fulfillment audit log) · `/operations/*` · `/histories/*` · `/login`, `/signup`
+
+Bill list: client-side payment + delivery filters (v12.4). Bill detail: payments void (v5.4) + fulfillment history void (v12.5).
+
+## Spec v13.0 — Frontend UI overhaul ("Inventory App v2 UI")
+
+**Scope:** `frontend/` only. **No backend, schema, validation, or business-rule changes.** Every API call, payload shape, error code, and guard from v5–v12.x is preserved and surfaced in the new UI.
+
+### Design direction
+- Light + **dark mode**, user-toggleable, persisted in `localStorage` (`v13.theme`), default = system preference. CSS custom-properties tokenize surfaces, ink, and lines via Tailwind's `data-theme="dark"` selector.
+- **Density:** `comfortable` (default) and `compact`, toggleable from the topbar, persisted (`v13.density`) on `<html data-density>`.
+- **Palette:** Indigo→Violet primary (`#6366F1 → #8B5CF6` gradient), Emerald accent for positive/paid/delivered, Amber for partial/warning, Rose for danger/void/overdue, Zinc neutrals.
+- **Typography:** Inter (UI) + JetBrains Mono (numbers, bill numbers, IDs), loaded via `@fontsource/inter` and `@fontsource/jetbrains-mono`.
+- **Corners:** `2xl` (16px) on cards, `xl` on inputs, `full` on chips.
+- **Elevation:** soft, layered shadows (`shadow-soft`, `shadow-lg`, glow on primary CTAs, glass blur on topbar).
+- **Animations:** framer-motion page transition (180 ms fade + slide), spring modals/drawers, count-up on stat cards via `requestAnimationFrame`. All bypassed when `prefers-reduced-motion: reduce`.
+
+### Dependencies added (frontend)
+| Package | Why |
+|---|---|
+| `tailwindcss`, `postcss`, `autoprefixer`, `@tailwindcss/forms`, `@tailwindcss/typography` | Design system styling |
+| `framer-motion` | Page + element animations |
+| `@headlessui/react` | Accessible modal, popover, listbox, menu, combobox |
+| `lucide-react` | Icon set |
+| `sonner` | Toast notifications |
+| `clsx`, `tailwind-merge` | `cn()` className helper |
+| `@fontsource/inter`, `@fontsource/jetbrains-mono` | Self-hosted UI + mono fonts |
+
+No state library, router, or data-fetching library was added. Single `fetch`-based client: `src/api/client.ts` (`src/api.ts` re-exports it since v16.0.12).
+
+### Files created
+- `frontend/tailwind.config.ts`, `frontend/postcss.config.js`
+- `frontend/src/styles/index.css` — Tailwind base + theme tokens (`--surface`, `--ink`, `--line`, `--shadow-*`), density variables, `body.app-shell-v2` resets, `v2-card`, `v2-input`, `v2-mono`, `v2-skeleton` helpers, dark-mode Recharts overrides, `prefers-reduced-motion` rules.
+- `frontend/src/lib/cn.ts` — `cn(...inputs)` (clsx + tailwind-merge).
+- `frontend/src/lib/theme.tsx` — `ThemeProvider`, `useTheme()`, `light | dark | system`.
+- `frontend/src/lib/density.tsx` — `DensityProvider`, `useDensity()`.
+- `frontend/src/lib/format.ts` — extended with `formatInrCompact`, `formatDate`, `formatDateTime`, `formatRelative` (Intl-based).
+- `frontend/src/components/ui/` — primitive library (see below).
+- `frontend/src/components/AppShell.tsx` — replaces `Layout.tsx` (which is now a thin re-export shim).
+- `frontend/src/components/Sidebar.tsx` — collapsible sidebar with grouped sections, mobile drawer, persisted (`v13.sidebar.collapsed`).
+- `frontend/src/components/Topbar.tsx` — sticky glass topbar with breadcrumbs, global search (`Cmd/Ctrl+K`), theme toggle (cycles light/dark/system), density toggle, user menu.
+- `frontend/src/components/CommandPalette.tsx` — Headless UI Combobox listing bills (sales + purchase), customers, products, plus quick navigation and quick-action items.
+
+### Files modified
+- `frontend/src/main.tsx` — wraps in `ThemeProvider`, `DensityProvider`, mounts `Toaster`, imports new + legacy stylesheets.
+- `frontend/src/App.tsx` — uses `AppShell` instead of legacy `Layout` (route paths unchanged; AnimatePresence transitions live inside the shell).
+- `frontend/index.html` — drops Google-Fonts `<link>` in favour of self-hosted fontsource imports.
+- `frontend/src/components/Layout.tsx` — thin `export { default } from "./AppShell"` shim for one release.
+- `frontend/src/components/AuthShell.tsx` — split-screen hero + auth card.
+- `frontend/src/components/MasterCrud.tsx`, `PartyMasterCrud.tsx`, `BagTypesPage.tsx`, `OperationPageHeader.tsx` — rebuilt on UI primitives; master delete uses `VoidConfirmDialog` + `X-Void-Authorization` (v15.3); surfaces v12.2 backend guard messages via `Banner` + toast.
+- Icons — `lucide-react` directly (legacy `Icons.tsx` removed in v16.0.10).
+- Every page under `frontend/src/pages/` — see §"Per-page redesign" below.
+
+### UI primitive inventory (`frontend/src/components/ui/`)
+`Button`, `IconButton`, `Input`, `NumberInput`, `Textarea`, `Select`, `Combobox`, `FormField`, `Card` + `CardHeader/Body/Footer`, `Badge`, `StatusPill` (`PaymentPill`, `DeliveryPill`, `VoidPill`), `Skeleton` + `SkeletonRows`, `EmptyState`, `PageHeader` (with breadcrumbs), `Stat`, `KpiSparkline`, `Modal`, `ConfirmDialog`, `Tabs` + `Tab`, `Banner`, `SegmentedControl`, `Toaster` (wraps sonner).
+
+### Per-page redesign — all routes preserved
+| Route | Page | UI work | QA hardening surfaced |
+|---|---|---|---|
+| `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. | — |
+| `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
+| `/dashboard` | `DashboardPage` | 4 KPI cards with `Stat` + sparkline (sales/purchase bill amount, qty ordered), Recharts AreaChart for daily, donut for product mix, MoM compare strip, top-customer/location/product tables, CSV export. | **#9 v11.1** — only bill-date accrual metrics shown; no "Collected/Due" KPIs. |
+| `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
+| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
+| `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
+| `/payments`, `/payments/new`, `/…/:id/payment` | `PaymentsPage`, `PaymentPage` | New listing with `Table` + per-row Void; record form with bill snapshot, set-off allocation preview, balance-mode autofill, validation banners. **v13.1:** full-row sales/purchase tint via `BILL_TYPE_THEME`. | **#4 v5.4** void from list; **v5.2** set-off allocations. |
+| `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. | **#12 v12.3** row-locked stock mutations (server-side). |
+| `/inventory` | `InventoryPage` | Location-grouped tables with product `rowspan` column; low-stock amber highlight; add opening stock via `Modal` only. **v13.1:** larger product names; canvas background. | **#3 v12.1** opening qty only; PUT rejected; **#12 v12.3** row locking. |
+| `/operations/processing`, `/operations/processing/:id` | `ProcessingListPage`, `ProcessingJobPage` | Open job in `Modal`; job detail with compact summary strip, **At a glance** In/Out/Balance panel, collapsible batch log. | **#8 v9.4** reprocess guard hidden when no balance returned; **v9.3** mass-balance enforced. |
+| `/operations/bag-change`, `/operations/product-transfer`, `/operations/stock-disposal` and their `/histories/*` | `BagChangePage`, `ProductTransferPage`, `StockDisposalPage` + history pages | Sectioned forms via `OperationFormBlocks` (`OperationSection`, balance/flow hints, sticky footers). | — |
+| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
+
+### Accessibility commitments
+- Focus rings via `:focus-visible` with 2-px primary halo on the new `body.app-shell-v2`.
+- All `IconButton`s require `label` (rendered as `aria-label` + `title`).
+- Tables use `<caption>` (sr-only) and `<th scope="col">`.
+- `FormField` wires `htmlFor`, `aria-invalid`, `aria-describedby`.
+- Required indicator is subtle inline `(required)` text on `FormField` (v13.1; replaces v13.0 red dot).
+- `Esc` closes modals, drawers, palette; `Cmd/Ctrl+K` opens the command palette.
+- WCAG-AA color contrast on both themes (Tailwind zinc scales picked for AA against `--surface` + dark variants).
+- All non-essential motion is disabled under `prefers-reduced-motion: reduce`.
+
+### Test plan additions
+See `TEST_PLAN.md` § "v13.0 UI redesign" for the 14-item manual smoke checklist.
+
+## Spec v13.1 — Frontend UI polish (readability & workflows)
+
+**Scope:** `frontend/` only. **No backend, schema, validation, or business-rule changes.**
+
+### Global readability
+- Increased base font sizes app-wide (`tailwind.config.ts`, `src/styles/index.css`, UI primitives).
+- Default `Tabs` and `SegmentedControl` size → `lg` (taller tap targets, `text-lg` tab labels).
+- `Table` component: larger header/cell padding and `text-base` body text.
+- Unified table styling: `.v2-table-frame` + `.v2-data-table` with `table-layout: fixed` for column alignment.
+- `Card` header titles bumped to `text-lg`.
+- Canvas background: radial gradients via `--canvas` on `body.app-shell-v2` (replaces plain white).
+- Richer text hierarchy using `--ink`, `--ink-subtle`, and `--ink-muted` tokens.
+
+### Forms & modals
+- `FormField`: required fields show subtle inline `(required)` text instead of red-dot indicators.
+- `Modal`: scrollable body (`max-h-[min(100dvh-2rem,52rem)]`) so tall forms (e.g. add stock) are not clipped top/bottom.
+
+### Bills
+- **List (`BillsListPage`):** summary KPI cards; consolidated filter card; sales/purchase theming via `PAGE_THEME`; concise desktop table + mobile cards; **Add customer** opens `AddCustomerDialog` (opening balances default to 0 and are not editable here).
+- **Form (`BillFormPage`):** customer `Select` + adjacent **Add customer** button; same dialog without balance fields.
+- **Detail (`BillDetailPage`):** header summary card with status pills and totals; **Overview** tab shows product line items (**Lines** tab removed); redundant bill meta removed from Overview; **Payments** and **Fulfillment** tabs enlarged with mobile card layouts and `detailTh`/`detailTd` sizing.
+
+### Fulfillment
+- `BILL_TYPE_THEME` / `themeForBillType()` in `src/lib/billTypeTheme.ts` — sales (indigo) vs purchase (emerald) row coloring, badges, and filter gradients.
+- Bills grouped by bill number + customer in card blocks on `FulfillmentPage`.
+- Deliver / receive / return open **`FulfillmentActionDialog`** modal (`FulfillmentActionPanels` for context) instead of dedicated full pages.
+- `FulfillmentDeliverPage` / `FulfillmentReturnPage` redirect to `/fulfillment?action=…&line=…` (and `parent_entry_id` when needed) for deep links.
+- Sales fulfillment actions highlight the bill **source location**.
+
+### Payments
+- Full-row tint by bill type (sales indigo / purchase emerald) via `BILL_TYPE_THEME`.
+- Summary cards for sales vs purchase counts; larger bill number, customer, amount, and date typography.
+
+### Inventory
+- Grouped display: location sections → one table per location; product name in a **rowspan** column with brand/bag-type detail sub-rows beside it.
+- Product names prominently highlighted (gradient cell, icon badge, `text-lg`/`text-xl`).
+- Low-stock heads-up: total kg below 500 → amber row + alert `Badge`.
+- Backend sort by location; client `groupInventoryRows` + `compareInventoryRows`.
+- **Add opening stock** in `Modal` only (step cards + sticky footer summary); kg/quintal/ton unit toggle removed from add-stock flow.
+- Column alignment via explicit `colgroup` widths.
+
+### Processing
+- **`ProcessingListPage`:** summary cards (open/completed jobs); restyled job table; **Open job** form in `Modal`.
+- **`ProcessingJobPage`:** compact 4-tile strip on all tabs (fresh in, output, net unclean, batches); Summary tab **At a glance** shows output-by-brand pills plus waste, misc, and total loss only (no reprocess/returned stats); **Batch log** as collapsible timeline.
+
+### Operations & bag types
+- **`OperationFormBlocks.tsx`:** `OperationSection`, `OperationLineCard`, `OperationBalanceBar`, `StockAvailabilityHint`, `LocationFlowHint`, `QtyPreview`.
+- **`BagChangePage`**, **`ProductTransferPage`**, **`StockDisposalPage`:** sectioned forms, balance/flow hints, sticky footers.
+- **`BagTypesPage`:** summary cards; color-tinted loose vs bagged rows; **Add bag type** in `Modal` with review & confirm step (v12.9 weight/loose immutable).
+
+### Masters
+- **`MasterCrud`**, **`PartyMasterCrud`:** add/edit forms moved from inline page sections to **`Modal`** (triggered from `PageHeader`, `EmptyState`, or row Edit). Delete guards (v12.2) unchanged.
+
+### New / key files (v13.1)
+| File | Purpose |
+|------|---------|
+| `src/lib/billTypeTheme.ts` | Shared sales/purchase row and badge theming |
+| `src/components/AddCustomerDialog.tsx` | Quick customer create from bills (no balance edit) |
+| `src/components/FulfillmentActionDialog.tsx` | Deliver/receive/return modal workflow |
+| `src/components/FulfillmentActionPanels.tsx` | Context cards and qty stats inside fulfillment modal |
+| `src/components/operations/OperationFormBlocks.tsx` | Shared operation form sections and hints |
+
+### Test plan additions
+See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
+
+## Dev data scripts
+
+- **`backend/scripts/seed_sample_data.py`** — two months (May + June) of `DEMO-*` bills, payments, fulfillment using existing masters; idempotent (skips existing); `--force` to wipe and recreate demo rows.
+- **`backend/scripts/clear_transactional_data.py`** — clears inventory, bills, payments, fulfillment, operations, processing; **keeps** products, brands, locations, bag types, customers, users; resets customer credit/debit balances to zero.
+
+## Spec v11.1 — Business dashboard (bill-date, qty ordered)
+
+**Drawback #9 fix:** Dashboard shows only bill-date metrics — ordered qty and bill amount for sales AND purchase. Delivery and payment timing are excluded from primary KPIs.
+
+### Filter
+
+- `year`, `month` (1–12)
+- Finalized bills only; `bill_date` in selected month
+
+### Primary metrics
+
+| Metric | Sales | Purchase |
+|--------|-------|----------|
+| Bill amount | SUM(grand_total) | SUM(grand_total) |
+| Qty ordered (kg) | SUM(ordered_quantity_kg) | SUM(ordered_quantity_kg) |
+| Bill count | COUNT(bills) | COUNT(bills) |
+
+**Not primary:** collected, due, delivered qty, payment date, fulfillment date.
+
+### API
+
+- `GET /api/reports/dashboard-bundle?year=&month=&bill_type=sales|purchase&group_by=product|product_brand` (v16.0.2 — summary, compare, daily, by_product, by_customer, by_location)
+- `GET /api/reports/business-summary`
+- `GET /api/reports/business-compare`
+- `GET /api/reports/daily-bill-amounts`
+- `GET /api/reports/by-product?bill_type=sales|purchase&group_by=...`
+- `GET /api/reports/by-customer?bill_type=sales|purchase`
+- `GET /api/reports/by-location?bill_type=sales|purchase`
+- `GET /api/reports/bills-export?bill_type=sales|purchase`
+- Legacy sales-* endpoints remain; dashboard uses v11.1 endpoints
+
+### UI
+
+- Route: `/dashboard`
+- Subtitle: bills dated in month — ordered qty and bill amounts
+- KPI cards: sales/purchase bill amount, qty ordered, bill counts
+- No Collected/Due/payment/delivery breakdown on main view
+- Product/customer tables: bill_type toggle; "Qty ordered (kg)"
+- Daily chart: sales + purchase bill amounts per day
+
+### Unchanged
+
+- Bill submit, fulfillment, payments logic
+- Reports still live SQL aggregation (no migration)
+
+## Spec v11 — Sales dashboard (extended analytics, legacy endpoints)
+
+- **Route:** `/dashboard` (default landing after login); `/home` keeps quick-link shortcuts.
+- **Legacy API:** `GET /api/reports/sales-*` — summary (includes collected/due), by-product, compare with collected, payment/delivery breakdown, CSV export.
+- **Filters:** `year`, `month` (1–12); `group_by=product|product_brand` on product/export endpoints.
+- **Scope:** finalized **sales** bills only on legacy endpoints.
+- **Backend:** `app/services/reports.py`, `app/routers/reports.py`; live SQL aggregations (no migration).
+- **Frontend:** v11.1 dashboard uses business-* endpoints; legacy sales-* unused by main UI.
+
+## Spec v10 — Authentication (password + session; Google later)
+
+- **Signup:** `POST /api/auth/signup` — email, password (≥8 chars), optional name; bcrypt hash; auto-login via httpOnly JWT cookie.
+- **Login:** `POST /api/auth/login` — email + password; generic error on failure (`Invalid email or password`).
+- **Session:** JWT in httpOnly cookie `access_token` (same as v10); `GET /api/auth/me`, `POST /api/auth/logout`. **v15.4:** JWT includes `jti`; logout adds `jti` to `revoked_tokens` — session invalid immediately.
+- **Protected API:** all `/api/*` except `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/google` require `get_current_user`.
+- **Frontend:** `/login` and `/signup` pages (no sidebar); `AuthContext` with `login`, `signup`, `logout`; `credentials: 'include'` on all fetch.
+- **DB:** `users` table — `email`, `password_hash`, optional `google_sub` (for future Google), `name`, `picture_url`, timestamps; migration `014_spec_v101_password_auth`.
+- **Google Sign-In:** backend `POST /api/auth/google` retained for later; not wired in UI yet.
+- **Optional allowlist:** `ALLOWED_EMAILS` applies to signup and login.
+- **Env:** `JWT_SECRET`, `JWT_EXPIRE_HOURS`, `COOKIE_SECURE`.
+
+## UI — Aurora theme, layout & typography
+
+- **Theme:** “Aurora” — indigo / violet / cyan / amber palette, glassmorphism (`backdrop-filter`), gradients, animated KPI cards and charts (`index.css`).
+- **Fonts:** Inter (UI), Plus Jakarta Sans (headings), JetBrains Mono (numbers) — loaded in `index.html`.
+- **Motion:** page fade-in, staggered home cards, hover lift, animated nav/tabs/messages; `prefers-reduced-motion` respected.
+- **Qty inputs:** `type="number"` with empty placeholders (not pre-filled 0/1).
+- **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
+- **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
+- **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
+- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll`; mobile hamburger drawer.
+- **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
+- **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
+
+## Inventory list — column header filters
+
+- **Toolbar:** Display unit (kg / quintal / ton) only; **Clear filters** when any filter is active.
+- **Table header:** filter dropdowns under column names — Location, Product, Brand, Bag type (default “All”).
+- **Filter state:** `{ product_id, brand_id, location_id, bag_type_id }`; auto-reload on change via `GET /inventory` query params (no Apply button).
+- **Location filter:** API `location_id` param; client also limits location groups when set.
+- **Accessibility:** `aria-label` on each header filter select; compact `.inventory-col-filter` styling; optional sticky thead on scroll.
+
+## Spec v12.1 — Inventory quantities (opening on create only)
+
+**Problem fixed:** Editing bag count / loose kg on an existing inventory row changed stock without any bill, fulfillment, operation, or processing record — stock no longer matched transaction history.
+
+### Rule
+
+| Action | bag_count / loose_kg / total_quantity_kg |
+|--------|------------------------------------------|
+| **Create row** (`POST /inventory`) | Allowed — **opening stock only** for that (product, brand, location, bag type) tuple. |
+| **Edit row** (`PUT /inventory/{id}`) | **Not allowed** — API must not change quantities; UI read-only for stock fields. |
+
+After a row exists, quantity changes **only** via:
+
+- Fulfillment (deliver / receive / return on bills)
+- Operations (bag change, product transfer, stock disposal)
+- Processing (input / output / balance return batches)
+
+### API
+
+- `POST /inventory` — unchanged: create row with opening `bag_count` / `loose_kg`; unique tuple enforced.
+- `PUT /inventory/{id}` — **remove quantity updates**; ignore `bag_count` and `loose_kg` from body. Options:
+  - **Preferred:** return HTTP 400 if body attempts to change quantities vs stored row, OR deprecate PUT entirely and return 405 with message "Use operations to adjust stock."
+  - Do **not** change `product_id`, `brand_id`, `location_id`, `bag_type_id` on PUT either (tuple is identity of the row).
+- `DELETE /inventory/{id}` — **removed (v15.2):** returns **403** `Inventory rows cannot be deleted. Use stock disposal or other operations.` for all roles. Zero-qty rows are auto-pruned only via `operations.prune_zero_inventory` after normal stock movements.
+
+### UI — Inventory page
+
+- **Add row (create):** full form — product, brand, location, bag type, bags/loose (opening stock). Hint: "Opening stock only — later changes via bills, operations, or processing."
+- **Edit existing row:** either
+  - **Remove Edit** button and show row as read-only in table only, OR
+  - Edit opens **view-only** panel: show product/brand/location/bag type and quantities read-only; no Save for quantities.
+- Do not send `bag_count` / `loose_kg` changes on PUT.
+
+### Tests
+
+- `POST /inventory` with opening qty persists.
+- `PUT /inventory/{id}` with different bag_count/loose_kg leaves quantities unchanged (or returns 400).
+- Optional: after fulfillment subtracts stock, PUT cannot restore old qty.
+
+### Related specs (unchanged)
+
+- Column-header filters (Inventory UI)
+- Fulfillment / operations / processing inventory rules
+
+## Spec v12.2 — Master delete guards
+
+**Problem fixed:** Customer/product (and partial brand/location) delete could reach the database and fail with FK/500 errors. Users need clear 400 messages.
+
+### Rule
+
+Masters are **hard-deletable only when unreferenced**. Delete is allowed for setup mistakes / unused rows. Delete is blocked when bills, inventory, operations, or non-zero customer balance still reference the row.
+
+### Customer DELETE
+
+| Block when | Message |
+|------------|---------|
+| credit_balance > 0 or debit_balance > 0 | Cannot delete customer with non-zero balance |
+| any bill with customer_id | Cannot delete customer: used on N bill(s) |
+
+### Product DELETE
+
+| Block when | Message |
+|------------|---------|
+| inventory | Product in use (inventory) |
+| bill_lines | Product in use (bills) |
+| processing_jobs (input_product) | Product in use (processing) |
+| product_transfers, stock_disposals, bag_changes | Product in use (…) |
+
+### Brand / Location DELETE
+
+Same pattern — check inventory (existing) plus bills, fulfillment, operations, processing as applicable per FK map in entities.py.
+
+### Bag type DELETE
+
+Unchanged behavior; optionally add processing line checks.
+
+### API
+
+- `DELETE /api/products/{id}`, `/customers/{id}`, `/brands/{id}`, `/locations/{id}`, `/bag-types/{id}` — return HTTP 400 with explicit reason before DB delete when referenced (**v12.2**). **v15.3:** also requires `X-Void-Authorization` (owner + `masters_manage`).
+
+### UI
+
+- MasterCrud shows API error message; **v15.3:** delete uses `VoidConfirmDialog` for void password.
+
+### Tests
+
+- `backend/tests/test_master_delete_v122.py`
+
+## Spec v12.3 — Inventory row locking (concurrent stock)
+
+**Problem fixed:** Concurrent deliver/process/transfer/disposal on the same inventory row could both read stale stock and oversell (Drawback #12).
+
+### Rule
+
+All inventory **mutations** (subtract/add) must lock the row first: `SELECT ... FOR UPDATE` on `inventory` for `(product_id, brand_id, location_id, bag_type_id)` within the same transaction. Read-only stock display continues to use non-locking `get_inventory_row`.
+
+### Multi-row operations
+
+Bag change and product transfer lock **all** affected rows in sorted key order to prevent deadlocks.
+
+### Safety net
+
+DB constraints: `bag_count >= 0`, `loose_kg >= 0` (migration `016_spec_v123_inventory_non_negative`).
+
+### Affected modules
+
+- Fulfillment (sales deliver, purchase receive/return)
+- Processing (input subtract, output/balance return add via operations)
+- Operations (bag change, product transfer, stock disposal)
+
+### Concurrent behavior
+
+Second request blocks on row lock until first commits; then sees updated stock. Insufficient stock error if no longer enough — same as sequential use.
+
+### API / UI
+
+No endpoint or label changes.
+
+### Tests
+
+- `backend/tests/test_inventory_lock_v123.py`
+
+## Spec v12.4 — Bills list filters (payment + delivery)
+
+**Problem fixed:** Sales and purchase bill lists had no way to narrow rows by payment or delivery status without scanning the full table.
+
+### Rule
+
+Client-side filters on the loaded `GET /api/bills?bill_type=sales|purchase` list. **Do not** change backend status calculation (`payment_status`, `order_delivery_status`).
+
+### Payment status filter
+
+Segmented control: **All | Unpaid | Partial | Paid**
+
+- Filter field: `payment_status`
+- Normalize legacy values: `pending` → unpaid, `done` → paid (`normalizePaymentStatus` in `statusLabels.ts`)
+
+### Delivery status filter
+
+Dropdown: **All | Not delivered | Partial | Delivered**
+
+- Filter field: `order_delivery_status`
+- Normalize legacy values: `pending` → not_delivered, `done` → delivered (`normalizeDeliveryStatus`)
+
+### Filter logic
+
+- **AND** when both filters are active (e.g. Unpaid + Partial delivery → bills matching both)
+- **Clear filters** button when either filter ≠ All; resets both to All
+
+### Empty states
+
+| Case | Message / action |
+|------|------------------|
+| No bills at all | Existing “create first bill” empty state |
+| Bills exist, none match filters | e.g. “No sales bills match unpaid payment and partial delivery filters” + Clear filters |
+
+### UI
+
+- Routes: `/sales-bills`, `/purchase-bills` — both use `BillsListPage.tsx`
+- Payment: segmented control in filter bar
+- Delivery: dropdown beside Clear filters
+- Table badges unchanged (`paymentStatusLabel`, `deliveryStatusLabel`)
+
+### Unchanged
+
+- Fulfillment, payments, bill submit/edit
+- No new API query params for filters
+
+## Spec v12.5 — Fulfillment void (mistake undo)
+
+**Problem fixed:** Deliver/receive/return entries could not be undone. Operators had to post a separate Return, leaving messy history and failing when stock was already consumed.
+
+**Return flow stays** for real business returns. **Void** is for operator mistakes (parallel to payment void Spec v5.4).
+
+### Behaviour
+
+- **Void** = soft-delete: set `voided_at`; entry remains for audit but excluded from net fulfilled / delivery status.
+- **Endpoint:** `POST /api/fulfillment/{entry_id}/void`
+- **No customer balance change**
+
+### Stock reversal (`reverse_stock_change`)
+
+| Original entry | Void effect |
+|----------------|-------------|
+| Sales deliver | Add stock back at entry `location_id` |
+| Purchase receive (deliver) | Subtract stock at entry `location_id` (400 if insufficient) |
+| Sales return | Subtract stock (400 if insufficient) |
+| Purchase return | Add stock back at parent deliver location |
+
+Uses row locking (Spec v12.3).
+
+### Rules
+
+1. Already voided → 400 "Fulfillment entry already voided"
+2. **Purchase deliver void blocked** if any active `return_` has `parent_entry_id = this entry` → 400 "Void returns on this deliver entry first"
+3. `recompute_line_fulfillment` and delivery status use **active entries only** (`voided_at IS NULL`)
+4. `validate_edit_bill` / `net_fulfilled_kg` use line totals after recompute (active-only)
+
+### API
+
+- `POST /api/fulfillment/{entry_id}/void`
+- `GET /api/fulfillment/entries?bill_line_id=` — includes voided rows with `voided_at` for history UI
+
+### UI — Bill detail page
+
+- Per line: fulfillment entry history (date, type, location, qty, vehicle)
+- **Void** on active entries; confirm dialog
+- Voided rows struck-through + badge; no Void button
+- Refresh delivery badges after void; show API 400 errors (insufficient stock, void returns first)
+
+### Migration
+
+- `017_spec_v125_fulfillment_void` — `voided_at` on `fulfillment_entries`; index `(bill_line_id, voided_at)`
+
+### Tests
+
+- `backend/tests/test_fulfillment_void_v125.py`
+
+## Spec v12.6 — Legacy code removal
+
+**Cleanup only** — no behavior change. Removed unused files from early versions that were not imported by routes, services, or tests.
+
+### Removed
+
+| File | Superseded by |
+|------|----------------|
+| `backend/app/services/bill_service.py` | `app/services/bills.py` |
+| `backend/app/services/fulfillment_service.py` | `app/services/fulfillment.py` |
+| `backend/app/services/inventory_calc.py` | `app/utils.py` (and services above) |
+| `backend/app/models.py` | `app/models/entities.py` + `app/models/__init__.py` |
+
+### Active entry points
+
+- Bills: `app/services/bills.py`
+- Fulfillment: `app/services/fulfillment.py`
+- ORM models: `app/models/entities.py` (re-exported via `from app.models import …`)
+
+## Spec v12.7 — Bill number generation (concurrent-safe)
+
+**Problem fixed (Drawback #18):** `next_bill_number` used `COUNT + 1`, racing under concurrent creates. UNIQUE on `bill_number` blocked duplicates but the loser got HTTP 500.
+
+### Rule
+
+- Table `bill_number_counters`: `bill_type` (PK), `last_number` (integer)
+- **Allocate** (`next_bill_number`): `SELECT … FOR UPDATE` on counter row, increment, return `S-000001` / `P-000001` format
+- Runs in same transaction as bill insert
+- **Preview** (`GET /api/bills/next-number`): read `last_number + 1` without consuming counter (may be stale until submit)
+- `POST /api/bills`: retry up to 3 times on `IntegrityError` for `bill_number` (belt-and-suspenders)
+- Gaps OK after delete; numbers not reused; bill number unchanged on edit; UNIQUE kept
+
+### Migration
+
+- `018_spec_v127_bill_number_counters` — seeds `last_number` from max existing bill sequence per type
+
+### Tests
+
+- `backend/tests/test_bill_number_v127.py`
+
+## Spec v12.9 — Bag type weight immutable (#19)
+
+**Problem fixed (Drawback #19):** Changing `weight_per_bag_kg` on an existing bag type recalculated inventory and retroactively rewrote bill/inventory kg semantics (`bag_count × weight_per_bag_kg`).
+
+### Bag types — immutability
+
+- On **create** (`POST /bag-types`): `name`, `weight_per_bag_kg`, `is_loose` are set once.
+- On **update** (`PUT /bag-types/{id}`): **only `name`** may change (duplicate-name check unchanged).
+- **`weight_per_bag_kg` and `is_loose` cannot change** after creation → HTTP 400 with clear message.
+- **No inventory recalc** on bag type update (weight never changes).
+- **UI** (`BagTypesPage.tsx`): Add bag type requires **review & confirm** modal before POST.
+- **Wrong weight**: create a new bag type; do not edit weight. Delete old type only if unused (v12.2 guards).
+- **Rationale**: kg on bills/inventory is `bag_count × weight_per_bag_kg`; changing weight retroactively corrupts history.
+
+### API messages (`app/routers/masters.py`)
+
+- `BAG_TYPE_WEIGHT_IMMUTABLE_MSG` — weight change blocked
+- `BAG_TYPE_LOOSE_IMMUTABLE_MSG` — bagged/loose toggle blocked
+
+### Tests
+
+- `backend/tests/test_bag_type_immutable_v129.py`
+
+## Spec v12.10 — GET bills read-only (#20)
+
+**Problem fixed (Drawback #20):** `GET /api/bills` and `GET /api/bills/{id}` called `recalc_bill_totals()` and `db.flush()` on every read, recalculating line and header totals even though GET should be read-only.
+
+### Behavior after fix
+
+- **GET** `/api/bills`, `/api/bills/{id}` — return **stored** `ordered_quantity_kg`, `line_total`, `subtotal`, `discount_amount`, `grand_total` as committed at create/edit. **No recalc, no flush.**
+- **POST** `/api/bills`, **PATCH** `/api/bills/{id}` — unchanged; `recalc_bill_totals` runs only on write paths and commits.
+- **Payments, reports, customer balance** — unchanged; continue to use DB values (now aligned with what GET displays).
+- **User-visible:** no workflow change; same numbers on correct bills; bills list loads faster with many bills.
+- **Rationale:** Single source of truth = values saved at bill create/edit; read endpoints must not recompute or touch the database.
+
+### Implementation
+
+- `app/routers/bills.py` — `list_bills` and `get_bill` no longer call `recalc_bill_totals` or `db.flush()` for recalc.
+- `app/services/bills.py` — `recalc_bill_totals` docstring notes write-path-only usage.
+
+### Tests
+
+- `backend/tests/test_bills_get_readonly_v1210.py`
+
+## Spec v12.11 — Bill row lock on concurrent writes (#21)
+
+**Problem fixed (Drawback #21):** Multiple staff could update the same bill at the same time (edit, payment, fulfillment, void actions), causing race conditions across bill status and balances.
+
+### Behavior after fix
+
+- **Write actions lock bill row(s):** edit bill, add payment, void payment, add fulfillment, and void fulfillment now lock affected `bills` rows with `FOR UPDATE NOWAIT`.
+- **Concurrent writer experience:** second writer receives a clear error — `Bill is in use. Please try again in a moment.`
+- **Read actions unchanged:** `GET /api/bills` and `GET /api/bills/{id}` remain read-only (v12.10), no locks or recalculation.
+- **Business rules unchanged:** totals, set-off FIFO, fulfillment limits, payment/void formulas, and customer balance math are unchanged.
+
+### Implementation
+
+- New module `app/services/bill_lock.py`
+  - `BILL_IN_USE_MSG = "Bill is in use. Please try again in a moment."`
+  - `lock_bill_for_update(...)` and `lock_bills_for_update(...)`
+- `app/routers/bills.py` — edit path acquires bill row lock before mutation.
+- `app/services/payments.py` — create/void payment paths lock affected bill rows.
+- `app/services/fulfillment.py` — create/void fulfillment paths lock the bill row.
+
+### Tests
+
+- `backend/tests/test_bill_lock_v1211.py`
+
+## Spec v12.12 — Schema non-negative guards (#22)
+
+**Problem fixed (Drawback #22):** Request schemas accepted negative rates, quantities, and amounts. Invalid values reached service logic and failed with inconsistent or misleading errors (e.g. negative `rate_per_kg` on bill create → "Final payable cannot be negative" instead of field-level rejection).
+
+### Behavior after fix
+
+- All relevant **input** schemas enforce non-negative numeric fields via Pydantic `Field(ge=0)`; payment `amount` uses `Field(gt=0)`.
+- `discount_percent` constrained to 0–100 on create and edit payloads.
+- Invalid requests fail at API boundary with **422** and field-level validation detail.
+- Service-layer guards (`validate_bags_loose`, `validate_bill_final_payable`, payment amount checks, fulfillment quantity checks) remain unchanged.
+
+### Covered models
+
+`BillLineIn`, `BillFinalizeCreate`, `BillEditLineIn`, `BillEditFinalized`, `PaymentCreate`, `FulfillmentBillEventLineIn`, `FulfillmentCreate`, `InventoryCreate`, `BagTypeCreate`, `BagChangeToLineIn`, `BagChangeCreate`, `ProductTransferCreate`, `StockDisposalCreate`, `ProcessingInputLineIn`, `ProcessingBalanceReturnLineIn`, `ProcessingOutputLineIn`, `ProcessingPowderLineIn`, `ProcessingBatchSubmit` (`powder_line` optional; legacy `powder_kg`).
+
+### Tests
+
+- `backend/tests/test_schema_nonneg_v1212.py`
+
+## Spec v12.13 — Complete bill concurrency protection (lock + stale-write check)
+
+**Problem fixed:** v12.11 row locking prevented only overlapping in-flight writes. Stale old-tab saves could still overwrite latest data after a prior commit (last-write-wins).
+
+### Behavior after fix
+
+- **True overlap** → bill-in-use lock conflict (**HTTP 409**): `Bill is in use. Please try again in a moment.`
+- **Stale snapshot write** → version conflict (**HTTP 409**): `Bill was updated by another user. Refresh and try again.`
+- Bill-affecting write APIs require `expected_version` (body field or `X-Expected-Bill-Version` header on void endpoints).
+- `Bill.version` increments on every successful bill-affecting write; exposed on `BillOut`.
+- Read-only endpoints unchanged.
+
+### Covered operations
+
+Bill edit; payment create/void; fulfillment create/void (including bill-event).
+
+### Implementation
+
+- `bills.version` column (default 1); migration `019_spec_v1213_bill_version.py`
+- `app/services/bill_concurrency.py` — `assert_bill_version`, `bump_bill_version`
+- Routers/services enforce lock then version check; map lock/stale conflicts to 409
+- Frontend passes `expected_version` / header from loaded bill snapshot
+
+### Tests
+
+- `backend/tests/test_bill_concurrency_v1213.py`
+
+## Spec v12.14 — Bill adjustment: no abs() masking (#23)
+
+**Problem fixed (Drawback #23):** `recalc_bill_totals` used `abs(bill.adjustment)`, silently treating negative stored adjustments as positive deductions. This hid corrupt data and could make displayed `adjustment` disagree with `grand_total`.
+
+**Relationship to v12.12 (#22):** #22 blocks negative adjustment on API input. #23 ensures service/DB layers do not mask negative values if they ever exist (legacy row, direct SQL, future bug).
+
+### Behavior after fix
+
+- `recalc_bill_totals` calls `validate_adjustment_non_negative(bill.adjustment)` before computing `grand_total`.
+- No `abs()` on adjustment.
+- Negative adjustment → error `adjustment must be >= 0` (HTTP 400 on write paths).
+- Valid non-negative adjustments unchanged.
+- DB CHECK constraint `ck_bills_adjustment_non_negative` on `bills.adjustment >= 0`.
+
+### Implementation
+
+- `app/services/bills.py` — remove abs masking; validate before totals
+- `alembic/versions/020_spec_v1214_bill_adjustment_non_negative.py`
+
+### Tests
+
+- `backend/tests/test_bill_adjustment_no_abs_v1214.py`
+
+## Spec v12.18 — App-wide list pagination (#30)
+
+**Problem fixed (Drawback #30):** List endpoints returned entire tables; bills list had N+1 `opposite_bills_due_total` queries per row.
+
+### Behavior after fix
+
+- Standard paginated response `{ items, total, limit, offset }`; default limit 50, max 500 (forms may use `limit=500`).
+- Paginated: bills, payments, inventory, fulfillment bills/entries, all operation history lists, processing job list, and master list pages (customers, locations, products, brands, bag-types).
+- Bills list uses slim `BillListItemOut` + server filters (`payment_status`, `delivery_status`, `search`) + `summary`; no `opposite_due` on list.
+- Bill detail unchanged (full bill + `opposite_due` for payments/set-off).
+- Form dropdowns use `limit=500` bulk fetch; Command Palette uses search + small limit (20).
+- Shared: `app/core/pagination.py`, `PageOut[T]` in schemas, `PaginationBar` in frontend.
+
+### Bills list summary
+
+`summary`: `total_count`, `unpaid_count`, `total_due` (positive due on filtered set), `pending_delivery_count`.
+
+### Out of scope
+
+- Cursor/infinite-scroll pagination
+- Paginating report APIs or stock-at-location
+- Bill void (#27)
+
+### Implementation
+
+- `app/core/pagination.py` — limit/offset helpers, count + slice
+- `app/schemas.py` — `PageOut`, `BillListItemOut`, `BillsPageOut`, `*PageOut` types
+- `routers/bills.py` — paginated list + `bill_list_item_to_out` (no lines, no opposite_due)
+- `routers/payments.py`, `inventory.py`, `fulfillment.py`, `operations.py`, `masters.py` — paginated lists
+- `components/ui/PaginationBar.tsx` — list/history UIs
+- `MasterCrud.tsx`, `PartyMasterCrud.tsx` — master table pagination
+
+### Tests
+
+- `backend/tests/test_pagination_v1218.py`
+
+## Spec v12.19 — Configurable CORS origins (#31)
+
+**Problem fixed (Drawback #31):** CORS `allow_origins` was hardcoded to localhost dev ports only (`main.py`). Production, staging, or LAN access from another URL failed with browser CORS errors / "Failed to fetch".
+
+### Behavior
+
+- New env var `CORS_ORIGINS`: comma-separated list of allowed frontend origins. Each value is the full URL users type in the browser (scheme + host + port). No trailing slash. Example: `CORS_ORIGINS=https://inventory.mybusiness.com,http://localhost:5173`
+- If `CORS_ORIGINS` is empty or unset: use dev defaults (backward compatible):
+  - `http://localhost:5173`, `http://127.0.0.1:5173`
+  - `http://localhost:5174`, `http://127.0.0.1:5174`
+  - `http://localhost:5175`, `http://127.0.0.1:5175`
+- Parse: split on comma, strip whitespace, drop empty entries.
+- Middleware stays: `allow_credentials=True`, `allow_methods=["*"]`, `allow_headers=["*"]` (cookie auth unchanged).
+- Do NOT use wildcard `*` for origins (incompatible with credentials).
+
+### Deploy note
+
+- Before go-live, set `CORS_ORIGINS` to the exact URL staff open in the browser.
+- Local dev with Vite proxy (empty `VITE_API_URL`): CORS usually not involved; defaults still fine.
+- Local dev with `VITE_API_URL=http://localhost:8000`: defaults cover port 5173.
+
+### Implementation
+
+- `app/config.py` — `cors_origins: str = ""`
+- `app/core/cors.py` — `parse_cors_origins`, `DEFAULT_DEV_CORS_ORIGINS`
+- `app/main.py` — `allow_origins=parse_cors_origins(settings.cors_origins)`; info log at startup
+- `.env.example`, `README.md` — deploy documentation
+
+### Tests
+
+- `backend/tests/test_cors_v1219.py`
+
+## Spec v12.20 — Health and readiness checks (#32)
+
+**Problem fixed (Drawback #32):** `/health` reported ok without checking the database.
+
+### Endpoints
+
+- **`GET /health`** — liveness only, no DB. Returns `200` `{"status":"ok"}`.
+- **`GET /health/ready`** — readiness. Runs `SELECT 1` on `app.database.engine`.
+  - DB ok → `200` `{"status":"ok","database":"ok"}`
+  - DB fail → `503` `{"status":"degraded","database":"unavailable"}`
+
+Public routes (no auth). Use `/health/ready` for deploy/monitoring.
+
+### Implementation
+
+- `app/core/health.py` — `check_database(engine)`
+- `app/main.py` — `/health` unchanged; `/health/ready` with `JSONResponse`
+- `README.md` — health checks subsection
+
+### Tests
+
+- `backend/tests/test_health_v1220.py`
+
+## Spec v12.17 — Operations void: bag change / transfer / disposal (#28)
+
+**Problem fixed (Drawback #28):** Mistaken bag change, transfer, or disposal could not be undone; staff had to post manual compensating entries.
+
+### Behavior after fix
+
+- `voided_at` on `bag_changes`, `product_transfers`, `stock_disposals`.
+- Void endpoints reverse inventory using locked subtract/add (mirror fulfillment void).
+- Void blocked if reverse would cause insufficient stock (output already consumed).
+- Already voided → clear error.
+- History UI: Void button on active rows; voided rows show Voided badge.
+- Idempotency on void POSTs (v12.15).
+
+### Reverse rules
+
+| Operation | Void reverses |
+|-----------|----------------|
+| Bag change | Subtract to-lines; add back from-line (full original from qty) |
+| Product transfer | Subtract to-location; add back from-location |
+| Stock disposal | Add disposed qty back to location |
+
+### Out of scope
+
+- Processing batch void
+- Bill void (#27)
+
+### Implementation
+
+- `app/models/entities.py` — `voided_at` on three operation tables
+- `alembic/versions/022_spec_v1217_operations_void.py`
+- `app/services/operations.py` — `void_bag_change`, `void_product_transfer`, `void_stock_disposal`
+- `routers/operations.py` — void POST endpoints with idempotency
+
+### Tests
+
+- `backend/tests/test_operations_void_v1217.py`
+
+## Spec v12.16 — System timestamps only (#26)
+
+**Problem fixed (Drawback #26):** Users could set bill dates and event timestamps manually (including future or backdated values), distorting reports and records.
+
+**Owner rule:** No user alteration of date/time. Server sets all timestamps at submit.
+
+### Behavior after fix
+
+- Bill create: `bill_date` defaults to **business today** (Asia/Kolkata); optional `bill_date` on create body — **past or today only** (422 if future). Omitted → today (v12.22 amendment to v12.16)
+- Payment create: `paid_at = server UTC now`
+- Fulfillment create/void paths: `fulfilled_at` set on create only (void keeps `voided_at` server-set as today)
+- Operations/processing: `operation_at = server UTC now`
+- Create API schemas no longer accept client event timestamps (`paid_at`, `fulfilled_at`, `operation_at`); **bill_date** is the sole optional backdate on bill create (v12.22)
+- UI date/time pickers removed from create flows; detail/list still display stored values
+- Dashboard v11.1 unchanged: metrics use stored `bill_date` (now always create-day)
+
+### Not in scope
+
+- Period close / books closed date
+- Editing historical dates on existing rows
+
+### Implementation
+
+- `app/utils/time.py` (`business_today`, `utc_now`)
+- `schemas.py` — remove client timestamp fields from create payloads
+- `routers/bills.py`, `routers/payments.py`, `routers/fulfillment.py`, `routers/operations.py`
+- `services/payments.py`, `services/fulfillment.py`, `services/operations.py`, `services/processing.py`
+
+### Tests
+
+- `backend/tests/test_system_timestamps_v1216.py`
+
+## Spec v12.15 — Idempotency keys on mutation requests (#25)
+
+**Problem fixed (Drawback #25):** Double-click / retry / duplicate POST could create multiple bills or duplicate stock/payment side effects. Frontend button disable alone is insufficient across tabs/retries.
+
+### Behavior after fix
+
+- Covered mutation endpoints require `Idempotency-Key` header.
+- First successful request is processed and cached per `(user_id, idempotency_key)`.
+- Replay with same key + same body returns cached response without re-running side effects.
+- Replay with same key + different body returns 409 conflict.
+- Normal single-submit workflows unchanged.
+- v12.11–v12.14 concurrency/version guards remain additive.
+
+### Covered routes
+
+Bills create/edit, payments create/void, fulfillment create/void/bill-event, inventory create, operations (bag-change, transfer, disposal), processing create/batch/complete.
+
+### Implementation
+
+- `app/services/idempotency.py`
+- `app/core/idempotency.py`
+- `alembic/versions/021_spec_v1215_idempotency_keys.py`
+- Frontend `IDEMPOTENCY_KEY_HEADER` + per-submit UUID in mutation pages
+
+### Tests
+
+- `backend/tests/test_idempotency_v1215.py`
+
+## Spec v9.3 — Processing mass-balance guard (100 kg tolerance)
+
+- **Tolerance:** `PROCESSING_OUTPUT_TOLERANCE_KG = 100` — fixed allowance on top of cumulative **fresh** input.
+- **Fresh input basis:** sum `quantity_kg` on committed `input_source == fresh` lines plus pending fresh input lines in the current request. **Excludes** `balance_reprocess`.
+- **Total outflow:** sum across committed batches **and** pending batch body:
+  - all `processing_output_lines.quantity_kg`
+  - all `processing_balance_return_lines.quantity_kg`
+  - all waste fields: `dust_kg + stone_kg + sack_weight_waste_kg + miscellaneous_waste_kg`
+- **Validation** (`validate_processing_mass_balance`) — before `POST .../batches` and `POST .../complete`:
+  1. If cumulative output + balance return (committed + pending) **> 0** and cumulative fresh input **== 0** → reject (must record fresh input before output or balance return).
+  2. If `total_outflow_kg > total_fresh_input_kg + 100` → reject (exceeds tolerance).
+- **Input-only batches** are not blocked by this guard (they increase fresh input without adding outflow).
+- **Complete (empty body):** re-validate committed batches only (no pending lines).
+- **UI:** live **Fresh input**, **Total outflow**, **Allowance remaining** (= fresh + 100 − outflow) on Output tab and summary strip; disable Output submit and Complete when validation would fail; warning text. Inventory timing unchanged (incremental per batch).
+
+## Spec v9.4 — Balance reprocess guards
+
+**Problem fixed:** `balance_reprocess` could use any physical unclean stock (including opening stock or other jobs) and could exceed unclean returned in this job, making `net_balance_kg` misleading.
+
+### Job available reprocess
+
+`job_available_reprocess_kg = max(0, total_balance_return_kg − total_balance_reprocess_kg)` on **committed batches only** (excludes pending lines in the current request). Exposed on `ProcessingJobSummaryOut`.
+
+### Rules
+
+1. **No reprocess until job has returned balance** — if `job_available_reprocess_kg <= 0`: UI hides “Use unclean balance” and forces `fresh`; API rejects `balance_reprocess` with *“No unclean balance returned in this job yet; use From stock only”*.
+2. **Reprocess ≤ job available** — sum pending `balance_reprocess` kg in the request must not exceed `job_available_reprocess_kg`; less is allowed (balance may have been sold via sales bills). Dual cap with physical stock: `min(job_available, stock at location)`; if job available &gt; 0 but no stock at location → *“No unclean stock at this location (balance may have been sold)”*.
+3. **`validate_balance_reprocess`** runs in `submit_batch` / `complete_job` (with body) **before** mass-balance validation and inventory changes.
+
+### Unchanged
+
+Fresh input, balance return on Output tab, mass-balance v9.3, `net_balance_kg` formula, complete-job soft confirm when high `net_balance_kg` vs fresh input.
+
+### Tests
+
+`backend/tests/test_processing_v94.py`. Manual: `TEST_PLAN.md` “Processing balance reprocess v9.4”.
+
+## Spec v9.2 — Processing balance (unclean) + net summary
+
+- **Input source** per input line: `fresh` (from stock) | `balance_reprocess` (re-use unclean balance).
+- **On batch commit (both sources):** each input line calls `subtract_inventory` for job product + brand (same stock validation and live UI warnings as fresh lines; incremental — this batch only).
+- **Balance return lines** on output batch: add unclean stock back at job `input_product_id` + `input_brand_id`.
+- **Batch order:** subtract inputs (with source) → add outputs → add balance returns → persist waste (no inventory).
+- **Summary (net):**
+  - `total_fresh_input_kg` = SUM `quantity_kg` where `input_source == fresh` **only**
+  - `fresh_input_bags` = SUM `bag_count` on fresh non-loose input lines **only**
+  - `total_balance_reprocess_kg` = SUM `quantity_kg` where `input_source == balance_reprocess`
+  - `total_balance_return_kg`, `net_balance_kg` (= return − reprocess), `job_available_reprocess_kg` (= max(0, return − reprocess)), `output_by_brand[]`, `total_loss_kg`, `batch_count`
+  - `balance_reprocess` is **never** included in fresh input totals or any primary “Input” UI label
+  - `in_process_kg` deprecated (always 0); no `total_input_kg` summing all input lines
+- **DB:** migration `012_spec_v92_processing_balance` — `input_source` on `processing_input_lines`, `processing_balance_return_lines`.
+- **UI:** Input tab source toggle; Output tab balance-return fieldset; Summary strip/card: **Input (fresh from stock)** + muted **Balance reprocessed** line (not under Input heading).
+
+## Spec v9.1 — Processing UX (tabs + summary)
+
+- **Tabs on job page:** Input batch | Output & waste | Summary (no inventory/API logic change).
+- **Input tab:** input lines only → `POST .../batches` with `output_lines: []`, waste zeros; stock warnings unchanged.
+- **Output tab:** output lines + waste → `POST .../batches` with `input_lines: []`; requires output or waste > 0.
+- **Summary tab:** job summary card + batch history + **Complete process** (empty payload when forms clear).
+- **Summary strip:** fresh input, balance reprocessed, output, net balance, loss, batch count — on all tabs (from `job.summary` API; see v9.2).
+- **Complete guards:** block if unsaved Input/Output form data; `confirm()` when fresh input > 0 && output = 0, or high `net_balance_kg` vs fresh input.
+- Completed job: tabs read-only; summary + history visible.
+
+## Spec v9 — Processing (redesign)
+
+- **Job:** `input_product_id`, `input_brand_id`, status `open` | `completed`. Max one **open** job per (product, brand). Opening a job does **not** touch inventory.
+- **Batch (incremental):** each POST applies **only** the lines in that request — prior batches are never replayed.
+  - **Input lines (optional):** subtract stock for job product + brand; location, bag type, bags/loose; `subtract_inventory` validation.
+  - **Output lines (optional):** add stock for job product; `brand_id` per line; location, bag type, bags/loose; create inventory row if missing.
+  - **Waste (optional, no inventory):** `dust_kg`, `stone_kg`, `sack_weight_waste_kg`, `miscellaneous_waste_kg`.
+  - Per commit: at least one input line, output line, or waste kg > 0. Per-batch incremental rules unchanged; **job-level** mass-balance guard with 100 kg tolerance — see **Spec v9.3**.
+- **Actions:**
+  - `POST .../batches` — apply inventory for current body; job stays open.
+  - `POST .../complete` — if body has data: same as batch then complete; if empty: complete only when ≥1 batch exists. Completed jobs reject new batches (400).
+- **API:** `POST/GET /api/operations/processing`, `GET /api/operations/processing/{id}`, `POST .../batches`, `POST .../complete`
+- **UI:** `/operations/processing` (new job + open jobs), `/operations/processing/:id` (batch history + form; disabled when completed).
+- **DB:** migration `011_spec_v9_processing` — `processing_jobs`, `processing_batches`, `processing_input_lines`, `processing_output_lines`.
+
+## Spec v7.1 — Bag change (optimistic to-lines)
+
+- **Unlimited TO lines** — “Add line” with no merge; duplicate `to_bag_type_id` across lines allowed (each UI line → one `bag_change_to_lines` row).
+- **Balance on submit:** `from_kg = sum(to_lines_kg) + quantity_loss_kg` (HTTP 400 if not).
+- **FROM:** cascade Location → Product → Brand from stock-at-location; one from bag type + bags/loose; show available stock.
+- **TO:** any bag type from masters per line; cumulative add when multiple lines share same bag type.
+- **Inventory:** subtract FROM once; add each TO line at same location/product/brand.
+- **Loss kg:** live computed default `from − sum(to)`; user may adjust; submit disabled until balanced.
+- **API:** `POST/GET /api/operations/bag-change`
+
+## Spec v7 — Operations (transfer, disposal)
+
+- **Product transfer:** product, brand, bag type, `from_location` ≠ `to_location`; subtract source / add destination; audit in `product_transfers`. `POST/GET /api/operations/product-transfer`
+- **Stock disposal:** Location → product → brand → bag type cascade from stock; subtract only; optional reason/notes. `POST/GET /api/operations/stock-disposal`
+- **Shared:** `calc_quantity_kg`, `validate_bags_loose`, `recalc_inventory_row`; insufficient stock → 400; no bill/customer/fulfillment side effects.
+- **Nav:** Operations → Fulfillment, Processing, Bag change, Product transfer, Stock disposal.
+- **Histories (separate tab):** `/histories/bag-change`, `/histories/product-transfer`, `/histories/stock-disposal` — newest first.
+
+### Manual tests (v7)
+1. Bag change: 50×50kg FROM → 3 TO lines including two 30kg bag types — inventory correct per row
+2. `loss_kg = from − sum(to)` enforced on submit
+3. Transfer A→B moves stock; disposal subtracts only
+
+---
+
+## Spec v6.2 — Sales return to chosen location
+
+- **Sales return:** `location_id` required on form (dropdown, any location); stock **added** at return location (create row if missing).
+- **Sales deliver:** unchanged — subtract at `bill.location_id`.
+- **Purchase return:** unchanged — location read-only from parent deliver entry.
+
+## Spec v6.1 — Purchase multi-location receive (one entry per deliver)
+
+- **Purchase bill:** no `location_id` on header; lines from masters (`/products`, `/brands`, `/bag-types`), not stock-at-location.
+- **Each deliver submit** creates one `fulfillment_entries` row with `location_id`; same line can deliver at A, B, C until cumulative ≤ ordered.
+- **Purchase return:** `parent_entry_id` required — links return to one deliver entry; `location_id` read-only from parent; cap = parent qty minus prior returns on that entry.
+- **Line totals:** SUM all deliver entries minus returns on the line; rollup Partial/Delivered unchanged.
+- **Sales bills:** unchanged — location on header, stock-at-location line cascade.
+
+---
+
+# Spec v5 (below)
+
+Stack: React + Vite + TypeScript | FastAPI | PostgreSQL | `VITE_API_URL=http://localhost:8000`
+
+## Masters (unchanged)
+Products, Brands, Locations, Bag Types (incl. Loose), Customers (credit/debit balances), Inventory CRUD.
+
+## Spec v5.3 — Customer balances (opening on create only)
+
+**Problem fixed:** Manual edit of credit/debit on existing customers could disagree with finalized bills and payments (set-off caps, payment modes).
+
+### Rule
+
+| Action | credit_balance / debit_balance |
+|--------|--------------------------------|
+| **Create customer** (`POST /customers`) | Allowed — **opening balances only** (default 0). |
+| **Edit customer** (`PUT /customers/{id}`) | **Not allowed** — API ignores balance fields; UI read-only or hidden. |
+
+After create, balances change **only** via:
+
+- Bill finalize (`credit` on purchase, `debit` on sales)
+- Bill edit (`apply_balance_on_edit_replace`)
+- Payments (`cash`, `bank`, `debit`/`credit` balance modes, set-off on opposite bills)
+
+### API
+
+- `POST /customers` — accept optional `credit_balance`, `debit_balance` (≥ 0).
+- `PUT /customers/{id}` — do **not** update `credit_balance` or `debit_balance` from request body.
+
+### UI — Customers page
+
+- **New customer:** show Credit balance and Debit balance fields (optional, default empty/0) with hint: "Opening balance only — cannot change later except via bills and payments."
+- **Edit customer:** show balances **read-only** (formatted ₹) or hide inputs; do not send balance fields on save.
+
+### Delete guard (unchanged)
+
+- Cannot delete customer if `credit_balance > 0` or `debit_balance > 0`.
+
+### Tests
+
+- `POST` with opening balances persists values.
+- `PUT` with different balances leaves DB values unchanged.
+
+## Spec v5.4 — Payment void (reversal + set-off cascade)
+
+**Problem fixed:** Once recorded, payments could not be undone — wrong amount, mode, or set-off left bills and customer balances permanently wrong.
+
+### Behaviour
+
+- **Void** = soft-delete: set `voided_at` timestamp; payment remains in DB for audit but excluded from `amount_paid` / due calculations.
+- **Who can void:** Any authenticated user (same as create payment).
+- **Endpoint:** `POST /api/payments/{payment_id}/void`
+
+### Rules
+
+1. **Cannot void set-off child directly** — if `payment_mode == setoff` OR `linked_payment_id IS NOT NULL`, return 400: "Void the primary payment instead; linked set-off payments will be voided automatically."
+2. **Void primary balance payment** (`debit` on purchase, `credit` on sales): void all `linked_payments` (set-off rows on opposite bills) in the **same transaction**, then void primary.
+3. **Balance reversal** — call reverse only on **primary** payment (mirror of `apply_payment_balance`):
+   - Purchase cash/bank: `credit_balance += amount`
+   - Purchase debit: `credit_balance += amount`, `debit_balance += amount`
+   - Sales cash/bank: `debit_balance += amount`
+   - Sales credit: `debit_balance += amount`, `credit_balance += amount`
+   - Set-off rows: **no** balance change on void (same as create).
+4. **Bills affected:** Recalculate `amount_paid` and `payment_status` via `update_bill_payment_status` on every bill that had a voided payment (primary bill + each opposite bill with voided set-off).
+5. **Already voided:** 400 "Payment already voided."
+6. **Active payments only:** `_sum_paid(bill)` sums `payment.amount` where `voided_at IS NULL`.
+
+### API response
+
+`PaymentOut` includes optional `voided_at`. List endpoints exclude voided by default OR include with `voided_at` set (prefer: list active only; bill payment history shows voided struck-through if loaded).
+
+### UI
+
+- **Bill detail page:** Payments table (amount, mode, paid_at, voided badge). **Void** button on active non-setoff payments; confirm dialog; for primary with linked set-offs show: "This will also void N set-off payment(s) on opposite bill(s)."
+- **Payments list page:** Void column/button for primary payments; hide Void on set-off rows (or disabled with tooltip).
+- After void: refresh bill — due / paid / payment status and customer balances on payment page must match.
+
+### Unchanged
+
+- `POST /payments` create flow (v5.2 set-off).
+- Customer opening balances (v5.3).
+- No inventory effects from void.
+
+### Tests (automated)
+
+See `backend/tests/test_payments_void_v54.py` — scenarios A–D below.
+
+### Manual test checklist
+
+Document in `TEST_PLAN.md` section "Payment void v5.4" (user will run manually).
+
+## Spec v5.5 — Bill adjustment and final payable validation
+
+**Problem fixed:** Adjustment could make `grand_total` negative on bill CREATE. Customer credit/debit was updated with invalid totals. EDIT was partly protected when `grand_total < amount_paid`, but CREATE/finalize had no dedicated guard.
+
+### Formula (unchanged)
+
+- `subtotal = sum(line_total)`
+- `discount_amount = subtotal × discount_percent / 100`
+- `grand_total = subtotal - discount_amount - adjustment` (adjustment always subtracted; never added; must be >= 0)
+
+### Rules
+
+| Check | CREATE (`POST /api/bills`) | EDIT (`PATCH /api/bills/{id}`) |
+|-------|---------------------------|----------------------------------|
+| `adjustment >= 0` | Required | Required |
+| `grand_total >= 0` | Required before finalize / balance update | Required after recalc |
+| `grand_total >= amount_paid` | N/A (new bill) | Required (existing Spec v5 edit guard) |
+
+### API errors (HTTP 400)
+
+- Negative adjustment: `adjustment must be >= 0`
+- Negative final payable: `Final payable cannot be negative`
+- Edit below paid (unchanged): `Final payable cannot be less than amount already paid`
+
+### Backend
+
+- `finalize_bill` — after `recalc_bill_totals`, reject `grand_total < 0` before `apply_customer_balance_on_submit`
+- `validate_edit_bill` — also reject `grand_total < 0`
+- Pydantic: `BillFinalizeCreate.adjustment` and `BillEditFinalized.adjustment` validators `>= 0`
+
+### UI — Bill form (create & edit)
+
+- Adjustment input `min="0"`; block submit if adjustment &lt; 0 or live final payable &lt; 0
+- Edit: keep existing block when final payable &lt; amount paid
+- Show inline error when totals would be invalid
+
+### Tests
+
+`backend/tests/test_bill_adjustment_v55.py` — negative adjustment, excessive adjustment on create/edit, valid create.
+
+### Manual test checklist
+
+See `TEST_PLAN.md` section "Bill adjustment v5.5".
+
+## Bill submit (finalize)
+
+- `subtotal = sum(line_total)` where `line_total = ordered_quantity_kg × rate_per_kg`
+- `discount_amount = subtotal × discount_percent / 100`
+- `grand_total = subtotal - discount_amount - adjustment` (never add adjustment; adjustment must be >= 0)
+- **Spec v5.5:** `adjustment >= 0`; `grand_total >= 0` on CREATE/finalize (see Spec v5.5)
+- **Spec v12.7:** `bill_number` from locked `bill_number_counters` (`next_bill_number`); preview via `GET /api/bills/next-number` does not consume counter
+- No inventory change on submit
+- **Purchase:** `customer.credit_balance += grand_total` (once, same transaction)
+- **Sales:** `customer.debit_balance += grand_total` (once, same transaction)
+- `amount_paid = 0`, `payment_status = Unpaid`, delivery not delivered
+
+## Bill edit (finalized bills only) — Spec v5 Part F
+
+### Editable fields
+- **Lines:** `ordered_bags` (if NOT Loose) OR `ordered_loose_kg` (if Loose); `rate_per_kg`
+- **NOT editable:** product, brand, bag type, customer, location, delivered fields, bill date
+- **Bottom:** `discount_percent`, `adjustment` (subtracted from subtotal)
+- **Live recalc:** line totals, total_amount, discount_amount, grand_total, amount_due
+
+### Submit blockers (HTTP 400)
+1. `net_fulfilled_kg > new ordered qty` on any line → blocked (“return first” / below delivered)
+2. `new grand_total < amount_paid` → blocked (“Final payable cannot be less than amount already paid”)
+3. **Spec v5.5:** `adjustment >= 0`; `new grand_total < 0` → blocked (“Final payable cannot be negative”)
+
+### Customer balance on edit save
+Capture `previous_grand_total` before recalc. After totals updated (same transaction):
+- **Purchase:** `credit_balance = credit - previous_grand_total + new_grand_total`
+- **Sales:** `debit_balance = debit - previous_grand_total + new_grand_total`
+Quantize to `Decimal("0.01")`. Do not change the other balance field.
+
+### Status recalc (no inventory change)
+- **Line** `line_delivery_status` from `net_fulfilled_kg` vs NEW `ordered_quantity_kg` → Not Delivered | Partial | Delivered
+- **Bill** `order_delivery_status` rollup: all Delivered → Delivered; all Not Delivered → Not Delivered; else Partial
+- **Payment** `payment_status`: Unpaid if paid=0; Partial if 0&lt;paid&lt;grand_total; Paid if paid≥grand_total
+- Payment records unchanged; only status and `amount_due` derived from existing payments + new grand_total
+
+### API
+- `PATCH /api/bills/{id}` — body: `discount_percent?`, `adjustment?`, `lines[{ id, ordered_bags?, ordered_loose_kg?, rate_per_kg? }]`
+- Returns `BillOut` with updated balances and statuses
+
+### UI
+- Edit routes: `/sales-bills/:id/edit`, `/purchase-bills/:id/edit`
+- Bills list (v12.4): client-side payment status (segmented) and delivery status (dropdown); AND logic; Clear filters
+- Bill detail: payment void (v5.4); fulfillment entry history + void (v12.5)
+- No payment entry on edit form
+
+## Payments — Spec v5.2 Cross-bill set-off
+
+> **Void:** see Spec v5.4.
+
+When a customer has offsetting balances from unpaid purchase + sales bills, paying a purchase bill with **Debit balance** (or a sales bill with **Credit balance**) creates linked **set-off** payments on opposite-type bills in the same transaction.
+
+### Balance payment + set-off
+- **Purchase + Debit balance** or **Sales + Credit balance** requires `opposite_due_total > 0` (sum of due on finalized opposite-type bills for same customer).
+- Amount cap: `min(customer balance, bill due, opposite_due_total)`.
+- One transaction:
+  1. Create primary payment on the bill being paid.
+  2. `apply_payment_balance` on primary only (v5.1 E5 rules).
+  3. FIFO allocate to opposite bills; each slice → `Payment(mode=setoff, linked_payment_id=primary.id)`.
+  4. `apply_payment_balance` is a no-op for `setoff` mode.
+  5. `update_bill_payment_status` on all touched bills.
+- Cash/Bank: unchanged (single payment, no linked rows).
+- Users cannot POST standalone `setoff` payments.
+
+### API
+- `BillOut.opposite_due_total` — for payment UI.
+- `GET /api/payments/setoff-preview?bill_id=&amount=&payment_mode=` — FIFO allocation preview.
+- `PaymentOut.linked_payment_id`, `linked_payments` on POST response.
+
+### UI (PaymentPage)
+- Auto-fill balance modes: `min(balance, due, opposite_due_total)`.
+- Hide Debit balance when `opposite_due_total === 0` (purchase); hide Credit balance when `opposite_due_total === 0` (sales).
+- Show set-off allocation table when balance mode selected.
+- Payment list: mode `setoff` displayed as **Set-off**.
+
+### Manual tests (v5.2)
+1. Purchase 10k + sales 10k, debit payment 10k → both Paid, credit=0, debit=0, one debit + one setoff row.
+2. FIFO split across two sales bills when paying purchase with debit.
+3. Partial primary when opposite due &lt; primary due (e.g. 6k cap).
+4. Debit/Credit balance mode blocked when no opposite bills due.
+5. Cash payment creates no linked payments.
+
+## Payments — Spec v5.1 Part E
+
+> **Note:** Balance mode amount caps are superseded by **Spec v5.2** (`include opposite_due_total`). See Spec v5.2 Cross-bill set-off for balance mode caps and set-off rules.
+
+One payment per submit. `POST /api/payments`: `bill_id`, `amount`, `payment_mode`, `paid_at`.
+
+### Payment modes (dropdown)
+**Purchase bill:**
+- Always: Cash, Bank
+- **Debit balance** (`payment_mode=debit`) only if `customer.debit_balance > 0`
+
+**Sales bill:**
+- Always: Cash, Bank
+- **Credit balance** (`payment_mode=credit`) only if `customer.credit_balance > 0`
+
+No other modes in UI.
+
+### Amount field (PaymentPage)
+Load bill via `GET /api/bills/{id}` with `customer_credit_balance`, `customer_debit_balance`, `grand_total`, `amount_paid`.
+
+`due = grand_total - amount_paid`
+
+| Mode | Amount | Input |
+|------|--------|-------|
+| Purchase + Debit balance | `min(debit_balance, due, opposite_due_total)` — see Spec v5.2 | Disabled (read-only) |
+| Sales + Credit balance | `min(credit_balance, due, opposite_due_total)` — see Spec v5.2 | Disabled (read-only) |
+| Cash / Bank | User entry (empty initially) | Enabled; `0 < amount <= due` |
+
+### Customer balance on payment submit (E5)
+**Purchase — Cash/Bank:** `credit_balance -= amount`  
+**Purchase — Debit balance:** `credit_balance -= amount` **and** `debit_balance -= amount`
+
+**Sales — Cash/Bank:** `debit_balance -= amount`  
+**Sales — Credit balance:** `debit_balance -= amount` **and** `credit_balance -= amount`
+
+### Backend validation
+- `amount <= remaining due`; `amount > 0`
+- Purchase rejects `mode=credit`; sales rejects `mode=debit`
+- Purchase + debit: `debit_balance >= amount`
+- Sales + credit: `credit_balance >= amount`
+- Updates `amount_paid`, `payment_status` (Unpaid / Partial / Paid)
+
+### Manual tests (Part E)
+1. Purchase, debit=0 → Cash, Bank only; manual amount; max=due
+2. Purchase, debit=3000, due=5000 → Debit balance → amount=3000 disabled
+3. Purchase, debit=8000, due=5000 → Debit balance → amount=5000 disabled
+4. Sales, credit=0 → Cash, Bank only
+5. Sales, credit=2000, due=5000 → Credit balance → amount=2000 disabled
+6. Sales, credit=10000, due=5000 → Credit balance → amount=5000 disabled
+7. Cash payment reduces correct balance only
+8. Debit/Credit balance payment reduces both balances per E5
+9. `amount > due` rejected on cash/bank
+
+## Fulfillment
+
+Deliver/receive/return moves stock only; no customer balance change on fulfillment.
+
+- **Hub:** `/fulfillment` — filters by bill type, deliver/return tabs, per-line actions
+- **Sales deliver:** subtract at `bill.location_id`; **sales return (v6.2):** add at chosen `location_id`
+- **Purchase receive (v6.1):** `location_id` per deliver event; **purchase return:** `parent_entry_id` required
+- **Void (v12.5):** `POST /api/fulfillment/{entry_id}/void` — mistake undo; Return flow unchanged for real returns
+- **Bill detail:** per-line fulfillment history with Void on active entries; voided struck-through
+- Row locking (v12.3) on all stock mutations; active-only totals exclude `voided_at`
+
+## Manual test checklist (Part H)
+1. Purchase 50k submit → credit +50k
+2. Edit to 40k → credit net −10k
+3. Sales 50k submit → debit +50k; edit to 60k → debit +10k
+4. Line with 10 bags delivered: edit to 8 bags → blocked
+5. Paid 30k, edit final to 25k → blocked
+6. Partial delivery → edit qty up → delivery status Partial/Delivered recalc
+7. `amount_paid = grand_total` → Paid after edit if still equal
+
+## v12.21 — Accounts, Cash Book & Multi-Bank
+
+### Why
+The bills + bill-payments flow does not track non-bill money movements (rent, salary, EB bill, freight paid separately to a lorry owner, owner capital, withdrawals), the actual cash on hand, or per-bank balances. v12.21 introduces a dedicated **Accounts** module that sits next to Bills and reuses every existing balance-impacting record (bills, payments) without touching the `bills` table.
+
+### Sub-features
+- **A. Multi-bank accounts.** New `bank_accounts` master, `payments.bank_account_id` FK with migration backfill to a default `Bank`, bank picker shown wherever `payment_mode='bank'` is chosen.
+- **B. Cash Book + Accounts dashboard.** New `expense_categories` master (seeded; system rows locked), new `cash_book_entries` entity (expense / income / transfer), optional `bill_id` link on any entry, accounts dashboard with cash + per-bank balances and customer receivables/payables, per-customer running statement, voidable entries (v12.17), optimistic concurrency on edit/void (v12.13), idempotency on POST/PATCH (v12.15), server timestamps (v12.16), paginated lists (v12.18).
+
+### Data model additions
+| Table | Purpose | Notable columns |
+|-------|---------|-----------------|
+| `bank_accounts` | Bank master | `name` (unique CI), `account_number_last4`, `ifsc`, `opening_balance`, `opening_balance_at`, `is_default` (partial-unique TRUE), `is_active` |
+| `expense_categories` | Cash-book categories | `name` (active CI unique), `kind` (`expense|income|transfer`), `is_system` (locked), `is_active` |
+| `cash_book_entries` | Non-bill money movements | `entry_type`, `category_id`, `amount` (>0), `description`, `reference_no`, `bill_id` (nullable FK), `source_payment_mode` + `source_bank_account_id`, `dest_payment_mode` + `dest_bank_account_id` (transfer only), `entry_date`, `entry_at`, `voided_at`, `version` |
+| `book_settings` | Singleton (id=1) | `cash_opening_balance`, `cash_opening_balance_at`, `updated_at` |
+| `payments` | (altered) | `bank_account_id` (nullable FK; required IFF `payment_mode='bank'`) |
+
+`bills` table is intentionally untouched.
+
+### Validation
+- `cash_book_entries`: category `kind` must match `entry_type`. Transfers require both source and destination and must not be cash→cash or same-bank→same-bank.
+- `bank_accounts`: only one row may have `is_default=TRUE` at any time; default bank cannot be deleted or deactivated. Soft-delete (set `is_active=False`) rejected with **409** if any payment or cash-book entry references the bank.
+- `expense_categories`: `is_system=True` rows cannot be edited or deleted. Soft-delete rejected with **409** if any cash-book entry references the category. POST refuses `kind=transfer` (transfer categories are system-managed).
+- `payments`: `bank_account_id` is required when `payment_mode='bank'`; forbidden when `payment_mode` is anything else.
+
+### Balance formulas (SQL aggregation)
+- **Cash:** `book_settings.cash_opening_balance + Σ sales_cash − Σ purchase_cash + Σ income_cash − Σ expense_cash + Σ transfer_in_cash − Σ transfer_out_cash` (active only).
+- **Per-bank:** `bank.opening_balance + Σ sales_bank_to_this − Σ purchase_bank_from_this + Σ income_bank − Σ expense_bank + Σ transfer_in − Σ transfer_out` (filtered by bank id, active only).
+
+### APIs
+All new POST/PATCH/DELETE endpoints require `Idempotency-Key` (v12.15). All edit endpoints require `expected_version` (v12.13). All list endpoints return paginated `PageOut` (v12.18).
+
+```
+GET    /api/bank-accounts                              # paginated; active=true|false|all
+POST   /api/bank-accounts                              # idempotent
+PATCH  /api/bank-accounts/{id}                         # idempotent
+DELETE /api/bank-accounts/{id}                         # 409 if in use
+POST   /api/bank-accounts/{id}/make-default            # idempotent; atomic flip
+
+GET    /api/expense-categories                         # paginated; filter active, kind
+POST   /api/expense-categories                         # idempotent; kind in expense|income only
+PATCH  /api/expense-categories/{id}                    # idempotent; refuses if is_system
+DELETE /api/expense-categories/{id}                    # 409 if is_system or in use
+
+GET    /api/cashbook                                   # paginated; filters: entry_type, category_id, source_payment_mode, source_bank_account_id, bill_id, date_from, date_to, voided, search
+GET    /api/cashbook/{id}                              # single entry (for the edit form)
+POST   /api/cashbook                                   # idempotent
+PATCH  /api/cashbook/{id}                              # idempotent + expected_version
+POST   /api/cashbook/{id}/void                         # idempotent + X-Expected-Cash-Book-Version header
+
+GET    /api/accounts/summary                           # cash + per-bank + totals + recent entries
+GET    /api/accounts/customers                         # paginated; has_balance=any|positive|zero, search
+GET    /api/accounts/customers/{id}/statement          # paginated; date_from/date_to; running balance
+
+GET    /api/book-settings
+PATCH  /api/book-settings                              # idempotent — cash_opening_balance only
+
+GET    /api/bills/picker                               # paginated lightweight: id, bill_number, bill_type, customer_name, bill_date, grand_total
+GET    /api/bills/{id}/linked-entries                  # paginated cash book entries linked to this bill
+GET    /api/bills/{id}/void-precheck                   # can_void, block_reasons[], linked_active_entries_count + amount (v15.9)
+POST   /api/bills/{id}/void                              # idempotent + X-Void-Authorization + X-Expected-Bill-Version (v15.9)
+```
+
+### UI pages (sidebar group "Accounts")
+| Path | Page | Purpose |
+|------|------|---------|
+| `/accounts` | `AccountsDashboardPage` | `Stat` KPI tiles (3+2 grid: cash / bank / total money, then customer debit / credit); full-width bank table (Bank, A/C ending, IFSC, Opening, Closing); recent entries (Date, Type, Category, Payment, Bill, Amount) — single-line rows |
+| `/accounts/cashbook` | `CashBookListPage` | Aligned table (Date, Entry, Amount, Payment, Bill, Status, icon actions); filter grid with Clear filters |
+| `/accounts/cashbook/new` | `CashBookEntryFormPage` | Segmented control Expense / Income / Transfer; bill picker; bank dropdown |
+| `/accounts/cashbook/:id/edit` | `CashBookEntryFormPage` (editing) | Pre-filled; sends `expected_version` |
+| `/accounts/customers` | `CustomerBalancesPage` | Paginated; net credit / debit / net; search name + phones; click → statement |
+| `/accounts/customers/:id` | `CustomerStatementPage` | Date-ranged chronological events with running balance |
+| `/accounts/bank-accounts` | `BankAccountsMasterPage` | CRUD + make-default; **Opening balance** + **Closing balance** columns (live `balance` from list API) |
+| `/accounts/expense-categories` | `ExpenseCategoriesMasterPage` | CRUD; system rows locked with lock icon |
+| `/accounts/setup` | `BookSettingsPage` | One-time cash opening balance |
+
+### Cross-feature impact
+- **PaymentPage.tsx** — Bank Account dropdown appears only when `payment_mode='bank'`, defaults to the `is_default` bank and is required.
+- **PaymentsPage.tsx** — New **Bank** column shows the bank account name for bank-mode payments.
+- **BillDetailPage.tsx** — New **Linked Expenses** section in the Overview tab lists all non-voided cash-book entries with `bill_id = this bill`, totals them, and exposes an *Add linked expense* button that pre-fills `/accounts/cashbook/new?bill_id=…&category=Freight%20Charges`.
+- **Bill void (v15.9)** — Owner may void a finalized bill only when there are no active payments, no net fulfillment, and no active linked cash-book entries; otherwise **409** with a specific block reason. Void sets `status=voided`, reverses customer balance, and excludes the bill from lists/KPIs/reports. Linked cash-book entries are **not** auto-voided — void or unlink them first.
+
+### Freight workflow (canonical example)
+1. Enter purchase bill with **supplier portion only** (e.g. `rate = ₹28/kg`).
+2. From the bill detail page click **Add linked expense** → form is pre-filled with `bill_id` and category **Freight Charges**.
+3. Pay the lorry driver in cash → submit. Cash balance drops by the freight amount; the bill remains untouched and the expense is traceable from the bill.
+
+### Migration (Alembic `023_spec_v1221_accounts_cashbook.py`)
+1. Create `bank_accounts` (+ partial unique on `is_default = TRUE`); seed one row `name='Bank', is_default=TRUE`.
+2. Add `payments.bank_account_id` nullable FK + index; backfill `UPDATE payments SET bank_account_id = <seeded Bank> WHERE payment_mode='bank'`.
+3. Create `expense_categories` and seed: Rent, Wages, Salary, Loan Repayment, EB Bill, **Freight Charges**, Other Expenses, Self Withdrawal, Capital Increase, **Cash ↔ Bank Transfer** (system).
+4. Create `cash_book_entries` with indexes (`entry_date DESC`, `entry_type`, `category_id`, `source_bank_account_id`, partial `bill_id WHERE bill_id IS NOT NULL`, `voided_at`).
+5. Create `book_settings` and insert id=1 with zeros.
+6. `bills` table untouched. Downgrade reverses cleanly.
+
+---
+
+## Spec v13.2 — Session polish (Jun 2026)
+
+**Scope:** Backend amendments (v12.22) + frontend UX. Preserves all v12.x guards unless noted below.
+
+### A. Void authorization (`VOID_AUTH_PASSWORD`)
+
+Destructive void endpoints, **inventory quantity edit**, and **master DELETE** (v15.3) require header `X-Void-Authorization` with either:
+- `VOID_AUTH_PASSWORD` from `.env` (see `.env.example`), or
+- the signed-in user's **login password**.
+
+**Backend:** `app/core/void_auth.py` — `verify_void_authorization`  
+**Wired on:** payment void, fulfillment void, operations void (bag change / transfer / disposal), cash book void, inventory PUT when quantities change, master DELETE (products / brands / locations / bag types / customers — v15.3)  
+**Frontend:** `VoidConfirmDialog.tsx`, `voidAuthHeaders` / `idempotencyVoidAuthHeaders` in `api/client.ts`  
+**Tests:** `backend/tests/test_void_auth.py`; void tests pass auth headers via `idempotency_helpers`
+
+### B. Customer `alternate_phone` + search (migration 024)
+
+- Column `customers.alternate_phone` (nullable, indexed for search)
+- List/search matches **name**, **phone**, or **alternate_phone** (`customer_search.py`)
+- UI: `AddCustomerDialog`, `CustomersPage`, `PartyMasterCrud` — compact icon actions; Combobox phone hints on bill form
+- Address column: district + state summary with link to full address (`AddressSummaryLink`, `lib/address.ts`)
+
+### C. Bill create form (v13.2 UI + v12.22 API)
+
+- **Single scrollable page** — Header, Lines, Totals stacked (no pill tabs)
+- **Bill date** on create: date picker, default today, `max` = today (past dates allowed; future → 422)
+- `BillFinalizeCreate.bill_date` optional; omitted → `business_today()`
+- Submit still idempotent via `Idempotency-Key`
+
+### D. Inventory authorized edit (v12.22)
+
+- `GET /api/inventory/{id}/usage` — counts linked sales bills, fulfillment, bag changes, transfers, disposals, processing inputs
+- `PUT /api/inventory/{id}` — identity tuple immutable; **qty change** applies when `X-Void-Authorization` valid
+- `InventoryPage` — per-row Edit opens modal: warning banner with linked activity, qty fields, password field
+
+### E. Bank closing balance
+
+- `GET /api/bank-accounts` returns `BankAccountBalanceOut` (`balance` = closing per v12.21 formula)
+- `BankAccountsMasterPage` — Opening + Closing columns
+- `AccountsDashboardPage` — full-width bank table: Bank (name + inline badges) | A/C ending | IFSC | Opening balance | Closing balance
+
+### F. Accounts + Cash book layout polish
+
+- **Dashboard KPI tiles:** `Stat` component (same as main business dashboard); grid **3 + 2** — cash on hand, total bank, total money (row 1); customers owe me, I owe customers (row 2); hints in `footer`; amounts `whitespace-nowrap` (no cramped 5-column row)
+- **Dashboard tables:** full-width **stacked** cards (not side-by-side); shared `Table` component, zebra + compact rows
+- **Bank table columns:** Bank | A/C ending | IFSC | Opening balance | Closing balance — one value per cell; badges inline with bank name
+- **Recent entries columns:** Date | Type (badge) | Category | Payment | Bill | Amount — no stacked icon/category/bill in one cell
+- **`Table.tsx`:** numeric columns auto `whitespace-nowrap` + `tabular-nums` (prevents INR amounts wrapping under global `overflow-wrap: anywhere`)
+- **Cash book list:** consolidated Entry column (type badge + category + description); fixed column widths; compact icon Edit/Void; two-row filter bar + Clear filters
+
+### G. Other UI
+
+- **PaymentsPage** — reorganized row columns (Bill, Type, Customer+date, Amount, Payment mode+bank, actions)
+- **ProcessingJobPage** — activity log grouped into Input / Output / Waste sections with detailed columns
+- **API client** — `Content-Type` merge fix for POST bodies with custom headers (e.g. bank account create)
+
+### H. Environment
+
+```env
+VOID_AUTH_PASSWORD=admin-void   # .env.example; required for void/edit authorization fallback
+```
+
+### Manual tests (add to TEST_PLAN.md)
+
+1. Void payment without password → 403; with admin or login password → success
+2. Edit inventory qty without password → 403; with password → success; usage links shown when activity exists
+3. Bill create with yesterday's date → OK; tomorrow → 422
+4. Bank accounts list shows closing balance matching accounts dashboard per-bank total
+5. Customer search finds alternate phone number
+6. Accounts dashboard — KPI amounts on one line (3+2 `Stat` grid); bank and recent-entry tables full-width; each row single-line; opening/closing amounts right-aligned without wrap
+
+---
+
+## Spec v14.0 — Job Work + owner-tagged inventory
+
+### A. Business context
+
+- Material arrives for **processing only** (no purchase bill, no rate, no supplier credit on receive).
+- Sister traders (e.g. Sri Murugan / Sri Raghavendra) are separate customers with separate job-work stock buckets, same physical location.
+- Later: sales bill may charge processing rate and/or sell owned product to the same customer on one bill.
+- **Internal** customers (`party_type=internal`): mixed owned + job_work processing input allowed; **external**: API rejects mixed-owner batches.
+
+### B. Inventory (single table — extended)
+
+- Columns: `owner_type` (`owned` | `job_work`), `customer_id` (NULL for owned; required for job_work).
+- Unique keys (partial indexes): owned tuple `(product, brand, location, bag_type)`; job_work adds `customer_id`.
+- Migration `025_spec_v14_job_work`: existing rows → `owner_type=owned`, `customer_id=NULL`.
+- Purchase receive and opening stock → **owned only**. All stock mutations pass owner; JW receive → `job_work` + JW customer.
+
+### C. Job Work Order (JW module — not a bill)
+
+- Tables: `job_work_orders`, `job_work_lines`, `job_work_receipts`, `jw_number_counters`.
+- Number format: `JW-000001` (separate counter, same locking pattern as bill numbers).
+- One customer per order; lines: product, brand, bag type, ordered qty — **no rate, totals, payment, or customer balance on receive**.
+- Receive per line + location (like purchase v6.1); optional return to customer subtracts job_work stock only.
+- Void receipt: `X-Void-Authorization` + idempotency; reverses stock only.
+- **JW fulfillment is a separate UI module** from JW orders (and from bill fulfillment) so roles can grant warehouse ops without order admin.
+
+**API (orders):** `GET/POST /api/job-work`, `GET /api/job-work/{id}`, `GET /api/job-work/next-number`, `GET /api/job-work/customers/{id}/statement`.
+
+**API (fulfillment — same service, distinct routes):** `GET /api/job-work/fulfillment/orders?tab=receive|return`, `POST /api/job-work/receive`, `POST /api/job-work/return`, `POST /api/job-work/receipts/{id}/void`.
+
+### D. Processing — proportional owner allocation
+
+- Input lines: `owner_type`, `customer_id`, optional `job_work_order_id`.
+- On batch submit: compute input **kg** share per owner (`_owner_weights_from_inputs`).
+- **Single owner** (owned or one job_work customer): all outputs and balance returns go to that owner — no split.
+- **Mixed owners** (2+ owner keys; internal customers only): see **Spec v14.4** — bagged output lines use integer **bag** largest-remainder; loose lines, balance returns with loose kg, and waste fields use **kg** largest-remainder (`proportional_split_kg` at 0.001 kg).
+- Good output + unclean return → add to owner inventory rows (create if missing).
+- Waste → no inventory row; persisted in `processing_waste_allocations` per owner.
+- Mass-balance v9.3 and balance_reprocess v9.4 unchanged in spirit (owner-aware stock checks).
+
+### E. Sales bills
+
+- `BillLine`: `stock_source` (`owned` | `job_work`), `line_charge_type` (`product_sale` | `processing_charge`), optional `job_work_order_id`.
+- Job work deliver uses bill `customer_id` as stock owner; cannot deliver customer A's job_work on a bill to customer B.
+- Fulfillment subtracts correct owner bucket; blocks if insufficient in that bucket.
+- **v14.5.1:** Sell/release custody stock without processing — sales bill line `stock_source=job_work`, rate/kg (e.g. handling charge); see **Spec v14.5.1** for `BillFormPage` UX (no Charge type field; product list filtered to that customer's job work stock at bill location).
+- **Purchase bill money logic and table structure unchanged.**
+
+### F. Inventory UI
+
+- Group/filter by owner: Owned | Job · customer name badges.
+- Filters: owned only / job work only / by customer.
+- Summary: physical total vs owned vs in-custody job work.
+- **v14.2:** Summary vs Detail view toggle; collapsed location cards; calm detail tables (see Spec v14.2).
+
+### G. `prune_zero_inventory`
+
+- After `subtract_inventory`, if `total_quantity_kg <= 0`, the inventory row is deleted (`operations.prune_zero_inventory`). Used by operations and job-work return paths.
+
+### H. Frontend routes (three fulfillment surfaces)
+
+| Surface | Routes | Actions |
+|---------|--------|---------|
+| **JW orders** | `/job-work`, `/job-work/new`, `/job-work/:id` | Create/view orders; **activity log** (receive + return events); link to fulfillment |
+| **JW fulfillment** | `/job-work/fulfillment` | Receive, return to customer, void receipt (`JobWorkFulfillmentPage`, `JobWorkFulfillmentActionDialog`) |
+| **Bill fulfillment** | `/fulfillment` | Sales deliver / purchase receive only (unchanged) |
+
+Sidebar **Job work** group: Job work orders · Job work fulfillment. Inventory group: **Bill fulfillment**.
+
+Also updated: `InventoryPage`, `ProcessingJobPage`, `BillFormPage`, `BillDetailPage`.
+
+### I. Role-based access (future)
+
+Suggested permission keys: `job_work.orders` (planning), `job_work.fulfillment` (receive/return/void), `bills.fulfillment` (existing bill flow). No auth enforcement in v14.0 — routes are separated for clean policy attachment.
+
+### J. Tests
+
+- `backend/tests/test_job_work_v14.py` — JW receive (no balance change), proportional 80/20 split, external mixed batch 400, sales deliver owned vs job_work, migration owned default, void receipt.
+
+### K. Migration chain
+
+| Revision | Spec | Change |
+|----------|------|--------|
+| 025 | v14.0 | owner inventory, JW tables, bill/processing owner fields, waste allocations |
+| 026 | v14.1 | `owner_type` + `customer_id` on bag_changes, product_transfers, stock_disposals |
+| 027 | v14.3 | `job_work_receipts.entry_type` (`receive` \| `return`) |
+| 028 | v14.6 / v14.6.1 | `processing_jobs.output_allocation_mode` + `single_allocation_owner_*` |
+
+---
+
+## Spec v14.1 — Owner-tagged operations (bag change, transfer, disposal)
+
+### A. Scope
+
+Extend v7 operations so bag change, product transfer, and stock disposal respect the same owner buckets as processing input lines (`owned` | `job_work` + customer).
+
+### B. API / service
+
+- Create bodies inherit `StockOwnerMixin`: `owner_type` (default `owned`), `customer_id` (required when `job_work`).
+- `create_bag_change`, `create_product_transfer`, `create_stock_disposal` pass owner into `inventory_row_key`, `subtract_inventory`, `add_inventory`.
+- Bag change **TO** lines always use the same owner as FROM (not separate per line).
+- Void paths reverse using stored `owner_type` / `customer_id` on the operation record.
+- List/detail responses include `owner_type`, `customer_id`, `customer_name`.
+
+### C. Frontend
+
+- **Bag change**, **Product transfer**, **Stock disposal** forms: Stock owner (Owned | Job work) + customer select (required for job work) — shared `StockOwnerFields` component, same pattern as `ProcessingJobPage` input lines.
+- `filterStockForOwner` / `stockOwnerFilter` before product/brand/bag dropdowns; `stockRow` and `stockExceedsMessage` use owner filter.
+
+### D. Backward compatibility
+
+- Omitting `owner_type` defaults to `owned`; existing owned operations unchanged.
+- Migration `026_spec_v141_operations_owner`: adds columns with `server_default='owned'`.
+
+### E. Tests
+
+- `backend/tests/test_operations_v141.py` — job_work bag change / transfer / disposal; owned API default regression; JW ops do not touch owned stock.
+- `backend/tests/test_operations_void_v1217.py` — owned void regression unchanged (default owner).
+
+---
+
+## Spec v14.2 — Inventory readability
+
+### A. Scope
+
+Frontend presentation only on `InventoryPage.tsx`. No backend, schema, or API changes required (uses existing `GET /api/inventory?search=`).
+
+### B. View modes (`localStorage` key `v14.inventory.view`)
+
+| Mode | Default | Behaviour |
+|------|---------|-----------|
+| **Summary** | yes | Per-location cards; collapsed by default (`v14.inventory.collapsedLocations`); owner rows (Owned + each job-work customer) with total kg; expand owner → compact product lines |
+| **Detail** | | One table per location; columns **Owner · Product · Brand · Bag type · …**; Owner and Product **rowspan per product block** (v14.2.1); calmer styling (no location gradient alternation, no product gradient cells, neutral column headers) |
+
+### C. Filters & discovery
+
+- **Stat tiles** (page totals): Owned kg, Job-work custody kg, Locations count, Low-stock line count — click applies filter (owner chip, clear location, low-stock only).
+- **Quick chips:** All · My stock (owned) · Job work (+ existing customer dropdown).
+- **Search:** product / brand / customer name — API `search` param plus client filter on `customer_name`.
+
+### D. Preserved behaviour
+
+- Owner badges and `CustomerDetailLink` for job work.
+- Low-stock amber highlight (total kg &lt; 500).
+- Pagination, column filters, add/edit stock modals unchanged.
+
+### E. Tests
+
+- Manual checklist in `TEST_PLAN.md` § v14.2 (8 items) + § v14.2.1 (3 items).
+
+---
+
+## Spec v14.2.1 — Inventory detail Owner · Product grouping (amends v14.2)
+
+### A. Scope
+
+Frontend only — `frontend/src/components/inventory/InventoryStockViews.tsx` (`OwnerProductGroupedTable`). No API or schema changes.
+
+### B. Detail view table layout
+
+| Column order | Grouping |
+|--------------|----------|
+| **Owner** (1st) | `rowspan` = number of brand/bag lines for **that product only** |
+| **Product** (2nd) | Same `rowspan` as Owner on the same block |
+| Brand, Bag type, Bags, Loose kg, Total kg, Actions | One row per inventory line |
+
+- Each product under an owner is a **separate block**: Owner and Product cells sit beside only that product’s detail rows (e.g. 3 brand lines → both cells span 3 rows).
+- **Not** one Owner cell spanning all products for that owner at the location.
+- **Summary** view unchanged: owner shown in collapsible section header; nested table has Product · Brand · Bag type (no Owner column).
+
+### C. Tests
+
+Manual checklist in `TEST_PLAN.md` § v14.2.1.
+
+---
+
+## Spec v14.3 — JW quantity display + activity log
+
+### A. Problem
+
+Gross `received_*` / `returned_*` aggregates on `job_work_lines` are correct for formulas but confusing in the main UI (e.g. Ordered 247 vs Received 484 after re-receive). Returns were not stored as per-event rows — only line aggregates.
+
+### B. UI — simplified line tables (no backend rule change)
+
+**Job Work order detail** (`/job-work/:id`):
+
+- Line table columns: Product, **Ordered**, **In custody**, **Remaining** (when order open). **Remove** standalone Received / Returned columns.
+- Optional muted subline under In custody when `returned_bags > 0` or `returned_quantity_kg > 0`: "Returned to customer: …" via `formatJwPrimaryQty`.
+- Top stats: **Ordered**, **In custody** (net kg), optional **Remaining** when > 0. **Remove** gross Received stat.
+- Tooltip: **Remaining** = ordered − total receive events + total returns (returns reopen receive allowance).
+
+**JW fulfillment** (`/job-work/fulfillment`):
+
+- Receive tab: Product, Ordered, **Remaining** — no Received column.
+- Return tab: Product, Ordered, **In custody** — no Returned column.
+
+### C. Backend — persist returns in activity log
+
+Migration `027_spec_v143_jw_activity_type`:
+
+- `job_work_receipts.entry_type` enum: `receive` | `return` (NOT NULL, default `receive`); backfill existing → `receive`.
+- Index `(line_id, entry_type, received_at)` for history sort.
+- Table name unchanged; API/docs refer to "JW line activity / fulfillment events".
+
+**`return_job_work_to_customer`:** after `subtract_inventory`, INSERT receipt with `entry_type='return'`; recalc `returned_*` from non-void return events (`_recalc_line_returned`, mirrors `_recalc_line_received`).
+
+**`receive_job_work`:** sets `entry_type='receive'` (default).
+
+**`void_job_work_receipt`:** only when `entry_type='receive'` (400 on return). Reverses stock + recalc receive aggregates. Return events immutable in v14.3.
+
+**API serialization:** `_serialize_receipt_summary` includes `entry_type`. Order detail + fulfillment payloads expose unified receipts/activity sorted `received_at` DESC. Line API keeps computed `custody_*`, `remaining_receive_*`, `net_received_*`.
+
+### D. UI — activity log with labels
+
+- Section title: **Activity log** (was "Receipt history").
+- Each row: **Received** (success) or **Returned** (warning) badge from `entry_type`; product · qty; location · date/time.
+- Void button + Voided badge **only for receive** entries.
+- Empty state: "No receive or return activity yet."
+- Component: `JwActivityLog.tsx`; types in `frontend/src/api/client.ts`.
+
+### E. Tests
+
+- `backend/tests/test_job_work_v143.py` — receive 247 → return 237 → receive 237; asserts aggregates, 3 activity events, void blocked on return.
+
+### F. Migration chain (addendum)
+
+| Revision | Spec | Change |
+|----------|------|--------|
+| 027 | v14.3 | `job_work_receipts.entry_type`; return events in activity log |
+
+---
+
+## Spec v14.4 — Mixed processing bag vs kg owner split
+
+### A. Problem
+
+On mixed-owner batches, bagged outputs were split by kg then floored to bags (`_kg_to_bags_loose`), leaving fractional residue as loose kg instead of clean whole-bag allocation (e.g. 113 bags at 76.27% / 23.73% should be **86 owned + 27 job_work**, not 112 bags + scattered loose).
+
+### B. Weight basis (unchanged)
+
+Input owner share = each owner's total input **kg** / all owners' input kg. Not bag count when bag weights differ.
+
+### C. Split rules
+
+| Line type | Mixed-batch method |
+|-----------|-------------------|
+| Bag type `is_loose` OR `bag_count=0` and `loose_kg>0` | `proportional_split_kg` on total kg (0.001 kg, largest-remainder) |
+| Bagged line (`bag_count>0`, not loose) | `proportional_split_bags` on integer `bag_count`; line `loose_kg` split separately via `proportional_split_kg` |
+| Waste fields (dust, stone, sack, misc) | kg split per owner → `processing_waste_allocations` (no inventory row) |
+
+**Single owner:** no split — user's `bag_count` / `loose_kg` go directly to that owner.
+
+### D. Implementation
+
+- `services/owner_allocation.py` — `proportional_split_bags(total_bags, weights)` (largest-remainder on 1-bag units; sum equals `total_bags`).
+- `services/processing.py` — `_split_processing_line_across_owners` for mixed output/balance lines; `_owner_weights_for_job_allocation` sums input kg across **all job batches** plus pending lines (**v14.4.1**); enum-safe `_owner_key_from_stored_input` (**v14.4.2**).
+- **No migration** — logic-only.
+
+### E. Example (tests)
+
+- Input: 90 bags owned + 28 bags job_work (50 kg/bag) → 76.27% / 23.73% kg weights.
+- Output 113 bags raj agro → **86 owned + 27 job_work**.
+- Balance return 90 kg loose → **68.644 kg owned + 21.356 kg job_work** (0.001 precision, sum = 90).
+
+### F. Tests
+
+- `backend/tests/test_processing_v144_mixed_bag_split.py` — 113-bag example, loose balance, owned-only, waste kg split.
+- `backend/tests/test_job_work_v14.py` — `test_mixed_80_20_batch_proportional_split` regression (8 JW + 2 owned → 10 out).
+
+---
+
+## Spec v14.4.1 — Cumulative owner weights for separate input/output batches
+
+### A. Bug
+
+Processing UI submits **input batch** and **output batch** separately. Output batch sends `input_lines: []`. `_apply_batch` previously used `_owner_weights_from_inputs(db, input_lines)` only → empty weights → all output and waste defaulted to **owned**.
+
+### B. Fix
+
+`_owner_weights_for_job_allocation(db, job, pending_input_lines)`:
+
+1. Query all `ProcessingInputLine` rows for the job (via `ProcessingBatch.job_id`) — not only `job.batches` on the in-memory instance (avoids stale session cache after prior commits).
+2. Merge pending `input_lines` from the current submit.
+3. Use merged weights for mixed split on output, balance return, and waste.
+4. Read stored `owner_type` via `_owner_type_value` (**v14.4.2**) so job_work lines are not collapsed into owned.
+5. **v14.5:** cumulative weights apply only within allowed input batches; once job is `mixed`, input is locked and ratio is fixed from recorded input totals.
+
+`load_processing_job` uses `populate_existing=True` + `.unique()` so multi-batch jobs reload correctly after separate batch submits.
+
+If output/balance/waste present and `len(owner_weights) == 0` → `ValueError("Cannot allocate output: no input recorded on this job yet")`.
+
+### C. UI
+
+`ProcessingJobPage` activity log — **Owner** column on output and balance-return rows (matches input log).
+
+### D. Tests
+
+- `test_mixed_split_output_only_batch` — input-only batch then output-only batch → 86 owned + 27 JW bags.
+- `test_mixed_waste_split_output_only_batch` — waste split per owner after input-only batch.
+
+### E. No migration
+
+Logic-only amendment to v14.4.
+
+---
+
+## Spec v14.4.2 — Fix job_work owner detection on stored input lines
+
+### A. Bug (confirmed)
+
+Input Summary shows correct owned + job_work rows in API, but output Summary and inventory post **100% owned**. Root cause: `_owner_key_from_stored_input` used `line.owner_type == InventoryOwnerType.job_work`, which fails when PostgreSQL/SQLAlchemy loads enum values as strings → job_work kg merged into owned → `len(owner_weights) <= 1` → no proportional split.
+
+### B. Fix (`processing.py`)
+
+- `_owner_type_value(owner_type)` — normalize enum or string to `"owned"` | `"job_work"`.
+- `_owner_key_from_stored_input` — compare via `_owner_type_value`; require `customer_id` for job_work.
+- `_owner_weights_for_job_allocation` — after merge, if stored lines include **both** owned and job_work but `len(weights) == 1` → `ValueError` (weights collapsed).
+- `_apply_batch` — when mixed (`len(owner_weights) >= 2`) and job_work input kg > 0 but no job_work `ProcessingOutputLine` created → `ValueError`.
+- Retains **v14.4.1** cumulative job input query (separate input/output batch UI workflow).
+
+### C. Multi-owner (owned + N internal JW customers)
+
+Each `("job_work", customer_id)` is a distinct owner key. Proportional bag/kg split runs across **all** owners (2, 3, or more). External customer in a mixed batch still rejected (v14.0).
+
+### D. Inventory enum safety (`inventory_lock.py`, `fulfillment.py`)
+
+`get_inventory_row_for_update` / `get_or_create_inventory_row_for_update` / `get_inventory_row` compare `Inventory.owner_type == InventoryOwnerType(ot)` — not raw string in WHERE.
+
+### E. API + UI
+
+- `serialize_processing_job` → `owner_allocation_weights`: `[{owner_type, customer_id, customer_name?, input_kg, share_pct}]`.
+- `ProcessingJobPage` output tab — banner from cumulative input mix (supports 3+ owners); single-owner note when applicable.
+- `ProcessingInputLineIn` — `owner_type=job_work` requires `customer_id`.
+
+### F. Tests
+
+`backend/tests/test_processing_v1442_owner_split.py` — enum coercion, 85+28 two-step workflow, 3-owner bag + waste split, external regression.
+
+### G. No migration
+
+Logic-only. **Restart backend** after deploy. Verify on a **new** processing job (old jobs are not retroactively re-split).
+
+---
+
+## Spec v14.5 — Processing job owner-mode rules (mixed input lock + single-owner exception)
+
+### A. Owner keys (unchanged from v14.0 / v14.4.2)
+
+- `owned` → `("owned", None)`
+- Each internal `job_work` customer → `("job_work", customer_id)` (distinct keys)
+- External customer in a mixed input batch → reject (v14.0)
+
+### B. Job modes (derived — no new DB columns)
+
+| Mode | Definition |
+|------|------------|
+| **`single_owner`** | All recorded input lines share exactly one owner key |
+| **`mixed`** | Input lines span 2+ owner keys |
+
+### C. How a job becomes `mixed`
+
+Either:
+
+1. **Batch 1** (first batch with input lines) has 2+ owner keys in its `input_lines`, OR
+2. **Exception:** Batch 1 is single-owner, **no output recorded yet**, and a **later batch** submits input with a **different** single owner → job becomes `mixed`.
+
+“Output recorded” = any prior batch has output lines, balance-return lines, or any waste kg > 0.
+
+### D. Input rules after mode is known (v14.6.1 amends mixed)
+
+| Job state | More input allowed? |
+|-----------|---------------------|
+| **`mixed` + proportional** | **No** — input fully closed; only output / balance return / waste |
+| **`mixed` + single owner 100%** | **Yes** — only from **chosen allocation owner** (before or after output) |
+| **`single_owner`**, no output | Same owner: yes. Different owner: yes **once** (exception) → `mixed` + allocation required on that batch |
+| **`single_owner`**, output exists | Only **same owner** as existing input |
+| **`single_owner`**, stays single | More input batches with **same owner** anytime (cumulative) |
+
+### E. Mixed input shape
+
+- Only the **first input-bearing batch** may contain multiple owners in one batch.
+- Batch 2+ may add a **different single owner** (exception path) but **not** 2+ owners in one batch.
+
+### F. Output allocation (v14.6.1 amends mixed jobs)
+
+- **`mixed` job:** default **proportional** split (v14.4 bags + kg) using cumulative input kg per owner; operator chooses proportional vs **single owner 100%** on the **input batch that creates the mix** (see **Spec v14.6.1**). Once chosen, mode is locked for the job.
+- **`single_owner` job:** 100% to that owner (unchanged).
+- Retains v14.4.1 cumulative weights + v14.4.2 enum-safe owner detection.
+
+### G. Backend (`processing.py`)
+
+Helpers: `_job_has_any_output`, `_job_input_owner_keys`, `_job_owner_mode`, `_job_input_fully_locked`, `_job_allowed_input_owner_key`, `_batch_will_create_mix`, `_resolve_and_lock_allocation_on_input`, `_first_input_batch_number`, `_validate_input_batch_allowed`.
+
+`_validate_input_batch_allowed` runs in `_apply_batch` **before** inventory mutation when `input_lines` non-empty.
+
+`validate_processing_owner_mix` extended: 2+ owners in one batch when not first input batch → reject.
+
+Validation messages:
+
+- Mixed job, further input: `"Mixed-owner jobs do not allow further input. Create a new processing job for additional material."`
+- Single-owner + output + different owner: `"Cannot add a different owner after output has been recorded on this job."`
+- 2+ owners when not first input batch: `"Mixed owners are allowed only on the first input batch."`
+
+### H. API + UI
+
+`serialize_processing_job` exposes:
+
+- `owner_mode`: `"single_owner"` | `"mixed"`
+- `input_locked`: boolean
+- `has_output`: boolean
+- `input_rules_hint`: string for banners
+- `owner_allocation_weights` (existing)
+
+`ProcessingJobPage`: banners from `input_rules_hint`; disable input tab when `input_locked`; lock owner selector when `single_owner` + `has_output`.
+
+### I. Tests
+
+`backend/tests/test_processing_v145_owner_mode.py` — mixed batch 1 lock, same-owner cumulative input, single-owner exception path, output-before-different-owner reject, second-batch mixed reject, external regression, separate input/output batch regression.
+
+### J. No migration
+
+Logic-only. **Restart backend** after deploy. Test on a **new** processing job.
+
+---
+
+## Spec v14.5.1 — Sales bill job work stock UX + display precision
+
+### A. Problem
+
+Users sell or charge for customer custody stock via sales bills (`stock_source=job_work`, v14.0) without processing. Issues fixed:
+
+1. Selecting **Job work** stock source left the product dropdown empty (stock source reset on product pick; customer_id strict-match failures).
+2. **Charge type** dropdown was confusing — billing is always `qty × rate_per_kg`; charge type is metadata only.
+
+### B. Sales bill form (`BillFormPage`)
+
+- **Stock source** per line: `Owned stock` | `Job work (customer custody)`.
+- **Removed** Charge type UI. API still receives `line_charge_type`: `job_work` lines → `processing_charge`; `owned` → `product_sale`.
+- Product / brand / bag type options from **scoped stock** at bill location via `filterStockForOwner` (`lib/stockAtLocation.ts`) — bill **customer** must match job work `customer_id` on inventory rows.
+- Preserve `stock_source` when resetting product/brand/bag fields on a line.
+- If job work selected but no custody stock for bill customer at location: show which customer(s) **do** have stock there.
+- Changing bill customer clears line rows (confirm) so stock source does not desync.
+
+### C. Direct job work sale workflow (no processing)
+
+1. Customer has job work inventory (JW receive).
+2. Sales bill → same **customer** + **location** + line `stock_source=Job work` + rate/kg + qty.
+3. Bill fulfillment deliver → subtracts that customer's `job_work` inventory row.
+
+JW order `returned_*` aggregates are **not** updated by sales deliver (use JW fulfillment return if tracking custody on the order).
+
+### D. API (`GET /inventory/stock-at-location`)
+
+Optional query params: `owner_type` (`owned` | `job_work`), `customer_id`. Eager-loads `customer` for `customer_name` on rows.
+
+### E. Display precision (UI)
+
+Qty and % shown with **2 decimal places** (`formatQtyKg`, `displayQty`, processing summaries/inputs). Backend calculation precision unchanged (0.001 kg where applicable).
+
+### F. No migration
+
+Frontend + minor inventory list filter — no schema change.
+
+---
+
+## Spec v14.5.2 — Fulfillment audit log + JW deliver stock fix + inventory UX
+
+### A. Fulfillment audit log
+
+**Problem:** Deliver, receive, and return events were only visible per bill on bill detail. No cross-bill audit trail.
+
+**API:** `GET /api/fulfillment/audit` — paginated `FulfillmentAuditOut` rows (entry fields + `bill_id`, `bill_number`, `bill_type`, `bill_version`, `customer_name`, `product_name`, `brand_name`, `bag_type_name`, `is_loose`, `bill_location_name`, `stock_source` on sales lines).
+
+**Query filters:** `bill_type` (`all` | `purchase` | `sales`), `entry_type` (`all` | `deliver` | `return`), `status` (`all` | `active` | `voided`), optional `bill_number` (partial match).
+
+**Event labels (UI):** sales + `deliver` → **Deliver**; purchase + `deliver` → **Receive**; either + `return` → **Return**.
+
+**UI:** `FulfillmentHistoryPage` at `/histories/fulfillment` (alias `/fulfillment/history` → redirect). Sidebar **History → Bill fulfillment**; **Audit log** button on `/fulfillment`. Columns: date, event, bill, customer, product, location, qty, parent entry ref, vehicle/notes, status, actions (view bill, void active entries with password).
+
+**Tests:** `backend/tests/test_fulfillment_audit.py`.
+
+### B. Job work stock on hand in deliver dialog (bug fix)
+
+`serialize_fulfillment_line` previously looked up **owned** inventory for `stock_bags` / `stock_kg` on sales lines. Job-work bill lines showed **0** stock and blocked deliver incorrectly.
+
+**Fix:** use `_line_stock_owner(line, bill)` when resolving inventory for stock-on-hand display (same as `apply_stock_change`).
+
+### C. Inventory table UX
+
+**Actions header:** widen column; `whitespace-nowrap` on inventory stock table headers (`inventory-stock-table`) so **Actions** does not wrap to multiple lines.
+
+**Zero kg rows:** client-side filter on `InventoryPage` — rows with `total_quantity_kg <= 0` **hidden by default**. **Zero kg rows** chip (with All / My stock / Job work) includes them. **Clear filters** resets chip off.
+
+### D. Shared helpers
+
+`frontend/src/lib/fulfillmentLabels.ts` — `fulfillmentEntryLabel`, `fulfillmentQtyLabel` (used by bill detail + audit log).
+
+### E. No migration
+
+Frontend + audit API + fulfillment serialize fix — no schema change. **Restart backend** after deploy.
+
+---
+
+## Spec v14.6 — Mixed processing output allocation choice (proportional vs single owner)
+
+> **Superseded by v14.6.1** for allocation timing (input batch, not output batch) and conditional input lock. Migration `028` and column names unchanged. Retained here for history.
+
+Builds on **v14.5** (`owner_mode`, input lock) and **v14.4** bag/kg split. Controls **inventory owner attribution only** — operator handles pricing/billing on sales bills manually.
+
+### A. When this applies
+
+| `owner_mode` | Allocation UI | Behavior |
+|--------------|---------------|----------|
+| **`single_owner`** | Hidden | Always **100%** to that owner (unchanged v14.5) |
+| **`mixed`** | **Required on first output batch** | User chooses proportional (default) or single owner 100%; **locked** for all later output batches |
+
+### B. User choice (mixed jobs, first output batch)
+
+**Option A — Use proportion (default)**
+
+- Split outputs using v14.4 / v14.4.2: bagged lines → `proportional_split_bags`; loose output, balance return, waste → `proportional_split_kg`.
+- Weights = cumulative input kg per owner from all allowed input batches (v14.5 / v14.4.1).
+
+**Option B — No proportion (single owner 100%)**
+
+- **100%** of every output line, balance return, and waste allocation goes to **one** chosen owner.
+- **Default selection:** owner with **highest input kg** (`_default_single_allocation_owner`).
+- **User may override** dropdown: Owned or any `job_work` customer present in job input.
+
+### C. Tie-break (highest input kg equal)
+
+1. Higher `input_kg` wins.
+2. If tie → **`owned`** wins over `job_work`.
+3. If tie between two `job_work` customers → higher `customer_id` (deterministic).
+
+### D. Locking
+
+- On first mixed-job batch with output / balance return / waste: persist `output_allocation_mode` + `single_allocation_owner_*` on the job.
+- Subsequent output batches: must use stored mode; reject conflicting body with `"Output allocation mode is locked for this job."`
+
+### E. Database (migration `028_spec_v146_output_allocation.py`)
+
+`processing_jobs` columns:
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `output_allocation_mode` | enum `proportional` \| `single_owner` | NULL until first mixed output batch saved |
+| `single_allocation_owner_type` | `inventory_owner_type_enum` | NULL unless mode = `single_owner` |
+| `single_allocation_customer_id` | FK `customers.id` nullable | Required when `job_work`; NULL when `owned` |
+
+CHECK: mode `single_owner` ⇒ valid owner tuple; mode `proportional` ⇒ single-owner columns NULL.
+
+Backfill: existing jobs leave NULL; mixed output submit without mode → `"Choose output allocation: proportional or single owner."`
+
+### F. Backend
+
+- `ProcessingOutputAllocationMode` enum; columns on `ProcessingJob`.
+- `ProcessingBatchSubmit`: optional `output_allocation_mode`, `single_allocation_owner_type`, `single_allocation_customer_id` (validators: `job_work` requires `customer_id`; `owned` forbids it).
+- `ProcessingJobOut`: `output_allocation_mode`, `single_allocation_owner_type`, `single_allocation_customer_id`, `single_allocation_customer_name`, `output_allocation_locked`, `output_allocation_hint`.
+- `processing.py`: `_default_single_allocation_owner`, `_effective_owner_weights_for_output`, `_resolve_and_lock_output_allocation`; output/balance/waste split uses effective weights; input subtraction unchanged.
+- Validation: mixed first output without mode; single owner not in job input owners; mode change after lock.
+
+### G. Frontend
+
+`ProcessingJobPage` Output tab when `owner_mode === "mixed"`:
+
+- Locked: read-only badge + `output_allocation_hint`.
+- Unlocked: segmented **Use proportion** / **Single owner 100%**; owner dropdown when single; confirm dialog for single-owner submit.
+- Summary tab shows `output_allocation_hint`.
+
+### H. Tests
+
+`backend/tests/test_processing_v146_output_allocation.py` — proportional regression, single-owner default/override, lock after first output, waste follows mode, input-then-output workflow, single-owner job unchanged.
+
+Regression: `test_processing_v145_owner_mode.py`, `test_processing_v1442_owner_split.py` (pass `output_allocation_mode: proportional` on mixed output batches).
+
+### I. Billing note (document only)
+
+Single-owner allocation does **not** auto-create sales lines; activity log / job summary show chosen mode for audit.
+
+### J. Deploy
+
+Run `alembic upgrade head`. **Restart backend**. Test on a **new** mixed processing job.
+
+---
+
+## Spec v14.6.1 — Mixed processing allocation on input batch (amends v14.6)
+
+Amends **v14.6**: move mixed-job allocation choice from **first output batch** → **mixed-creating INPUT batch**. Add conditional input lock (more input allowed for 100% owner only). Reuses migration `028` columns — **no new migration**.
+
+### A. Owner keys
+
+- `owned` → `("owned", None)`
+- Each internal `job_work` customer → `("job_work", customer_id)` (distinct keys)
+- External customer (`party_type=external`) in a mixed input batch → reject: `"Mixed-owner processing is not allowed for external customers"`
+
+### B. Job modes (derived, v14.5)
+
+- **`single_owner`** — all input lines share one owner key
+- **`mixed`** — input spans 2+ owner keys
+
+### C. How job becomes mixed
+
+**Path A:** First input batch has **2+ owners** in same batch (e.g. 85 owned + 23 JW).
+
+**Path B:** Batch 1 single-owner, **no output yet**, later batch adds **different single owner** (e.g. Batch 1 owned → Batch 2 JW only).
+
+**Output recorded** = any prior batch has output lines, balance-return lines, or waste kg (dust/stone/sack/misc) > 0.
+
+### D. Mixed input shape (v14.5)
+
+- **2+ owners in one batch** → **first input batch only**
+- Later input batches → **one owner per batch** only
+- Error: `"Mixed owners are allowed only on the first input batch."`
+
+### E. Single-owner input (v14.5, unchanged)
+
+| Situation | More input? |
+|-----------|-------------|
+| No output yet, same owner | **Yes** |
+| No output yet, different single owner once | **Yes** → becomes **mixed** → allocation required on that batch (§F) |
+| Output exists, same owner | **Yes** |
+| Output exists, different owner | **No** — `"Cannot add a different owner after output has been recorded on this job."` |
+
+### F. Allocation choice — on INPUT batch that creates mix
+
+| `owner_mode` | When asked |
+|--------------|------------|
+| **`single_owner`** | **Never** — always 100% to that owner |
+| **`mixed`** | **Required on the input batch that creates the mix** — **NOT on output batches** |
+
+**Batch creates mix** when after submit job will have 2+ owner keys (Path A or Path B).
+
+**Option A — Split by input proportion (DEFAULT)**
+
+- Split all outputs, balance returns, waste via v14.4 / v14.4.2 (`proportional_split_bags` / `proportional_split_kg`)
+- Weights = cumulative input kg per owner
+- **Input after lock: FULLY CLOSED** — `"Mixed-owner jobs do not allow further input. Create a new processing job for additional material."`
+
+**Option B — Single owner 100%**
+
+- **100%** of outputs, balance returns, waste → chosen owner
+- **Input after lock: OPEN for chosen owner ONLY** (before or after output)
+- Reject other owners: `"Only {owner} may receive more input on this job (100% output allocation)."`
+- Default owner = highest input kg (include pending lines); tie → owned over job_work; JW tie → higher `customer_id`
+
+**Lock:** Save `output_allocation_mode` + `single_allocation_owner_*` when mixed-creating input batch commits. **Never change** on same job.
+
+### G. Output batches
+
+- **No allocation UI** on output tab
+- Use stored mode via `_effective_owner_weights_for_output`
+- Output-only submits: allocation fields **optional** (ignored)
+- Reject mode change: `"Output allocation is locked for this job."`
+
+### H. Database
+
+Reuses migration `028` — columns unchanged. NULL `output_allocation_mode` on existing mixed jobs may need re-submit or proportional default on output.
+
+### I. Backend
+
+- `_batch_will_create_mix`, `_resolve_and_lock_allocation_on_input`, `_job_input_fully_locked`, `_job_allowed_input_owner_key`
+- `_apply_batch` order: validate input → lock allocation on input → subtract input; then output/waste using stored mode
+- `ProcessingJobOut`: `input_locked` (= mixed + proportional), `input_allowed_owner` (mixed + single_owner), `output_allocation_locked`, `output_allocation_hint`, `input_rules_hint`
+
+### J. Frontend
+
+`ProcessingJobPage` **Input tab** when submit will create mix:
+
+- Segmented **Split by input proportion** / **Single owner 100%**; owner dropdown when single
+- Confirm: *"All outputs will post to {owner}. You may add more input from {owner} only."*
+- Send allocation fields with **input** batch POST only
+
+When job already mixed:
+
+- **Proportional:** disable/hide add-input; banner input closed
+- **Single owner 100%:** allow input; lock owner picker to `input_allowed_owner`
+
+Summary tab: `output_allocation_hint` + `input_rules_hint`
+
+### K. Tests
+
+`backend/tests/test_processing_v1461_input_allocation.py` — Path A/B proportional vs single-owner input lock, output-only without allocation fields, mode lock, waste, single-owner job, external reject.
+
+Regression: `test_processing_v146_output_allocation.py`, `test_processing_v145_owner_mode.py`, `test_processing_v1442_owner_split.py` (pass `output_allocation_mode: proportional` on **mixed-creating input** batches).
+
+### L. Billing note (document only)
+
+Manual only — operator prices on sales bills; system sets inventory owner attribution only.
+
+### M. Deploy
+
+**No new migration.** **Restart backend.** Test on **new** mixed jobs.
+
+---
+
+## Spec v14.7 — Consolidated processing powder (waste section → inventory stock)
+
+> **v15.5.1 amends entry UX:** operators pick **brand, storage location, bag type, and qty** on each waste batch (`powder_line`). Book-settings powder destination (below) is **optional** — legacy fallback when API sends `powder_kg` only. Day-to-day UI does **not** require Book settings powder fields.
+
+Powder is a **brand** in master data but behaves differently from gravity/sortex rejection outputs. Rejection outputs (Raj Agro, gravity, sortex, etc.) stay **per job input product** as **output brand lines**. **Powder** is **not** entered as an output brand line — it is entered in the **Waste** tab as a **Powder stock** line (v15.5.1) or legacy **`powder_kg`** scalar.
+
+All powder from processing posts to **saleable inventory** at the **location chosen on the batch** (v15.5.1), or at the consolidated tuple in **book settings** (legacy). Product is the generic **Powder** master (or `book_settings.powder_product_id`). Not tied to the job’s `input_product_id`.
+
+### A. Inventory identity
+
+**v15.5.1 (per batch)** — `ProcessingPowderLineIn` on `POST …/batches`:
+
+| Field | Purpose |
+|-------|---------|
+| `brand_id` | Powder brand (must be Powder brand in masters) |
+| `location_id` | Where this powder is stored |
+| `bag_type_id` | Loose or bagged |
+| `bag_count` / `loose_kg` | Qty per bag-type rules |
+
+**Legacy (book settings)** — singleton `book_settings` id=1 (optional):
+
+| Field | Purpose |
+|-------|---------|
+| `powder_product_id` | Generic product master (e.g. product name **Powder**) |
+| `powder_brand_id` | Powder brand id |
+| `powder_location_id` | Default powder pile location |
+| `powder_bag_type_id` | Loose or bagged |
+
+Powder inventory uses **owner split** when job has mixed owners (v14.9 `processing_waste_allocations.powder_kg`).
+
+### B. Processing summary behaviour
+
+| Where | Powder appears? |
+|-------|-----------------|
+| **Output by brand** | **No** |
+| **Waste** total | **Yes** — included in `total_waste_kg` with dust + stone + sack |
+| **Powder stock** (v15.5.1) | **Separate** tile + “Powder added to inventory” with storage location |
+| **Waste split by owner** | Dust / stone / sack / misc only — **not** powder |
+| **Misc** | Reduced — powder is explicit outflow |
+
+Powder is **waste for mass-balance** but **saleable stock** (unlike dust/stone/sack — audit-only).
+
+### C. Database
+
+- Migration `029`: `processing_batches.powder_kg`; `book_settings.powder_*` FKs.
+- Migration `037`: `processing_batches.powder_brand_id`, `powder_location_id`, `powder_bag_type_id`, `powder_bag_count`, `powder_loose_kg`.
+
+### D. Backend
+
+- `processing.py`: `powder_line` on batch submit; `_resolve_powder_for_batch`; void uses stored batch location; reject Powder on output lines.
+- `ProcessingBatchOut` includes powder line fields + names.
+
+### E. Frontend
+
+- `ProcessingJobPage` Waste tab: **Powder stock** (brand, location, bag type, bags/kg).
+- Summary: powder separate from audit waste; shows batch storage locations.
+- `BookSettingsPage`: powder destination optional (legacy / default product).
+
+### F. Tests
+
+`test_processing_v147_consolidated_powder.py` (legacy `powder_kg` + book settings).
+
+### G. Deploy
+
+`alembic upgrade head` through `037_processing_powder_line`. Masters: product **Powder**, brand **Powder**. Restart backend.
+
+---
+
+## Spec v15.0 — Role-based access control (RBAC)
+
+### A. Roles
+
+| Role | Slug |
+|------|------|
+| Owner | `owner` |
+| Writer | `writer` |
+| Stock manager | `stock_manager` |
+| Factory manager | `factory_manager` |
+
+### B. Permission matrix (v1)
+
+| Area | Owner | Writer | Stock mgr | Factory mgr |
+|------|:-----:|:------:|:---------:|:-----------:|
+| Dashboard / reports | full | view | view | view |
+| Masters CRUD | full | — | — | — |
+| Book settings | full | — | — | view |
+| Sales / purchase bills | full | — | — | — |
+| Payments / cash book / bank / expense | full | — | — | — |
+| Bill fulfillment | full | write | — | — |
+| Job work orders | full | — | — | — |
+| Job work fulfillment | full | write | — | — |
+| Product transfer | full | write | — | — |
+| Inventory view | full | view | view | view |
+| Opening stock | full | — | — | — |
+| Direct inventory qty edit | full | — | — | — |
+| Bag change | full | — | write | — |
+| Stock disposal | full | — | write | — |
+| Processing | full | — | — | write |
+| All voids | full | — | — | — |
+| Operation histories | full | fulfillment + transfer | bag + disposal | processing |
+| User management | full | — | — | — |
+
+Masters **GET** (dropdown data) allowed for all assigned roles via `masters_read`. Masters pages and mutations are owner-only.
+
+### C. Backend
+
+- Migration `033_spec_v150_rbac`: `users.role` nullable enum; `jaganraj@rajagro.com` → `owner`; other users remain `NULL` until owner assigns.
+- `app/core/permissions.py` — `require_permission`, `require_void_user` (owner only), `require_assigned_role`.
+- `GET/POST/PATCH /api/users` — owner only; POST idempotent; passwords never returned.
+- All business routers guarded per matrix; void endpoints require **owner role** plus existing `X-Void-Authorization`.
+- `DELETE /inventory/{id}` — **disabled (v15.2):** always **403**; use stock disposal or other operations to clear stock.
+
+### D. Frontend
+
+- `AuthUser.role`, `usePermissions()`, `RequireRole` route guard.
+- Sidebar filtered by role; **Administration → Users** (owner).
+- Users without role see **Pending access** until owner assigns.
+- API 403 → toast via `app:forbidden` event.
+
+### E. Tests
+
+`backend/tests/test_rbac_v150.py` — role matrix samples; void owner-only; unassigned blocked.
+
+### F. How to run migration
+
+```powershell
+cd "C:\Users\Jagan Raj\Projects\inventory-app"
+docker compose up -d
+cd backend
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+alembic current
+```
+
+Expect revision `033_spec_v150_rbac (head)`. Restart backend after migrating.
+
+---
+
+## Spec v15.1 — Signup lockdown (go-live drawback #2)
+
+### A. Goal
+
+Only emails on an allowlist can **sign up** or **log in**. Strangers are blocked. The owner (`jaganraj@rajagro.com`) creates staff from **Administration → Users** (Spec v15.0 RBAC).
+
+### B. Backend
+
+- `ALLOWED_EMAILS` — comma-separated list in `.env` (case-insensitive match after trim + lower).
+- `check_email_allowed()` on `POST /api/auth/signup`, `POST /api/auth/login`, and `POST /api/auth/google` — returns **403** `Email not authorized` when allowlist is set and email not listed.
+- When `ALLOWED_EMAILS` is **empty**: dev mode — any email may sign up (startup logs **WARNING**).
+- `REQUIRE_ALLOWED_EMAILS=true`: refuse backend startup if `ALLOWED_EMAILS` is empty (production guard).
+
+### C. Frontend
+
+- Login page: no public **Sign up** link; footer message: contact owner for access.
+- `/signup` redirects to `/login`.
+- Owner workflow unchanged: **Users** page to create accounts and assign roles.
+
+### D. Staff onboarding
+
+1. Add staff email to `ALLOWED_EMAILS` in `.env`.
+2. Restart backend.
+3. Owner: **Administration → Users** — create user + role.
+4. Staff signs in with owner-provided credentials (or OTP reset flow).
+
+### E. Tests
+
+`backend/tests/test_signup_lockdown_v151.py` — blocked signup/login for non-allowlisted; allowlisted signup/login; case-insensitive match; startup policy validation.
+
+### F. Config example
+
+```env
+ALLOWED_EMAILS=jaganraj@rajagro.com,staff@company.com
+REQUIRE_ALLOWED_EMAILS=true
+```
+
+No database migration required.
+
+---
+
+## Spec v15.2 — No inventory row hard-delete (go-live drawback #4)
+
+### A. Goal
+
+Nobody — including owner — may hard-delete an inventory row. Stock must only be reduced or removed through proper operations: stock disposal, bag change, fulfillment, processing, job work, transfers, voids, etc.
+
+### B. Backend
+
+- `DELETE /api/inventory/{id}` — returns **403** with message: `Inventory rows cannot be deleted. Use stock disposal or other operations.`
+- `Permission.INVENTORY_DELETE` removed from RBAC enum (unused).
+- `POST /api/inventory` — opening stock (owner only) unchanged.
+- `PUT /api/inventory/{id}` — emergency qty edit with void password (owner only) unchanged.
+- `operations.prune_zero_inventory` — unchanged; auto-removes rows when `total_quantity_kg <= 0` after normal operations.
+
+### C. Frontend
+
+- Inventory page has no **Delete row** action (edit qty and add opening stock only).
+
+### D. Tests
+
+`backend/tests/test_inventory_v152_no_delete.py` — DELETE forbidden as owner; opening stock POST works; stock disposal reduces/prunes stock.
+
+No database migration required.
+
+---
+
+## Spec v15.3 — Master delete requires void authorization (go-live drawback #5)
+
+### A. Goal
+
+Deleting masters (products, brands, locations, bag types, customers) is owner-only via RBAC (`masters_manage`) **and** requires void authorization — same `X-Void-Authorization` pattern as voiding payments or editing inventory quantities. Staff roles cannot delete masters (unchanged). Reference guards (v12.2) remain: cannot delete if used on bills, inventory, operations, or non-zero customer balance.
+
+### B. Backend
+
+- `DELETE /api/products/{id}`, `/brands/{id}`, `/locations/{id}`, `/bag-types/{id}`, `/customers/{id}` — `verify_void_authorization` before `master_delete` guards.
+- Bank accounts and expense categories: **out of scope** for v15.3 (accounts masters, not product/customer masters).
+
+### C. Frontend
+
+- `MasterCrud`, `PartyMasterCrud`, `BagTypesPage` — delete uses `VoidConfirmDialog`; passes `voidAuthHeaders` on DELETE.
+
+### D. Tests
+
+`backend/tests/test_masters_delete_void_v153.py` — no void header → 403; valid void password + unused row → delete; writer → 403; customer with bills → 400 with void password.
+
+No database migration required.
+
+---
+
+## Spec v15.4 — Logout revokes session immediately (go-live drawback #7)
+
+### A. Goal
+
+When a user clicks **Logout**, their session must stop working immediately — not remain valid until `JWT_EXPIRE_HOURS`. Stateless JWT + cookie clear alone is insufficient for shared PCs.
+
+### B. Backend
+
+- Migration `036_spec_v154_logout_revoke`: table `revoked_tokens` (`jti` unique, `expires_at`, `revoked_at`, optional `user_id`).
+- `create_access_token` — adds unique `jti` (uuid4) in JWT payload with `sub` and `exp`.
+- `get_current_user` / `decode_access_token` — after valid JWT decode, reject if `jti` is in `revoked_tokens` → **401** Not authenticated.
+- `POST /api/auth/logout` — read token from cookie/header, insert revocation row (ignore duplicate `jti`), `clear_auth_cookie`, return `{"ok": true}`.
+- `cleanup_expired_revoked_tokens` on revoke — deletes rows where `expires_at < now()`.
+
+### C. Frontend
+
+- No UI change: `AuthContext.logout` already calls `POST /api/auth/logout` and clears user state.
+
+### D. Tests
+
+`backend/tests/test_logout_revoke_v154.py` — login → `/me` OK; logout → same token `/me` 401; login again OK; logout user A does not revoke user B.
+
+### E. How to run migration
+
+```powershell
+cd "C:\Users\Jagan Raj\Projects\inventory-app"
+docker compose up -d
+cd backend
+.\.venv\Scripts\Activate.ps1
+alembic upgrade head
+alembic current
+```
+
+Expect revision `038_spec_v155_login_rate_limit (head)`. Restart backend after migrating.
+
+---
+
+## Spec v15.5 — Login rate limit (go-live drawback #8)
+
+Brute-force protection on password login and signup. Works on localhost and production (not HTTPS-dependent).
+
+### A. Policy
+
+| Setting | Env var | Default |
+|---------|---------|---------|
+| Max failed attempts | `LOGIN_MAX_FAILED_ATTEMPTS` | 5 |
+| Lockout duration | `LOGIN_LOCKOUT_MINUTES` | 15 |
+
+After **5** wrong passwords for an email, further `POST /api/auth/login` and `POST /api/auth/signup` return **429** with message like `Too many failed login attempts. Try again in 15 minutes.` Lockout **expires** automatically — no permanent owner lockout.
+
+### B. Database (migration `038`)
+
+Table `login_rate_limits`: `email` (unique, lowercase), `failed_attempts`, `locked_until`, `last_failed_at`, `updated_at`.
+
+### C. Backend
+
+- `services/login_rate_limit.py`: `check_login_allowed`, `record_failed_login`, `record_successful_login`
+- `routers/auth.py`: check before password; record failure on **401** invalid credentials only; clear on success
+- **403** allowlist (`Email not authorized`) does **not** increment failures
+- OTP login unchanged (out of scope)
+
+### D. Frontend
+
+Login/signup show API **429** detail with friendly banner title (“Login temporarily paused”).
+
+### E. Tests
+
+`test_login_rate_limit_v155.py` — 5 wrong → 6th `429`; success clears counter; emails independent; allowlist 403 not counted.
+
+### F. Deploy
+
+`alembic upgrade head` → `038`. Set env vars in `.env` if defaults need tuning. Restart backend.
+
+---
+
+## Spec v15.5.1 — Powder stock line per batch + dashboard party tables
+
+### A. Powder stock line (amends v14.7)
+
+**API** — `ProcessingBatchSubmit`:
+
+```json
+{
+  "powder_line": {
+    "brand_id": 1,
+    "location_id": 2,
+    "bag_type_id": 3,
+    "bag_count": 0,
+    "loose_kg": "15.000"
+  }
+}
+```
+
+Mutually exclusive with legacy `powder_kg > 0` on the same body. Server computes `powder_kg` for mass-balance from line qty.
+
+**UI** — Waste tab → **Powder stock**: brand (Powder brands only), storage location, bag type, bags or kg. Dust/stone/sack remain simple kg fields (audit only).
+
+**Summary** — Powder stock tile separate from waste; “Powder added to inventory” shows location from committed batches; owner waste split excludes powder.
+
+**Bugfix** — `ProcessingJobPage` defined `completed` from `job?.status === "completed"` (fixed blank job page crash).
+
+### B. Dashboard Top customers / Sales by location tables
+
+`DashboardPage.tsx` + `styles/index.css` class `dashboard-summary-table`:
+
+- Label column: truncate + `title` tooltip (no multi-line wrap)
+- Numeric columns: `white-space: nowrap`, `width: 1%` auto-layout
+- Horizontal scroll on narrow cards (`min-w-[26rem]`)
+- Tighter padding (`text-sm`)
+
+### C. Migration
+
+`037_processing_powder_line` — powder line columns on `processing_batches`.
+
+### D. Deploy
+
+`alembic upgrade head` → `037`. Restart backend. Refresh frontend.
+
+---
+
+## Spec v15.6 — Strong password policy (go-live drawback #9)
+
+### A. Rules (all **new** passwords)
+
+| Rule | Requirement |
+|------|-------------|
+| Length | Minimum **8** characters |
+| Uppercase | At least one **A–Z** |
+| Lowercase | At least one **a–z** |
+| Digit | At least one **0–9** |
+| Special | At least one non-alphanumeric (e.g. `!@#$%^&*`) |
+
+Example: `RajAgro1!` or `Test@123`.
+
+**Existing accounts:** users with passwords set before v15.6 may still **log in** with their old password until they set a new one (signup, owner create/edit, OTP reset).
+
+### B. Backend
+
+- `app/core/password_policy.py` — `validate_password_strength(password)` raises `ValueError` listing failed rules
+- Pydantic validators on `SignupIn`, `UserCreate`, `UserUpdate.password`, `LoginOtpIn.new_password`
+- `LoginIn` unchanged (no strength check on login)
+- Validation failures return **400** with policy message (custom handler in `main.py`)
+
+### C. Endpoints
+
+| Endpoint | Enforced? |
+|----------|-----------|
+| `POST /api/auth/signup` | Yes |
+| `POST /api/users` | Yes |
+| `PATCH /api/users/{id}` | Yes when `password` set |
+| `POST /api/auth/otp-login` | Yes when `new_password` set |
+| `POST /api/auth/login` | No (existing weak passwords OK) |
+
+### D. Frontend
+
+- `utils/passwordPolicy.ts` — shared hint + optional client check
+- Hints on **Users** create/edit, **Signup**, login **OTP new password**
+
+### E. Tests
+
+`test_password_policy_v156.py` — reject weak samples; accept strong; legacy login still works.
+
+### F. Deploy
+
+No migration. Restart backend + refresh frontend.
+
+---
+
+## Spec v15.7 — Destructive dev scripts locked (go-live drawback #12)
+
+Prevent accidental database wipe from CLI scripts on production or misconfigured hosts.
+
+### A. Guarded scripts
+
+| Script | Action |
+|--------|--------|
+| `backend/scripts/reset_db.py` | `DROP SCHEMA public CASCADE` + `alembic upgrade head` |
+| `backend/scripts/clear_transactional_data.py` | Delete all transactional rows; keep masters/users |
+
+Both call `require_destructive_scripts_allowed()` at start of `main()` before any DB work.
+
+**Unguarded (dev-only docs):** `seed_sample_data.py` — creates `DEMO-*` bills; does not wipe schema.
+
+**Not in scope:** `POST /api/seed/bag-types` (drawback #13).
+
+### B. Environment (`.env`)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ALLOW_DESTRUCTIVE_SCRIPTS` | `false` | Master enable — **never `true` on production** |
+| `DESTRUCTIVE_SCRIPT_CONFIRM` | empty | Must be `I_UNDERSTAND_DELETE_DATA` |
+
+Additional safety: `DATABASE_URL` hostname must be `localhost`, `127.0.0.1`, or `::1`.
+
+### C. Implementation
+
+- `app/core/destructive_guard.py` — `check_destructive_scripts_allowed`, `require_destructive_scripts_allowed`
+- `app/config.py` settings
+- Blocked run prints to **stderr** and exits **1**
+
+### D. Tests
+
+`test_destructive_scripts_guard_v157.py` — disabled → blocked; enabled + confirm + localhost → pass; remote host → blocked.
+
+### E. Deploy
+
+No migration. Normal app/API unchanged. Never commit `.env` with `ALLOW_DESTRUCTIVE_SCRIPTS=true`.
+
+---
+
+## Spec v15.8 — Atomic idempotency / anti double-submit (go-live drawback #14)
+
+**Goal:** One Save = one side effect. Double-click or slow-network retry with the same `Idempotency-Key` must not create duplicate payments, fulfillment, bills, job work, operations, etc.
+
+### A. Database (migration `039`)
+
+Table `idempotency_records` adds:
+
+| Column | Notes |
+|--------|--------|
+| `status` | `in_progress` \| `completed` (existing rows backfilled `completed`) |
+| `response_status`, `response_body` | Nullable until `completed` |
+
+Unique `(user_id, idempotency_key)` unchanged.
+
+### B. Backend flow
+
+1. **`claim_idempotency`** — If `completed` + same request hash → return cached response; if `completed` + different hash → **409** `Idempotency-Key was already used with a different request body`; if `in_progress` → **409** `Request already in progress. Please wait.`; else INSERT `in_progress` (commit) — on `IntegrityError` race, re-read and apply same rules.
+2. **Business mutation** — Routers use `run_idempotent_mutation` (`app/core/idempotency.py`).
+3. **`complete_idempotency`** — Set response + `status=completed` after success.
+4. **`fail_idempotency`** — Delete `in_progress` row on business failure so client can retry with same key.
+
+**Routes:** payments, fulfillment, bills, job work, operations/processing, inventory POST/PUT, cash book, users POST, bank accounts, expense categories, book settings (all prior v12.15 idempotency endpoints).
+
+### C. Frontend
+
+- `useSubmitGuard()` — `submitting` / `submitDisabled`; wrap Save handlers.
+- High-risk pages: Payment, fulfillment dialogs, bill form, processing batch submit, bag change, product transfer, stock disposal, cash book entry, user create.
+- Reuse same idempotency key until success (`idemKeyRef`); button shows **Saving…** while disabled.
+
+### D. Tests
+
+`test_idempotency_atomic_v158.py` — sequential replay; concurrent claim; failure retry; `test_idempotency_v1215.py` still passes.
+
+### E. Deploy
+
+Run `alembic upgrade head` → `039_spec_v158_idempotency_atomic`. Restart backend. Refresh frontend.
+
+---
+
+## Spec v15.9 — Conditional bill void (go-live drawback #19)
+
+**Goal:** Owner may void a finalized sales or purchase bill only when it has zero payments, zero net fulfillment, and zero active linked cash-book entries.
+
+### A. Database (migration `040`)
+
+| Change | Notes |
+|--------|--------|
+| `BillStatus.voided` | New enum value |
+| `bills.voided_at` | Nullable UTC timestamp when voided |
+
+### B. Void eligibility
+
+Void allowed only when **all** are true:
+
+1. Zero active (non-voided) payments on the bill
+2. Zero net fulfillment on every line (`net_fulfilled_kg` = 0)
+3. Zero active linked cash-book entries (`bill_id = bill`, `voided_at IS NULL`)
+
+Otherwise **409** with a clear message:
+
+| Blocker | Message |
+|---------|---------|
+| Payments | `Cannot void bill: active payments exist. Void all payments first.` |
+| Fulfillment | `Cannot void bill: fulfillment activity exists. Void all fulfillment entries first.` |
+| Cash book | `Cannot void bill: active linked cash-book entries exist. Void or unlink them first.` |
+
+### C. API
+
+- **`GET /api/bills/{id}/void-precheck`** — `can_void`, `block_reasons[]`, `linked_active_entries_count`, `linked_active_entries_amount`
+- **`POST /api/bills/{id}/void`** — owner (`require_void_user`) + `X-Void-Authorization`; `X-Expected-Bill-Version`; idempotent; sets `status=voided`, `voided_at`; reverses customer debit/credit from bill create; idempotent replay when already voided
+
+`PATCH /api/bills/{id}` returns **400** on voided bills.
+
+### D. Visibility
+
+Voided bills excluded from bill lists, picker, KPIs, reports, and balance rollups (queries filter `status = finalized` only).
+
+### E. Customer statement
+
+`bill_voided` event reverses the original `bill_created` balance impact when `status=voided` and `voided_at` is set.
+
+### F. Frontend
+
+`BillDetailPage`: **Void bill** when `can_void`; `VoidConfirmDialog`; disable Edit, Record payment, and fulfillment/payment void actions when `status=voided`; voided badge on header.
+
+### G. Tests
+
+`test_bill_void_v159.py` — clean void OK; reject with payment / fulfillment / linked cash-book; void auth required (**403** without `X-Void-Authorization`).
+
+### H. Deploy
+
+Run `alembic upgrade head` → `040_spec_v159_bill_void`. Restart backend. Refresh frontend.
+
+---
+
+## Spec v16.0 — Processing job list performance (go-live drawback #22)
+
+**Goal:** `GET /api/operations/processing` must not eager-load or lazy-load batch line trees. List pages (`ProcessingListPage`, `ProcessingHistoryPage`) only need product/brand/dates and lightweight summary (`batch_count`, total output kg). Detail and mutation endpoints keep full `ProcessingJobOut` fidelity.
+
+### A. API
+
+| Endpoint | Response | Notes |
+|----------|----------|--------|
+| `GET /api/operations/processing` | `ProcessingJobPageOut` of `ProcessingJobListItemOut` | `batches: []`; `summary.batch_count` + `summary.total_output_kg` via SQL aggregate (active batches only, `voided_at IS NULL`) |
+| `GET /api/operations/processing/{id}` | `ProcessingJobOut` | Unchanged — full batches, owner mode, allocation hints |
+
+List item fields: `id`, `input_product_id`/`name`, `input_brand_id`/`name`, `status`, `opened_at`, `completed_at`, `batches: []`, `summary`. Owner-mode / allocation hint fields omitted on list (defaults not required).
+
+### B. Backend
+
+- `serialize_processing_job_list_item(job, db)` — lightweight serializer; `fetch_processing_list_summaries(db, job_ids)` batches aggregate queries for the page (avoids N+1).
+- `get_processing_jobs` joinedloads **only** `input_product` + `input_brand` (no batch joinedloads).
+- `serialize_processing_job(..., include_batches=True)` unchanged for detail/mutations.
+
+### C. Frontend
+
+- `ProcessingJobListItem` + `ProcessingJobListSummary` types; list pages use them.
+- `totalOutputKg()` prefers `summary.total_output_kg` when present (list), else sums `output_by_brand` (detail).
+
+### D. Tests
+
+`python -m unittest tests.test_processing_list_v160 tests.test_processing_list_status`
+
+### E. Deploy
+
+No migration. Restart backend. Refresh frontend.
+
+---
+
+## Spec v16.0.1 — Async master search on heavy forms (go-live drawback #23)
+
+**Goal:** Heavy form pages must not bulk-load up to 500 rows per master on mount. Users type to search; server returns ~30 matches per query.
+
+### A. Frontend
+
+| Constant / module | Purpose |
+|-------------------|---------|
+| `MASTER_SEARCH_LIMIT = 30` | Max results per search query (`api/client.ts`) |
+| `lib/masterSearch.ts` | `searchProducts`, `searchBrands`, `searchCustomers`, `searchLocations`, `searchBagTypes`; `fetch*ById` for pre-filled labels |
+| `AsyncSearchCombobox` | Debounced (~250ms) Headless UI combobox; **requires 1+ character** before search (minimizes calls on focus) |
+| `useBagTypeCache` | Caches bag type metadata (`is_loose`, `weight_per_bag_kg`) after async select |
+
+**Migrated pages/components:** `BillFormPage`, `ProcessingJobPage`, `ProcessingListPage` (open-job modal), `InventoryPage`, `BagChangePage`, `ProductTransferPage`, `StockDisposalPage`, `JobWorkFormPage`, `JobWorkListPage`, `BookSettingsPage`, `FulfillmentActionDialog`, `JobWorkFulfillmentActionDialog`, `StockOwnerFields`.
+
+**Unchanged:** Command Palette (already search-based); Master CRUD table pagination; sales bill stock-at-location cascade (stock-derived selects, not master bulk).
+
+`BULK_FETCH_LIMIT` retained in `api/client.ts` for legacy/export only — form pages no longer use it on mount.
+
+### B. Backend
+
+List endpoints already support `search` + pagination (case-insensitive partial match). Added lightweight GET:
+
+- `GET /api/products/{id}`
+- `GET /api/brands/{id}`
+- `GET /api/bag-types/{id}`
+
+(`GET /api/customers/{id}` and `GET /api/locations/{id}` already existed.)
+
+### C. Tests
+
+`python -m unittest tests.test_master_search_v1601`
+
+### D. Deploy
+
+No migration. Restart backend. Refresh frontend.
+
+---
+
+## Spec v16.0.2 — Dashboard bundle API (go-live drawback #24)
+
+**Goal:** `DashboardPage` must not fire six parallel report HTTP requests on every load or filter change. One bundle endpoint returns all dashboard datasets; individual report endpoints remain for CSV export, legacy callers, and tests.
+
+### A. API
+
+`GET /api/reports/dashboard-bundle?year=&month=&bill_type=sales|purchase&group_by=product|product_brand`
+
+Returns `DashboardBundleOut`:
+
+| Field | Same as |
+|-------|---------|
+| `summary` | `GET /api/reports/business-summary` |
+| `compare` | `GET /api/reports/business-compare` |
+| `daily` | `GET /api/reports/daily-bill-amounts` |
+| `by_product` | `GET /api/reports/by-product` |
+| `by_customer` | `GET /api/reports/by-customer` (limit 10) |
+| `by_location` | `GET /api/reports/by-location` |
+
+`bill_type` and `group_by` affect only `by_product`, `by_customer`, and `by_location`.
+
+### B. Backend
+
+- `get_dashboard_bundle()` in `services/reports.py` — reuses existing report functions; `_business_compare_from_totals()` shares current-month totals with summary (avoids duplicate `_month_bill_totals` for current month).
+- Individual `/api/reports/*` routes unchanged.
+
+### C. Frontend
+
+- `reportsApi.dashboardBundle()` in `api/client.ts`
+- `DashboardPage` — single bundle call maps to existing state; charts/KPI UI unchanged; CSV export still uses `bills-export`.
+
+### D. Tests
+
+`python -m unittest tests.test_dashboard_bundle_v1602 tests.test_reports_v111`
+
+### E. Deploy
+
+No migration. Restart backend. Refresh frontend.
+
+## Spec v16.0.3 — Idempotency retention cleanup (go-live drawback #25)
+
+**Problem:** Table `idempotency_records` stores anti–double-submit cache rows (one per Save with `Idempotency-Key`). Completed rows were never deleted — table grows forever. `revoked_tokens` already has cleanup (v15.4); idempotency did not.
+
+**Scope:** Technical duplicate-click guard table only — **not** bills, payments, inventory, or other business tables.
+
+**Goal:** Auto-delete old guard rows so the table stays bounded. Safe for live use: frontend generates a **new** idempotency key per form submit (`newIdempotencyKey`), so deleting completed rows older than retention does not affect normal operations. Retries with the same key within the retention window still replay cached responses.
+
+### A. Configuration
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `IDEMPOTENCY_RETENTION_DAYS` | `90` | Delete `completed` rows with `created_at` older than this |
+| `IDEMPOTENCY_STALE_IN_PROGRESS_HOURS` | `24` | Delete stuck `in_progress` rows (crashed mid-save) older than this |
+
+### B. Backend
+
+- `cleanup_idempotency_records(db)` in `app/services/idempotency.py` — SQLAlchemy `delete()` for both predicates; single commit; returns `{"completed_deleted": n, "stale_in_progress_deleted": m}`.
+- **Startup:** FastAPI `lifespan` in `app/main.py` runs cleanup once on process start (logs counts at info).
+- **Throttled on claim:** `claim_idempotency` calls cleanup at most once per hour per process (module-level timestamp throttle) — best-effort, non-blocking.
+- **Optional script:** `backend/scripts/cleanup_idempotency.py` — opens DB session, runs cleanup, prints counts, exits 0. Document for Windows Task Scheduler (weekly) on long-running deployments.
+
+### C. Frontend
+
+No changes. Idempotency behavior for active keys within the retention window is unchanged.
+
+### D. Tests
+
+`python -m unittest tests.test_idempotency_cleanup_v1603 tests.test_idempotency_atomic_v158`
+
+### E. Deploy
+
+No migration (uses existing `idempotency_records.created_at`). Restart backend. Optional: schedule `cleanup_idempotency.py` weekly.
+
+## Spec v16.0.4 — Database connection pool tuning (go-live drawback #26)
+
+**Problem:** `backend/app/database.py` used `create_engine(settings.database_url, pool_pre_ping=True)` only — SQLAlchemy defaults (`pool_size=5`, `max_overflow=10`) with no documented tuning. Under concurrent staff or multiple workers, connections may queue or exhaust Postgres without clear env guidance.
+
+**Goal:** Expose safe, documented pool settings via `.env` with sensible defaults for 1–5 concurrent users on a single backend process. Keep `pool_pre_ping=True`. No change to business logic.
+
+### A. Configuration
+
+| Env var | Default | Purpose |
+|---------|---------|---------|
+| `DB_POOL_SIZE` | `5` | Persistent connections in the pool |
+| `DB_MAX_OVERFLOW` | `10` | Extra connections allowed beyond `pool_size` under load |
+| `DB_POOL_TIMEOUT` | `30` | Seconds to wait for a free connection from the pool |
+| `DB_POOL_RECYCLE` | `1800` | Seconds before recycling a stale connection (30 min) |
+
+**Multi-worker deploy:** ensure `(DB_POOL_SIZE + DB_MAX_OVERFLOW) × workers` stays below Postgres `max_connections` (default `100` on the Docker image).
+
+### B. Backend
+
+- `app/config.py` — `db_pool_size`, `db_max_overflow`, `db_pool_timeout`, `db_pool_recycle`.
+- `create_db_engine(url, settings)` in `app/database.py` — passes pool kwargs to `create_engine`; module-level `engine` unchanged for app use.
+- `app/main.py` — startup logs `pool_size`, `max_overflow`, `max_connections` (= sum), `pool_timeout`, `pool_recycle` at info (does **not** log `DATABASE_URL` password).
+
+### C. Frontend
+
+No changes.
+
+### D. Tests
+
+`python -m unittest tests.test_database_pool_v1604`
+
+### E. Deploy
+
+No migration. Restart backend after changing pool env vars.
+
+## Spec v16.0.5 — Central audit log (go-live drawback #27)
+
+**Problem:** No single “who did what” trail across the app. Fulfillment has its own audit log (v14.5.2) but voids, bill void/edit, inventory qty edits, master deletes, operations voids, cash-book voids, and user admin actions were not recorded in one place with user identity.
+
+**Goal:** Append-only `audit_events` table + owner-readable UI. Log sensitive mutations after success. Complement (do not replace) `/histories/fulfillment` — deliver/receive/return stay on fulfillment audit only.
+
+### A. Database (migration `041`)
+
+Table `audit_events`: `user_id` (FK, SET NULL), denormalized `user_email`, `action`, `entity_type`, `entity_id`, `entity_label`, `metadata` JSON, `created_at`. Indexes on `created_at`, `user_id`, `action`, `entity_type`, `(entity_type, entity_id)`.
+
+### B. Backend
+
+- `record_audit_event()` in `app/services/audit_log.py` — never raises; logs warning on failure.
+- `Permission.AUDIT_VIEW` — owner role only.
+- Wired after successful: void payment/fulfillment/bill; bill edit; inventory qty edit; master delete; void bag change/transfer/disposal/processing batch/cash book/job work order/receipt; user create/update.
+- `GET /api/audit/events` — paginated; filters: `user_id`, `action`, `entity_type`, `date_from`, `date_to`, `search` (entity_label ILIKE).
+
+### C. Frontend
+
+- `AuditLogPage` at `/histories/audit` (owner only).
+- Sidebar + Command Palette — “Audit log”.
+- Human-readable action labels (`payment_voided` → “Payment voided”).
+
+### D. Out of scope (v1)
+
+Login history (#28); logging every bill/payment create; fulfillment deliver/receive create events; immutable/WORM compliance; full before-after field diff.
+
+### E. Tests
+
+`python -m unittest tests.test_audit_log_v1605`
+
+### F. Deploy
+
+`alembic upgrade head` (041). Restart backend. Refresh frontend.
+
+## Spec v16.0.6 — Login history (go-live drawback #28)
+
+**Problem:** No record of sign-in attempts. `users.last_login_at` only stores the latest login time. `login_rate_limits` (v15.5) enforces lockout but is not a readable history. Owner cannot answer “who logged in when?” or “were there failed logins?”
+
+**Goal:** Append-only `login_events` table. Log successful and failed sign-ins. Owner-only paginated UI. Do not log passwords or tokens. Complements v16.0.5 central audit log — login events are separate from business-mutation audit.
+
+### A. Database (migration `042`)
+
+Table `login_events`: normalized `email`, nullable `user_id` (FK, SET NULL), `success`, `failure_reason`, `ip_address`, `user_agent` (max 500 chars), `created_at`. Indexes on `created_at`, `email`, `user_id`, `success`.
+
+### B. Backend
+
+- `record_login_event()` in `app/services/login_history.py` — never raises; logs warning on failure.
+- Wired in `auth.py` after auth decision: `POST /login`, `POST /otp-login`, `POST /signup`; failures include `invalid_credentials`, `rate_limited`, `not_allowed`, `invalid_otp`.
+- Reuses `Permission.AUDIT_VIEW` (owner only).
+- `GET /api/login-history/events` — paginated; filters: `email`, `user_id`, `success` (true/false/all), `date_from`, `date_to`, `search` (email ILIKE).
+- `users.last_login_at` behavior unchanged; logout not logged.
+
+### C. Frontend
+
+- `LoginHistoryPage` at `/histories/logins` (owner only).
+- Sidebar + Command Palette — “Login history”; cross-link from Audit log page.
+
+### D. Out of scope
+
+Logging every API request; geo-IP; immutable/WORM storage; logout events; storing passwords or JWT.
+
+### E. Tests
+
+`python -m unittest tests.test_login_history_v1606 tests.test_auth_v10`
+
+### F. Deploy
+
+`alembic upgrade head` (042). Restart backend. Refresh frontend.
+
+## Spec v16.0.7 — Disable user (soft ban) (go-live drawback #29)
+
+**Problem:** No way to block a staff account from logging in while keeping the user row for audit/history. Owner could only DELETE user (hard remove) or change password. `users` had no `is_active` flag. Registered users could still log in even if removed from `ALLOWED_EMAILS` (v15.1).
+
+**Goal:** Add `users.is_active` (default true). Inactive users cannot log in; existing sessions rejected on next API call. Owner can Disable/Enable from Users page. Keep DELETE for permanent removal.
+
+### A. Database (migration `043`)
+
+`users.is_active` BOOLEAN NOT NULL DEFAULT true; backfill existing rows true.
+
+### B. Backend
+
+- `get_current_user`: inactive → **401** `"Account disabled. Contact the owner."`
+- Login paths (`/login`, `/otp-login`, `/google`): after user found, inactive → **403** before cookie
+- `set_user_active()` / `PATCH /api/users/{id}` with `is_active`: cannot disable self; cannot disable last owner; audit `user_disabled` / `user_enabled`
+- `create_user`: `is_active=True` default
+
+### C. Frontend
+
+- Users page: Active/Disabled badge; Disable (confirm) / Enable buttons; Delete kept for permanent removal
+- Login page: friendly message when account disabled
+
+### D. Behavior notes
+
+- Disable ≠ delete: `audit_events` and `login_events` keep `user_email`; `user_id` FK preserved
+- Disabled user: login fails; any existing JWT fails on `get_current_user`
+- Re-enable restores login without recreating account
+- `ALLOWED_EMAILS` unchanged — disable is the proper off switch for existing accounts
+
+### E. Tests
+
+`python -m unittest tests.test_user_disable_v1607 tests.test_auth_v10`
+
+### F. Deploy
+
+`alembic upgrade head` (043). Restart backend. Refresh frontend.
+
+## Spec v16.0.8 — Scheduled PostgreSQL backup (go-live drawback #30)
+
+**Problem:** No automated database backup. All business data is in Docker Postgres; loss of disk or mistaken wipe has no recovery path.
+
+**Goal:** PowerShell scripts for Windows: daily `pg_dump` to a folder, optional retention cleanup, optional one-click Task Scheduler registration. Document restore procedure. **Not** an in-app UI button — OS-scheduled ops scripts.
+
+### A. Scripts (`scripts/`)
+
+| Script | Purpose |
+|--------|---------|
+| `backup_db.ps1` | `docker compose exec` → `pg_dump -Fc` → `BACKUP_DIR/inventory-YYYY-MM-DD_HHmm.dump`; retention by `BACKUP_RETENTION_DAYS` (default 30) |
+| `register_backup_task.ps1` | Registers `InventoryApp-DailyBackup` daily at `BACKUP_SCHEDULE_TIME` (default 02:00) |
+| `restore_db.ps1` | Dev/recovery restore from `.dump` — **destructive**; prompts for `RESTORE` confirmation |
+| `backup-common.ps1` | Shared `.env` parsing and Docker checks (internal) |
+
+### B. Configuration (`.env`)
+
+```env
+BACKUP_DIR=D:\InventoryBackups
+BACKUP_RETENTION_DAYS=30
+BACKUP_SCHEDULE_TIME=02:00
+```
+
+Reads repo-root `.env` for `POSTGRES_USER`, `POSTGRES_DB` (defaults `inventory`).
+
+### C. Out of scope
+
+In-app Backup button; cloud upload (S3/OneDrive) — user may point `BACKUP_DIR` to a synced folder; Linux cron (Windows-only scripts; README footnote with `pg_dump` one-liner).
+
+### D. Deploy
+
+1. Set `BACKUP_DIR` in `.env`
+2. Run `.\scripts\backup_db.ps1` once manually
+3. Run `.\scripts\register_backup_task.ps1` **as Administrator**
+4. Verify task in Task Scheduler; confirm next-day `.dump` file
+
+No Alembic migration. No backend Python changes.
+
+## Spec v16.0.9 — Bill print & PDF (no GST, no e-invoice)
+
+**Goal:** Owner/writer can **Print** and **Download PDF** from bill detail — clean commercial bill only.
+
+### A. Company header (book settings, migration `044`)
+
+`book_settings`: `company_name`, `company_address_line`, `company_phone`. Owner edits on Book settings page (`BOOK_SETTINGS_EDIT`). Used on bill print/PDF.
+
+### B. Bill document
+
+- Sales vs purchase title; bill number, date; customer name + address + phone (`BillOut` extended)
+- Line table: product, brand, bag type, ordered qty, rate/kg, line total
+- Totals: subtotal, discount %, discount amount, adjustment, grand total, amount paid, amount due
+- No app chrome, tabs, void/edit buttons on print view
+- Voided bills: **VOIDED** watermark; print allowed for records
+
+### C. Frontend
+
+- `BillDetailPage`: Print + Download PDF in header (`bills_manage`)
+- Routes: `/sales-bills/:id/print`, `/purchase-bills/:id/print` (outside AppShell)
+- `@media print` A4 portrait; client-side PDF via `html2pdf.js` → `{bill_number}.pdf`
+
+### D. Out of scope
+
+GST, CGST/SGST, HSN, e-invoice, IRN, QR for GST portal; in-app backup button.
+
+### E. Tests
+
+`python -m unittest tests.test_bill_print_v1609`
+
+### F. Deploy
+
+`alembic upgrade head` (044). Restart backend. Refresh frontend.
+
+## Spec v16.0.10 — Dead code cleanup (go-live drawback #33)
+
+**Goal:** Remove confirmed dead code only — no behavior changes.
+
+### A. Backend removed
+
+| Item | Reason |
+|------|--------|
+| `app/routers/helpers.py` | Never imported |
+| `list_processing_jobs()` in `processing.py` | Superseded by router's own list query (v16.0) |
+| `aggregate_owner_weights()` in `owner_allocation.py` | Unreferenced |
+
+### B. Frontend removed
+
+| Item | Reason |
+|------|--------|
+| `components/Icons.tsx` | App uses `lucide-react` |
+| `lib/pageTheme.ts` | Unreferenced |
+| `components/ui/Drawer.tsx` | No imports |
+| `components/ui/Tooltip.tsx` | No imports (Recharts `Tooltip` on dashboard is separate) |
+
+`components/ui/index.ts` exports cleaned accordingly.
+
+### C. Verify
+
+Grep before each delete; `python -m unittest discover -s tests`; `npm run build`. No migration.
+
+## Spec v16.0.11 — Fix seed_bag_types.py (go-live drawback #34)
+
+**Goal:** `backend/scripts/seed_bag_types.py` runs without `ImportError`; behavior matches `POST /api/seed/bag-types` in `masters.py`.
+
+### A. Problem
+
+Script imported `names_equal` from `app.utils` (does not exist) and crashed on run.
+
+### B. Fix
+
+Align CLI script with API seed route:
+
+- Same `SEEDS`: 50kg, 30kg, 25kg, Loose
+- Case-insensitive skip-if-exists: `func.lower(func.trim(BagType.name)) == name.lower()`
+- No changes to `POST /api/seed/bag-types` or production data rules
+
+### C. Usage
+
+```powershell
+cd backend
+python scripts/seed_bag_types.py
+```
+
+Or `curl -X POST http://localhost:8000/api/seed/bag-types` / Bag Types page **Seed** button.
+
+### D. Verify
+
+`python -m unittest tests.test_seed_bag_types_v1611`. No migration.
+
+## Spec v16.0.12 — Consolidate duplicate API layer (go-live drawback #35)
+
+**Goal:** One canonical frontend API surface — `frontend/src/api/client.ts`.
+
+### A. Problem
+
+Legacy `frontend/src/api.ts` duplicated fetch logic (paths without `/api` prefix) alongside `api/client.ts` (`api.get/post/...` with `/api/...` paths). Drift risk for master CRUD and inventory pages.
+
+### B. Changes
+
+| Item | Action |
+|------|--------|
+| `MasterCrud`, `PartyMasterCrud`, `BagTypesPage`, `InventoryPage`, `CustomersPage` | Import from `api/client.ts`; use `api.get/post/put/delete` with `/api/...` paths |
+| `formatINR`, `displayQty`, `UnitDisplay` in `api.ts` | Removed; use `formatInr` / `formatQtyKg` from `lib/format.ts` |
+| `api.ts` | Re-export shim only: `export * from "./api/client"` |
+
+### C. Verify
+
+`npm run build`. Smoke: products/brands/locations/customers/bag-types CRUD, inventory add/edit, customer balance columns. No backend changes.
+
+## Spec v16.0.13 — Split processing.py monolith (go-live drawback #36)
+
+**Goal:** Reduce maintenance risk by splitting ~2000-line `processing.py` into focused modules with zero behavior change.
+
+### A. Package layout (`backend/app/services/processing/`)
+
+| Module | Responsibility |
+|--------|----------------|
+| `constants.py` | Message strings, `PROCESSING_OUTPUT_TOLERANCE_KG` |
+| `deps.py` | Re-exported ops/fulfillment deps (test patch targets) |
+| `batch_helpers.py` | Active batch filters, qty/waste helpers, input source parsing |
+| `allocation.py` | Owner weights, allocation mode, hints, proportional splits |
+| `powder.py` | Powder destination, validation, inventory allocation |
+| `mass_balance.py` | Fresh/outflow totals, balance reprocess validation |
+| `batch.py` | `create_job`, `submit_batch`, `complete_job`, `void_processing_batch` |
+| `serialization.py` | `load_processing_job`, summaries, API serializers |
+| `__init__.py` | Facade — same public imports as before |
+
+`app.services.processing` import path unchanged for routers and tests.
+
+### B. Rules
+
+No migrations. No business rule changes. `submit_batch` / `complete_job` accept omitted `powder_kg` (defaults to `0`) for backward-compatible callers.
+
+### C. Verify
+
+`python -m unittest tests.test_processing_v1461_input_allocation tests.test_processing_v147_consolidated_powder tests.test_processing_void_v148 tests.test_processing_v145_owner_mode tests.test_processing_v1442_owner_split tests.test_processing_list_v160` (and related processing modules).
+
+## Spec v16.0.14 — Pin backend dependencies (go-live drawback #37)
+
+**Problem:** `backend/requirements.txt` used loose `>=` pins — fresh installs could pull newer package versions and behave differently across office PC, cloud server, and sister companies.
+
+**Solution:** Pin from working `backend/.venv`:
+
+| File | Purpose |
+|------|---------|
+| `backend/requirements.txt` | Direct runtime deps with `==` pins (readable) |
+| `backend/requirements.lock` | Full transitive freeze (`pip freeze`, dev tools excluded) |
+
+**Install:** `python -m venv .venv` → activate → `pip install -r requirements.txt` (optionally `pip install -r requirements.lock` for exact transitive match) → `pip check`.
+
+**Upgrade policy:** Do not run bare `pip install -U` on production; bump pins deliberately, run backend tests, commit. Optional periodic manual `pip-audit` (documented in README; no CI required for this spec).
+
+**Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
+
+**Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v16.0.15 — CI pipeline (go-live drawback #38)
+
+**Problem:** No automated checks on code change — tests and frontend build had to be run manually before releases.
+
+**Solution:** GitHub Actions workflow `.github/workflows/ci.yml`:
+
+| Job | Runner | Steps |
+|-----|--------|-------|
+| `backend-tests` | `ubuntu-latest`, Python 3.11 | venv → `pip install -r requirements.txt -r requirements.lock` → `python -m unittest discover -s tests -p "test_*.py"` |
+| `frontend-build` | `ubuntu-latest`, Node 18 | `npm ci` → `npm run build` |
+
+**Triggers:** `push` and `pull_request` targeting `main` or `master`.
+
+**CI env:** Dummy `JWT_SECRET` only — no production secrets, no `DATABASE_URL` from GitHub secrets. PostgreSQL-only tests remain skipped unless `TEST_DATABASE_URL` is set (not in CI). No `reset_db`, `clear_transactional_data`, or `alembic` against a real DB.
+
+**Optional (non-blocking):** `pip-audit` after backend install; `npm audit --audit-level=high` after frontend install (`continue-on-error: true`).
+
+**Local parity:**
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+python -m unittest discover -s tests -p "test_*.py"
+
+cd ..\frontend
+npm ci
+npm run build
+```
+
+**Out of scope:** Deploy automation, production DB access, E2E browser tests.
+
+**Files changed:** `.github/workflows/ci.yml`, `README.md`.

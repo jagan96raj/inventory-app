@@ -1,0 +1,809 @@
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =====================================================================
+   v13.0 Theme tokens — light + dark, density aware
+   Used by Tailwind via rgb(var(--token)) and by primitives.
+===================================================================== */
+:root,
+[data-theme="light"] {
+  /* Canvas = page backdrop; surfaces = cards/panels (soft tint, not flat white) */
+  --canvas: 236 240 252;
+  --surface: 255 255 255;
+  --surface-subtle: 248 250 255;
+  --surface-muted: 241 245 255;
+  --surface-inverse: 30 27 75;
+  --ink: 30 27 75;
+  --ink-muted: 67 56 149;
+  --ink-subtle: 99 102 180;
+  --ink-inverse: 248 250 255;
+  --line: 224 231 255;
+  --line-strong: 199 210 254;
+  --shadow-color: 79 70 229;
+  --shadow-alpha: 0.08;
+  --primary-rgb: 99 102 241;
+  --accent-rgb: 16 185 129;
+  --warning-rgb: 245 158 11;
+  --danger-rgb: 244 63 94;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --canvas: 10 12 26;
+  --surface: 24 26 48;
+  --surface-subtle: 18 20 40;
+  --surface-muted: 36 39 68;
+  --surface-inverse: 248 250 255;
+  --ink: 237 240 255;
+  --ink-muted: 165 180 252;
+  --ink-subtle: 129 140 248;
+  --ink-inverse: 30 27 75;
+  --line: 48 52 88;
+  --line-strong: 71 76 120;
+  --shadow-color: 0 0 0;
+  --shadow-alpha: 0.45;
+  color-scheme: dark;
+}
+
+/* Density toggle — applied on <html data-density="compact"> */
+:root {
+  --pad-2: 0.5rem;
+  --pad-3: 0.75rem;
+  --pad-4: 1rem;
+  --pad-6: 1.5rem;
+  --gap-2: 0.5rem;
+  --gap-3: 0.75rem;
+  --gap-4: 1rem;
+  --row-h: 3rem;
+}
+
+[data-density="compact"] {
+  --pad-2: 0.375rem;
+  --pad-3: 0.5rem;
+  --pad-4: 0.75rem;
+  --pad-6: 1rem;
+  --gap-2: 0.375rem;
+  --gap-3: 0.5rem;
+  --gap-4: 0.75rem;
+  --row-h: 2.5rem;
+}
+
+@layer base {
+  /* Comfortable default: ~17px root so rem-based text scales up gently */
+  html:has(body.app-shell-v2) {
+    font-size: 106.25%;
+  }
+
+  html:has(body.app-shell-v2)[data-density="compact"] {
+    font-size: 100%;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* When the new AppShell is mounted it adds this class. Reset old
+     legacy gradients/backgrounds so the new theme shows cleanly. */
+  body.app-shell-v2 {
+    margin: 0;
+    background-color: rgb(var(--canvas));
+    background-image:
+      radial-gradient(ellipse 120% 80% at 0% -30%, rgb(var(--primary-rgb) / 0.16), transparent 58%),
+      radial-gradient(ellipse 90% 70% at 100% 0%, rgb(139 92 246 / 0.12), transparent 52%),
+      radial-gradient(ellipse 80% 60% at 85% 100%, rgb(var(--accent-rgb) / 0.1), transparent 48%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    color: rgb(var(--ink));
+    font-family: theme("fontFamily.sans");
+    font-size: theme("fontSize.base");
+    line-height: 1.625;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  [data-theme="dark"] body.app-shell-v2 {
+    background-image:
+      radial-gradient(ellipse 120% 80% at 0% -30%, rgb(var(--primary-rgb) / 0.22), transparent 58%),
+      radial-gradient(ellipse 90% 70% at 100% 0%, rgb(139 92 246 / 0.14), transparent 52%),
+      radial-gradient(ellipse 80% 60% at 85% 100%, rgb(var(--accent-rgb) / 0.1), transparent 48%);
+  }
+
+  body.app-shell-v2::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: linear-gradient(
+      105deg,
+      rgb(var(--canvas) / 0.92) 0%,
+      rgb(var(--canvas) / 0.72) 42%,
+      rgb(var(--canvas) / 0.35) 68%,
+      transparent 100%
+    );
+  }
+
+  body.app-shell-v2 #root {
+    position: relative;
+    z-index: 1;
+  }
+
+  body.app-shell-v2 *,
+  body.app-shell-v2 *::before,
+  body.app-shell-v2 *::after {
+    border-color: rgb(var(--line));
+  }
+
+  body.app-shell-v2 ::selection {
+    background: rgb(var(--primary-rgb) / 0.18);
+    color: rgb(var(--ink));
+  }
+
+  /* Better default focus ring for keyboard users — skip v2 form controls (they have their own) */
+  body.app-shell-v2 :focus-visible:not(.v2-input):not([role="tab"]) {
+    outline: none;
+    box-shadow:
+      0 0 0 2px rgb(var(--surface)),
+      0 0 0 4px rgb(var(--primary-rgb) / 0.55);
+    border-radius: 0.5rem;
+  }
+}
+
+@layer components {
+  .v2-app-canvas {
+    background: transparent;
+  }
+
+  .v2-auth-canvas {
+    background-color: rgb(var(--canvas));
+    background-image:
+      radial-gradient(ellipse 120% 80% at 0% -30%, rgb(var(--primary-rgb) / 0.16), transparent 58%),
+      radial-gradient(ellipse 90% 70% at 100% 0%, rgb(139 92 246 / 0.12), transparent 52%),
+      radial-gradient(ellipse 80% 60% at 85% 100%, rgb(var(--accent-rgb) / 0.1), transparent 48%);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  [data-theme="dark"] .v2-auth-canvas {
+    background-image:
+      radial-gradient(ellipse 120% 80% at 0% -30%, rgb(var(--primary-rgb) / 0.22), transparent 58%),
+      radial-gradient(ellipse 90% 70% at 100% 0%, rgb(139 92 246 / 0.14), transparent 52%),
+      radial-gradient(ellipse 80% 60% at 85% 100%, rgb(var(--accent-rgb) / 0.1), transparent 48%);
+  }
+
+  .v2-glass {
+    background: rgb(var(--surface) / 0.78);
+    backdrop-filter: saturate(160%) blur(12px);
+    -webkit-backdrop-filter: saturate(160%) blur(12px);
+  }
+  .v2-card {
+    @apply rounded-2xl border text-ink shadow-soft;
+    border-color: rgb(var(--line-strong) / 0.65);
+    background: linear-gradient(
+      155deg,
+      rgb(var(--surface)) 0%,
+      rgb(var(--surface-subtle)) 55%,
+      rgb(var(--surface-muted) / 0.45) 100%
+    );
+    box-shadow:
+      0 1px 2px rgb(var(--shadow-color) / var(--shadow-alpha)),
+      0 0 0 1px rgb(var(--primary-rgb) / 0.05);
+  }
+
+  [data-theme="dark"] .v2-card {
+    background: linear-gradient(
+      155deg,
+      rgb(var(--surface)) 0%,
+      rgb(var(--surface-subtle)) 50%,
+      rgb(var(--surface-muted) / 0.55) 100%
+    );
+    box-shadow:
+      0 1px 3px rgb(0 0 0 / 0.35),
+      0 0 0 1px rgb(var(--primary-rgb) / 0.12);
+  }
+  .v2-input {
+    @apply w-full rounded-xl border bg-surface px-3 text-base text-ink placeholder:text-ink-subtle/70
+      outline-none ring-0 disabled:opacity-60;
+    border-color: rgb(var(--line-strong));
+    min-height: var(--row-h);
+  }
+
+  body.app-shell-v2 .v2-input:focus,
+  body.app-shell-v2 .v2-input:focus-visible,
+  body.app-shell-v2 .v2-input:focus-within {
+    outline: none !important;
+    border-color: rgb(var(--primary-rgb));
+    box-shadow: 0 0 0 2px rgb(var(--primary-rgb) / 0.28) !important;
+    --tw-ring-shadow: 0 0 #0000;
+  }
+  .v2-input--sm {
+    min-height: 2.25rem;
+    @apply text-sm;
+  }
+  .v2-label {
+    @apply mb-1 inline-flex items-center gap-1 text-sm font-medium text-ink-muted;
+  }
+  .v2-hint {
+    @apply mt-1 text-sm text-ink-subtle;
+  }
+  .v2-error {
+    @apply mt-1 text-sm font-medium text-danger-600;
+  }
+
+  /* Mono helpers used for bill numbers, amounts, IDs */
+  .v2-mono {
+    font-family: theme("fontFamily.mono");
+    font-feature-settings: "tnum", "lnum";
+  }
+
+  /* Skeleton shimmer */
+  .v2-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: rgb(var(--surface-muted));
+  }
+  .v2-skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(var(--surface) / 0.55),
+      transparent
+    );
+    transform: translateX(-100%);
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  /* Shared fixed-layout tables — headers and cells stay column-aligned */
+  body.app-shell-v2 .v2-data-table {
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1.0625rem;
+    line-height: 1.5;
+  }
+
+  body.app-shell-v2 .v2-data-table th,
+  body.app-shell-v2 .v2-data-table td {
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+    padding: 1rem 1.25rem;
+  }
+
+  body.app-shell-v2 .v2-data-table th.whitespace-nowrap,
+  body.app-shell-v2 .v2-data-table td.whitespace-nowrap {
+    overflow-wrap: normal;
+    white-space: nowrap;
+  }
+
+  body.app-shell-v2 .v2-data-table thead th {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
+  }
+
+  body.app-shell-v2 .v2-data-table .v2-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Dashboard party / location tables — label truncates, numbers stay on one line */
+  body.app-shell-v2 .v2-data-table.dashboard-summary-table {
+    table-layout: auto;
+  }
+
+  body.app-shell-v2 .v2-data-table.dashboard-summary-table th,
+  body.app-shell-v2 .v2-data-table.dashboard-summary-table td {
+    overflow-wrap: normal;
+    padding: 0.625rem 0.75rem;
+  }
+
+  body.app-shell-v2 .v2-data-table.dashboard-summary-table .dashboard-summary-table__label {
+    max-width: 10rem;
+    width: 38%;
+    overflow: hidden;
+  }
+
+  @media (min-width: 1024px) {
+    body.app-shell-v2 .v2-data-table.dashboard-summary-table .dashboard-summary-table__label {
+      max-width: 12rem;
+    }
+  }
+
+  body.app-shell-v2 .v2-data-table.dashboard-summary-table .dashboard-summary-table__num {
+    white-space: nowrap;
+    width: 1%;
+  }
+
+  body.app-shell-v2 .inventory-stock-table thead th {
+    overflow-wrap: normal;
+    white-space: nowrap;
+  }
+
+  body.app-shell-v2 .inventory-stock-table td.inventory-actions-cell {
+    overflow-wrap: normal;
+    white-space: nowrap;
+  }
+
+  /* Legacy page tables — one cohesive grid (inventory, fulfillment, processing, etc.) */
+  body.app-shell-v2 .v2-table-frame {
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    border: 1px solid rgb(var(--line));
+    border-radius: 0.75rem;
+    background: rgb(var(--surface));
+  }
+
+  body.app-shell-v2 .card--inventory,
+  body.app-shell-v2 .card--fulfillment,
+  body.app-shell-v2 .card--plain.card--highlight {
+    background: rgb(var(--surface));
+    border-color: rgb(var(--line));
+    border-top-width: 1px;
+    border-image: none;
+  }
+
+  body.app-shell-v2 .card--inventory .v2-table-frame,
+  body.app-shell-v2 .card--fulfillment .v2-table-frame,
+  body.app-shell-v2 .card--plain .v2-table-frame {
+    border: none;
+    border-radius: 0;
+  }
+
+  body.app-shell-v2 .card--inventory:hover,
+  body.app-shell-v2 .card--fulfillment:hover,
+  body.app-shell-v2 .card--plain.card--highlight:hover {
+    transform: none;
+  }
+
+  body.app-shell-v2 .v2-table-frame table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: inherit;
+  }
+
+  body.app-shell-v2 .v2-table-frame th,
+  body.app-shell-v2 .v2-table-frame td {
+    padding: 0.9rem 1.25rem;
+    vertical-align: middle;
+    border-bottom: 1px solid rgb(var(--line) / 0.85);
+    text-align: left;
+    background: transparent;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: inherit;
+    color: rgb(var(--ink));
+    overflow-wrap: anywhere;
+    font-size: 1.0625rem;
+    line-height: 1.5;
+  }
+
+  body.app-shell-v2 .v2-table-frame thead th {
+    background: rgb(var(--surface-subtle));
+    color: rgb(var(--ink-subtle));
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid rgb(var(--line));
+    box-shadow: none;
+    padding-top: 0.9rem;
+    padding-bottom: 0.9rem;
+  }
+
+  body.app-shell-v2 .v2-table-frame tbody tr:hover td {
+    background: rgb(var(--primary-rgb) / 0.04);
+  }
+
+  body.app-shell-v2 .v2-table-frame td.col-num,
+  body.app-shell-v2 .v2-table-frame th.col-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Inventory */
+  body.app-shell-v2 .table--inventory-by-location .inventory-header-row th {
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgb(var(--line) / 0.55);
+  }
+
+  body.app-shell-v2 .table--inventory-by-location .inventory-filter-row th {
+    padding-top: 0.25rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgb(var(--line));
+    box-shadow: none;
+  }
+
+  body.app-shell-v2 .inventory-col-filter {
+    background: rgb(var(--surface));
+    border-color: rgb(var(--line-strong));
+    color: rgb(var(--ink));
+    border-radius: 0.5rem;
+  }
+
+  body.app-shell-v2 .inventory-location-group {
+    border-bottom: none;
+  }
+
+  body.app-shell-v2 .inventory-location-header td {
+    padding: 0.5rem 1rem;
+    background: rgb(var(--surface-muted));
+    border-bottom: 1px solid rgb(var(--line));
+    border-left: none;
+  }
+
+  body.app-shell-v2 .inventory-location-header__name {
+    color: rgb(var(--ink));
+    font-weight: 600;
+  }
+
+  body.app-shell-v2 .table--inventory-by-location tr.inventory-line td {
+    background: rgb(var(--surface));
+    border-left: none;
+  }
+
+  body.app-shell-v2 .table--inventory-by-location tr.inventory-line:nth-child(even) td {
+    background: rgb(var(--surface-subtle) / 0.65);
+  }
+
+  body.app-shell-v2 .table--inventory-by-location tr.inventory-line td.inventory-line-spacer {
+    width: 0.75rem;
+    min-width: 0.75rem;
+    padding: 0;
+    background: transparent !important;
+    border-left: 2px solid rgb(var(--line));
+    border-bottom: 1px solid rgb(var(--line) / 0.85);
+  }
+
+  /* Fulfillment */
+  body.app-shell-v2 .table--fulfillment-bills .fulfillment-bill-group {
+    border-bottom: none;
+  }
+
+  body.app-shell-v2 .fulfillment-bill-header td {
+    padding: 0.55rem 1rem;
+    background: rgb(var(--surface-muted));
+    border-bottom: 1px solid rgb(var(--line));
+    border-left: none;
+    border-top: 1px solid rgb(var(--line));
+  }
+
+  body.app-shell-v2 .table--fulfillment-bills .fulfillment-bill-group:first-of-type .fulfillment-bill-header td {
+    border-top: none;
+  }
+
+  body.app-shell-v2 .fulfillment-bill-group--purchase .fulfillment-bill-header td,
+  body.app-shell-v2 .fulfillment-bill-group--sales .fulfillment-bill-header td {
+    background: rgb(var(--surface-muted));
+  }
+
+  body.app-shell-v2 .fulfillment-bill-group--purchase tr.fulfillment-line td,
+  body.app-shell-v2 .fulfillment-bill-group--sales tr.fulfillment-line td {
+    background: rgb(var(--surface));
+    border-left: none;
+  }
+
+  body.app-shell-v2 .fulfillment-bill-group tr.fulfillment-line:nth-child(even) td {
+    background: rgb(var(--surface-subtle) / 0.65);
+  }
+
+  body.app-shell-v2 .inventory-table-footer,
+  body.app-shell-v2 .fulfillment-table-footer {
+    margin: 0.75rem 1rem 0;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgb(var(--line) / 0.6);
+    color: rgb(var(--ink-subtle));
+  }
+
+  /* Generic data tables (processing list, history pages, etc.) */
+  body.app-shell-v2 .card .data-table thead th,
+  body.app-shell-v2 .card table.data-table thead th {
+    background: rgb(var(--surface-subtle));
+    color: rgb(var(--ink-subtle));
+    font-size: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid rgb(var(--line));
+    padding: 0.9rem 1.25rem;
+  }
+
+  body.app-shell-v2 .card .data-table td,
+  body.app-shell-v2 .card table.data-table td {
+    padding: 1rem 1.25rem;
+    font-size: 1.0625rem;
+    line-height: 1.5;
+  }
+
+  body.app-shell-v2 .card .data-table td,
+  body.app-shell-v2 .card .data-table th,
+  body.app-shell-v2 .card table:not(.table--inventory-by-location):not(.table--fulfillment-bills) td,
+  body.app-shell-v2 .card table:not(.table--inventory-by-location):not(.table--fulfillment-bills) th {
+    border-bottom: 1px solid rgb(var(--line) / 0.85);
+  }
+
+  body.app-shell-v2 .card table:not(.table--inventory-by-location):not(.table--fulfillment-bills) tbody tr:nth-child(even) td {
+    background: rgb(var(--surface-subtle) / 0.5);
+  }
+
+  /* Processing job tabs — larger tap targets in v2 shell */
+  body.app-shell-v2 .processing-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  body.app-shell-v2 .processing-tab {
+    padding: 0.8rem 1.35rem;
+    border: 1.5px solid rgb(var(--line-strong));
+    border-radius: 0.875rem;
+    background: rgb(var(--surface));
+    color: rgb(var(--ink));
+    font: inherit;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  body.app-shell-v2 .processing-tab:hover {
+    border-color: rgb(var(--primary-rgb));
+    color: rgb(var(--primary-rgb));
+    transform: translateY(-1px);
+  }
+
+  body.app-shell-v2 .processing-tab.active {
+    background: linear-gradient(135deg, rgb(var(--primary-rgb)), #8b5cf6);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 6px 16px -4px rgb(var(--primary-rgb) / 0.45);
+  }
+
+  body.app-shell-v2 .processing-tab-panel {
+    margin-top: 0.75rem;
+  }
+}
+
+/* Recharts dark-mode tweaks */
+[data-theme="dark"] .recharts-default-tooltip {
+  background: rgb(var(--surface)) !important;
+  border-color: rgb(var(--line-strong)) !important;
+  color: rgb(var(--ink)) !important;
+}
+[data-theme="dark"] .recharts-tooltip-label,
+[data-theme="dark"] .recharts-tooltip-item {
+  color: rgb(var(--ink)) !important;
+}
+[data-theme="dark"] .recharts-cartesian-axis-tick text {
+  fill: rgb(var(--ink-muted)) !important;
+}
+[data-theme="dark"] .recharts-cartesian-grid line {
+  stroke: rgb(var(--line)) !important;
+}
+
+/* =====================================================================
+   Animated ambient backdrop (warehouse + processing plant — stylized)
+===================================================================== */
+.app-ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.app-ambient-bg--app {
+  color: rgb(var(--primary-rgb) / 0.42);
+}
+
+[data-theme="dark"] .app-ambient-bg--app {
+  color: rgb(var(--ink-muted) / 0.35);
+}
+
+.app-ambient-bg--auth {
+  position: absolute;
+  color: rgb(255 255 255 / 0.55);
+  opacity: 0.9;
+}
+
+.app-ambient-bg__svg {
+  position: absolute;
+  right: -2%;
+  bottom: -4%;
+  width: min(62vw, 820px);
+  max-height: 85vh;
+  transform-origin: 100% 100%;
+  animation: ambient-drift 18s ease-in-out infinite alternate;
+}
+
+.app-ambient-bg--auth .app-ambient-bg__svg {
+  right: -8%;
+  bottom: -6%;
+  width: min(70vw, 900px);
+  opacity: 0.85;
+}
+
+.app-ambient-bags {
+  animation: ambient-bags-breathe 10s ease-in-out infinite alternate;
+}
+
+.app-ambient-bags-front {
+  animation: ambient-bags-breathe 10s ease-in-out infinite alternate-reverse;
+}
+
+.app-ambient-plant {
+  animation: ambient-plant-float 14s ease-in-out infinite alternate;
+}
+
+.app-ambient-elevator {
+  animation: ambient-elevator-pulse 6s ease-in-out infinite;
+}
+
+.app-ambient-elevator--delay {
+  animation-delay: 1.8s;
+}
+
+.app-ambient-indicator {
+  animation: ambient-blink 2.8s ease-in-out infinite;
+}
+
+.app-ambient-grain--1 {
+  animation: ambient-grain-flow 5s linear infinite;
+}
+
+.app-ambient-grain--2 {
+  animation: ambient-grain-flow 5s linear infinite 1.6s;
+}
+
+.app-ambient-grain--3 {
+  animation: ambient-grain-flow 5s linear infinite 3.2s;
+}
+
+.app-ambient-mote--1 {
+  animation: ambient-mote 12s ease-in-out infinite;
+}
+
+.app-ambient-mote--2 {
+  animation: ambient-mote 15s ease-in-out infinite 2s;
+}
+
+.app-ambient-mote--3 {
+  animation: ambient-mote 11s ease-in-out infinite 4s;
+}
+
+@keyframes ambient-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-12px, -10px, 0) scale(1.015);
+  }
+}
+
+@keyframes ambient-bags-breathe {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes ambient-plant-float {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-6px);
+    opacity: 0.92;
+  }
+}
+
+@keyframes ambient-elevator-pulse {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes ambient-blink {
+  0%,
+  45%,
+  100% {
+    fill-opacity: 0.45;
+  }
+  50%,
+  70% {
+    fill-opacity: 0.85;
+  }
+}
+
+@keyframes ambient-grain-flow {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.7;
+  }
+  70% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate(88px, 118px);
+    opacity: 0;
+  }
+}
+
+@keyframes ambient-mote {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.12;
+  }
+  50% {
+    transform: translate(-18px, -24px);
+    opacity: 0.28;
+  }
+}
+
+/* Bill create / edit — larger fields and line steps */
+body.app-shell-v2 .bill-form-grid label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgb(var(--ink-muted));
+}
+
+body.app-shell-v2 .bill-form-grid input,
+body.app-shell-v2 .bill-form-grid select {
+  font-size: 1.0625rem;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.875rem;
+}
+
+body.app-shell-v2 .bill-form-line {
+  padding: 1.25rem;
+  border: 1px solid rgb(var(--line) / 0.8);
+  border-radius: 1rem;
+  background: rgb(var(--surface-subtle) / 0.35);
+}
+
+body.app-shell-v2 .bill-form-line + .bill-form-line {
+  margin-top: 1rem;
+}
+
+body.app-shell-v2 .bill-form-line .form-grid label {
+  font-size: 1.0625rem;
+  font-weight: 600;
+}
+
+/* Reduced motion: disable non-essential animations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
