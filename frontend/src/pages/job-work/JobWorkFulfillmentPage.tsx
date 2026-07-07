@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Briefcase, PackagePlus, Undo2 } from "lucide-react";
 import {
   DEFAULT_PAGE_LIMIT,
@@ -24,17 +24,15 @@ import EmptyState from "../../components/ui/EmptyState";
 import PaginationBar from "../../components/ui/PaginationBar";
 import Skeleton from "../../components/ui/Skeleton";
 import VoidConfirmDialog from "../../components/ui/VoidConfirmDialog";
-import { CardBody } from "../../components/ui/Card";
 import { formatDate } from "../../lib/format";
 import {
-  jwCustodyQty,
+  jwNetReceivedQty,
   jwOrderedQty,
   jwRemainingReceiveQty,
 } from "../../lib/jwQty";
 import { cn } from "../../lib/cn";
 import { toast } from "../../components/ui/Toaster";
 
-type Tab = "receive" | "return";
 type Visibility = "actionable" | "all";
 
 const REMAINING_HELP =
@@ -44,14 +42,53 @@ const LINE_TH =
   "border-b border-line bg-surface-muted/70 px-5 py-3.5 text-sm font-semibold uppercase tracking-wide text-ink-muted";
 const LINE_TD = "border-b border-line/70 px-5 py-4 align-middle text-base text-ink";
 
-function tabFromPath(pathname: string): Tab {
-  return pathname.endsWith("/return") ? "return" : "receive";
+function canReceive(ln: JobWorkFulfillmentLine): boolean {
+  const remaining = jwRemainingReceiveQty(ln);
+  if (ln.is_loose) return Number(remaining.loose_kg ?? remaining.kg ?? 0) > 0;
+  return (remaining.bags ?? 0) > 0 || Number(remaining.kg ?? 0) > 0;
+}
+
+function canReturn(ln: JobWorkFulfillmentLine): boolean {
+  const net = jwNetReceivedQty(ln);
+  if (ln.is_loose) return Number(net.loose_kg ?? net.kg ?? 0) > 0;
+  return (net.bags ?? 0) > 0 || Number(net.kg ?? 0) > 0;
+}
+
+function lineNeedsAction(ln: JobWorkFulfillmentLine): boolean {
+  return canReceive(ln) || canReturn(ln);
+}
+
+function remainingIsZero(ln: JobWorkFulfillmentLine): boolean {
+  return !canReceive(ln);
+}
+
+function LineActions({
+  ln,
+  onReceive,
+  onReturn,
+}: {
+  ln: JobWorkFulfillmentLine;
+  onReceive: () => void;
+  onReturn: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5">
+      {canReceive(ln) && (
+        <Button size="sm" variant="primary" leftIcon={<PackagePlus className="h-4 w-4" />} onClick={onReceive}>
+          Receive
+        </Button>
+      )}
+      {canReturn(ln) && (
+        <Button size="sm" variant="outline" leftIcon={<Undo2 className="h-4 w-4" />} onClick={onReturn}>
+          Return
+        </Button>
+      )}
+      {!canReceive(ln) && !canReturn(ln) && <span className="text-sm text-ink-subtle">—</span>}
+    </div>
+  );
 }
 
 export default function JobWorkFulfillmentPage() {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const tab = tabFromPath(pathname);
   const [visibility, setVisibility] = useState<Visibility>("actionable");
   const [orders, setOrders] = useState<JobWorkFulfillmentOrder[]>([]);
   const [total, setTotal] = useState(0);
@@ -68,14 +105,14 @@ export default function JobWorkFulfillmentPage() {
   const load = useCallback(() => {
     setLoading(true);
     jobWorkFulfillmentApi
-      .listOrders({ tab, visibility, limit: DEFAULT_PAGE_LIMIT, offset })
+      .listOrders({ tab: "all", visibility, limit: DEFAULT_PAGE_LIMIT, offset })
       .then((page) => {
         setOrders(page.items ?? []);
         setTotal(page.total);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Error"))
       .finally(() => setLoading(false));
-  }, [tab, visibility, offset]);
+  }, [visibility, offset]);
 
   useEffect(() => {
     load();
@@ -86,13 +123,7 @@ export default function JobWorkFulfillmentPage() {
     setActiveLine(null);
     setPendingReceipt(null);
     setError("");
-  }, [tab]);
-
-  const setTab = (next: Tab) => {
-    navigate(next === "return" ? "/job-work/fulfillment/return" : "/job-work/fulfillment/receive", {
-      replace: true,
-    });
-  };
+  }, [visibility]);
 
   const openAction = (mode: JobWorkFulfillmentMode, line: JobWorkFulfillmentLine) => {
     setDialogMode(mode);
@@ -123,18 +154,12 @@ export default function JobWorkFulfillmentPage() {
     }
   };
 
-  const isReceive = tab === "receive";
-
   return (
     <>
       <PageHeader
         eyebrow="Job work"
         title="Job work fulfillment"
-        subtitle={
-          isReceive
-            ? `Receive material into custody. ${REMAINING_HELP}`
-            : "Return material from custody to the customer."
-        }
+        subtitle="Receive material from customer and return unused stock — like bill fulfillment without payment."
         actions={
           <Link to="/job-work">
             <Button variant="secondary" leftIcon={<Briefcase className="h-4 w-4" />}>
@@ -150,15 +175,7 @@ export default function JobWorkFulfillmentPage() {
         </Banner>
       )}
 
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SegmentedControl
-          value={tab}
-          onChange={(v) => setTab(v as Tab)}
-          options={[
-            { value: "receive", label: "Receive" },
-            { value: "return", label: "Return" },
-          ]}
-        />
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         <SegmentedControl
           value={visibility}
           onChange={(v) => {
@@ -179,9 +196,9 @@ export default function JobWorkFulfillmentPage() {
         </div>
       ) : orders.length === 0 ? (
         <EmptyState
-          icon={isReceive ? <PackagePlus className="h-6 w-6" /> : <Undo2 className="h-6 w-6" />}
-          title={isReceive ? "Nothing to receive" : "Nothing to return"}
-          description="Open job work orders with pending quantities will appear here."
+          icon={<PackagePlus className="h-6 w-6" />}
+          title="Nothing to fulfill"
+          description="Open job work orders with lines needing receive or return will appear here."
           action={
             <Link to="/job-work/new">
               <Button>Create job work order</Button>
@@ -211,11 +228,10 @@ export default function JobWorkFulfillmentPage() {
                   <p className="text-lg font-semibold text-ink">{order.customer_name}</p>
                   <p className="text-sm text-ink-muted">{formatDate(order.job_date)}</p>
                 </div>
-                <Badge tone="primary">Open</Badge>
               </header>
 
               <div className="overflow-x-auto bg-surface/50">
-                <table className="v2-data-table min-w-[44rem] w-full text-base">
+                <table className="v2-data-table min-w-[52rem] w-full text-base">
                   <thead>
                     <tr>
                       <th scope="col" className={cn(LINE_TH, "text-left")}>
@@ -224,8 +240,11 @@ export default function JobWorkFulfillmentPage() {
                       <th scope="col" className={cn(LINE_TH, "text-right")}>
                         Ordered
                       </th>
-                      <th scope="col" className={cn(LINE_TH, "text-right")} title={isReceive ? REMAINING_HELP : undefined}>
-                        {isReceive ? "Remaining" : "In custody"}
+                      <th scope="col" className={cn(LINE_TH, "text-right")}>
+                        Received
+                      </th>
+                      <th scope="col" className={cn(LINE_TH, "text-right")} title={REMAINING_HELP}>
+                        Remaining
                       </th>
                       <th scope="col" className={cn(LINE_TH, "text-right")}>
                         Actions
@@ -233,42 +252,55 @@ export default function JobWorkFulfillmentPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(order.lines ?? []).map((ln) => (
-                      <tr key={ln.line_id} className="bg-surface/80 even:bg-surface-subtle/40">
-                        <td className={LINE_TD}>
-                          <div className="font-semibold text-ink">{ln.product_name}</div>
-                          <div className="mt-0.5 text-sm text-ink-muted">
-                            {ln.brand_name} · {ln.bag_type_name}
-                          </div>
-                        </td>
-                        <td className={LINE_TD}>
-                          <JwQtyCell qty={jwOrderedQty(ln)} />
-                        </td>
-                        <td className={LINE_TD}>
-                          <JwQtyCell
-                            qty={isReceive ? jwRemainingReceiveQty(ln) : jwCustodyQty(ln)}
-                            emphasize
-                          />
-                        </td>
-                        <td className={cn(LINE_TD, "text-right")}>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            leftIcon={isReceive ? <PackagePlus className="h-4 w-4" /> : <Undo2 className="h-4 w-4" />}
-                            onClick={() => openAction(tab, ln)}
-                          >
-                            {isReceive ? "Receive" : "Return"}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {(order.lines ?? []).map((ln) => {
+                      const dimmed = visibility === "actionable" && !lineNeedsAction(ln);
+                      return (
+                        <tr
+                          key={ln.line_id}
+                          className={cn(
+                            "bg-surface/80 even:bg-surface-subtle/40",
+                            dimmed && "opacity-60"
+                          )}
+                        >
+                          <td className={LINE_TD}>
+                            <div className="font-semibold text-ink">{ln.product_name}</div>
+                            <div className="mt-0.5 text-sm text-ink-muted">
+                              {ln.brand_name} · {ln.bag_type_name}
+                            </div>
+                          </td>
+                          <td className={cn(LINE_TD, "text-right")}>
+                            <JwQtyCell qty={jwOrderedQty(ln)} />
+                          </td>
+                          <td className={cn(LINE_TD, "text-right")}>
+                            <JwQtyCell qty={jwNetReceivedQty(ln)} />
+                          </td>
+                          <td className={cn(LINE_TD, "text-right")}>
+                            {remainingIsZero(ln) ? (
+                              <span className="text-sm text-ink-subtle">Complete</span>
+                            ) : (
+                              <JwQtyCell qty={jwRemainingReceiveQty(ln)} emphasize />
+                            )}
+                          </td>
+                          <td className={cn(LINE_TD, "text-right")}>
+                            <LineActions
+                              ln={ln}
+                              onReceive={() => openAction("receive", ln)}
+                              onReturn={() => openAction("return", ln)}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               {(order.lines ?? []).some((ln) => (ln.receipts ?? []).length > 0) && (
-                  <CardBody className="border-t border-line/70 bg-surface/40 px-5 py-4">
-                    <p className="mb-3 text-sm font-semibold text-ink-muted">Activity log</p>
+                <details className="border-t border-line/70 bg-surface/40 px-5 py-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-ink-muted hover:text-ink">
+                    Receipt history
+                  </summary>
+                  <div className="mt-3">
                     <JwActivityLog
                       items={(order.lines ?? []).flatMap((ln) =>
                         (ln.receipts ?? []).map((r) => ({
@@ -277,22 +309,19 @@ export default function JobWorkFulfillmentPage() {
                           is_loose: ln.is_loose,
                         }))
                       )}
-                      onVoidReceive={
-                        isReceive
-                          ? (r) => {
-                              voidIdemRef.current = null;
-                              setVoidAuthError("");
-                              setPendingReceipt(
-                                (order.lines ?? [])
-                                  .flatMap((ln) => ln.receipts ?? [])
-                                  .find((x) => x.id === r.id) ?? null
-                              );
-                            }
-                          : undefined
-                      }
+                      onVoidReceive={(r) => {
+                        voidIdemRef.current = null;
+                        setVoidAuthError("");
+                        setPendingReceipt(
+                          (order.lines ?? [])
+                            .flatMap((ln) => ln.receipts ?? [])
+                            .find((x) => x.id === r.id) ?? null
+                        );
+                      }}
                     />
-                  </CardBody>
-                )}
+                  </div>
+                </details>
+              )}
             </section>
           ))}
           <PaginationBar total={total} limit={DEFAULT_PAGE_LIMIT} offset={offset} onPageChange={setOffset} />

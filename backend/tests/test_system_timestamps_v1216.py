@@ -32,7 +32,7 @@ from app.services.idempotency import IDEMPOTENCY_KEY_HEADER
 from app.services.operations import create_bag_change
 from app.services.payments import create_payment
 from app.utils.time import business_today, utc_now
-from tests.idempotency_helpers import TEST_USER, ensure_test_user, idem_kwargs, new_test_idempotency_key
+from tests.idempotency_helpers import TEST_USER, TEST_VOID_AUTH_PASSWORD, ensure_test_user, idem_kwargs, new_test_idempotency_key, void_auth_header
 
 
 def _make_session() -> Session:
@@ -111,8 +111,9 @@ class SystemTimestampSchemaV1216Tests(unittest.TestCase):
         self.assertIn("bill_date", BillFinalizeCreate.model_fields)
         self.assertIsNone(BillFinalizeCreate.model_fields["bill_date"].default)
 
-    def test_payment_create_has_no_paid_at_field(self):
-        self.assertNotIn("paid_at", PaymentCreate.model_fields)
+    def test_payment_create_has_optional_paid_date_field(self):
+        self.assertIn("paid_date", PaymentCreate.model_fields)
+        self.assertIsNone(PaymentCreate.model_fields["paid_date"].default)
 
 
 class SystemTimestampMutationV1216Tests(unittest.TestCase):
@@ -156,10 +157,10 @@ class SystemTimestampMutationV1216Tests(unittest.TestCase):
         assert bill is not None
         self.assertEqual(bill.bill_date, date(2026, 6, 10))
 
-    @patch("app.services.payments.utc_now")
-    def test_create_payment_sets_paid_at(self, mock_now):
+    @patch("app.services.payments.resolve_business_entry")
+    def test_create_payment_sets_paid_at(self, mock_resolve):
         fixed = datetime(2026, 6, 18, 12, 0, 0, tzinfo=timezone.utc)
-        mock_now.return_value = fixed
+        mock_resolve.return_value = (fixed.date(), fixed)
         bill, _ = _purchase_bill_with_line(self.db, self.m)
         payment = create_payment(
             self.db,
@@ -174,10 +175,10 @@ class SystemTimestampMutationV1216Tests(unittest.TestCase):
         else:
             self.assertEqual(stored, fixed)
 
-    @patch("app.services.fulfillment.utc_now")
-    def test_create_fulfillment_sets_fulfilled_at(self, mock_now):
+    @patch("app.services.fulfillment.resolve_business_entry")
+    def test_create_fulfillment_sets_fulfilled_at(self, mock_resolve):
         fixed = datetime(2026, 6, 18, 14, 30, 0, tzinfo=timezone.utc)
-        mock_now.return_value = fixed
+        mock_resolve.return_value = (fixed.date(), fixed)
         bill, line = _purchase_bill_with_line(self.db, self.m)
         entry = create_fulfillment(
             self.db,
@@ -286,7 +287,7 @@ class SystemTimestampApiV1216Tests(unittest.TestCase):
                     }
                 ],
             },
-            headers={IDEMPOTENCY_KEY_HEADER: new_test_idempotency_key()},
+            headers={**void_auth_header(), IDEMPOTENCY_KEY_HEADER: new_test_idempotency_key()},
         )
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.json()["bill_date"], "2020-01-01")

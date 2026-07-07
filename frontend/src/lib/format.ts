@@ -33,6 +33,20 @@ export function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Local calendar date as YYYY-MM-DD (matches bill/job date pickers). */
+export function localIsoDate(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function validateDateNotFuture(iso: string, maxIso = localIsoDate()): string | null {
+  if (!iso) return "Date is required";
+  if (iso > maxIso) return "Date cannot be in the future";
+  return null;
+}
+
 export function nowIsoLocal(): string {
   const d = new Date();
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());

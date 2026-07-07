@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Briefcase, Eye, Plus } from "lucide-react";
 import {
@@ -10,7 +10,6 @@ import { searchCustomers } from "../../lib/masterSearch";
 import { formatDate, formatQtyKg } from "../../lib/format";
 import PageHeader from "../../components/ui/PageHeader";
 import Button from "../../components/ui/Button";
-import Badge from "../../components/ui/Badge";
 import Banner from "../../components/ui/Banner";
 import EmptyState from "../../components/ui/EmptyState";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
@@ -23,24 +22,10 @@ import Table, { type Column } from "../../components/ui/Table";
 import Skeleton from "../../components/ui/Skeleton";
 import { cn } from "../../lib/cn";
 
-function statusTone(status: string): "primary" | "success" | "muted" | "danger" {
-  if (status === "open") return "primary";
-  if (status === "completed") return "success";
-  if (status === "cancelled") return "danger";
-  return "muted";
-}
-
-function statusLabel(status: string): string {
-  if (status === "open") return "Open";
-  if (status === "completed") return "Completed";
-  if (status === "cancelled") return "Voided";
-  return status;
-}
-
-function outstandingKg(order: JobWorkOrder): number {
+function netReceivedKg(order: JobWorkOrder): number {
   let total = 0;
   for (const ln of order.lines) {
-    total += Number(ln.received_quantity_kg) - Number(ln.returned_quantity_kg);
+    total += Number(ln.net_received_kg ?? ln.custody_kg ?? 0);
   }
   return total;
 }
@@ -81,8 +66,6 @@ export default function JobWorkListPage() {
     setOffset(0);
   }, [statusFilter, customerFilter]);
 
-  const openCount = useMemo(() => rows.filter((r) => r.status === "open").length, [rows]);
-
   const columns: Column<JobWorkOrder>[] = [
     {
       key: "job_number",
@@ -111,16 +94,11 @@ export default function JobWorkListPage() {
       headerClassName: "text-right",
     },
     {
-      key: "custody",
-      header: "In custody",
-      cell: (r) => formatQtyKg(outstandingKg(r)),
+      key: "received",
+      header: "Received",
+      cell: (r) => formatQtyKg(netReceivedKg(r)),
       className: "text-right v2-mono font-medium",
       headerClassName: "text-right",
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (r) => <Badge tone={statusTone(r.status)} size="sm">{statusLabel(r.status)}</Badge>,
     },
     {
       key: "actions",
@@ -146,7 +124,7 @@ export default function JobWorkListPage() {
       <PageHeader
         eyebrow="Job work"
         title="Job work orders"
-        subtitle="Customer material received for processing. Track custody, receipts, and returns."
+        subtitle="Customer material orders for processing — like bills without payment."
         actions={
           <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => navigate("/job-work/new")}>
             New order
@@ -160,17 +138,12 @@ export default function JobWorkListPage() {
         </Banner>
       )}
 
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mb-5 grid gap-3 sm:grid-cols-2">
         <Stat
           label="Orders on page"
           value={rows.length}
           icon={<Briefcase className="h-5 w-5" />}
           tone="primary"
-        />
-        <Stat
-          label="Open on page"
-          value={openCount}
-          tone="info"
         />
         <Stat
           label="Total matching"
@@ -262,10 +235,9 @@ export default function JobWorkListPage() {
                         <p className="mt-0.5 text-base text-ink">{r.customer_name}</p>
                         <p className="mt-1 text-sm text-ink-muted">{formatDate(r.job_date)}</p>
                       </div>
-                      <Badge tone={statusTone(r.status)}>{statusLabel(r.status)}</Badge>
                     </div>
                     <p className="mt-3 text-sm text-ink-muted">
-                      {r.lines.length} line{r.lines.length === 1 ? "" : "s"} · In custody {formatQtyKg(outstandingKg(r))}
+                      {r.lines.length} line{r.lines.length === 1 ? "" : "s"} · Received {formatQtyKg(netReceivedKg(r))}
                     </p>
                     <Link to={`/job-work/${r.id}`} className="mt-3 block">
                       <Button className="w-full" variant="secondary" leftIcon={<Eye className="h-4 w-4" />}>

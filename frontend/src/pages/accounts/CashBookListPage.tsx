@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
-  Pencil,
+  Ban,
   Plus,
   ReceiptText,
-  Trash2,
 } from "lucide-react";
 import {
   bankAccountsApi,
@@ -22,6 +21,7 @@ import {
   newIdempotencyKey,
 } from "../../api/client";
 import { formatDate, formatInr } from "../../lib/format";
+import { usePermissions } from "../../lib/permissions";
 import PageHeader from "../../components/ui/PageHeader";
 import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
@@ -29,13 +29,13 @@ import Banner from "../../components/ui/Banner";
 import EmptyState from "../../components/ui/EmptyState";
 import { Card, CardBody } from "../../components/ui/Card";
 import FormField from "../../components/ui/FormField";
-import IconButton from "../../components/ui/IconButton";
 import VoidConfirmDialog from "../../components/ui/VoidConfirmDialog";
 import PaginationBar from "../../components/ui/PaginationBar";
 import Select from "../../components/ui/Select";
 import Input from "../../components/ui/Input";
 import Table, { type Column } from "../../components/ui/Table";
 import { toast } from "../../components/ui/Toaster";
+import { cn } from "../../lib/cn";
 
 function entryTypeBadge(entry: CashBookEntry) {
   if (entry.entry_type === "income") return <Badge tone="success" size="sm">Income</Badge>;
@@ -63,7 +63,7 @@ function modeLabel(entry: CashBookEntry): string {
 }
 
 export default function CashBookListPage() {
-  const navigate = useNavigate();
+  const { canVoid } = usePermissions();
   const [rows, setRows] = useState<CashBookEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -236,32 +236,31 @@ export default function CashBookListPage() {
         cell: (e) =>
           e.voided_at ? (
             <span className="text-xs text-ink-subtle">—</span>
+          ) : canVoid ? (
+            <Button
+              size="sm"
+              variant="outline"
+              leftIcon={<Ban className="h-3.5 w-3.5" />}
+              className={cn(
+                "min-w-[5.5rem] border-rose-200/80 bg-rose-50/40 font-medium text-rose-700",
+                "hover:border-rose-300 hover:bg-rose-100/80 hover:text-rose-800",
+                "dark:border-rose-800/50 dark:bg-rose-950/25 dark:text-rose-300",
+                "dark:hover:border-rose-700/60 dark:hover:bg-rose-950/45 dark:hover:text-rose-200"
+              )}
+              onClick={() => {
+                idemRef.current = null;
+                setPending(e);
+              }}
+              loading={busy && pending?.id === e.id}
+            >
+              Void
+            </Button>
           ) : (
-            <div className="inline-flex items-center justify-end gap-1">
-              <IconButton
-                label="Edit entry"
-                size="sm"
-                variant="outline"
-                onClick={() => navigate(`/accounts/cashbook/${e.id}/edit`)}
-              >
-                <Pencil className="h-4 w-4" />
-              </IconButton>
-              <IconButton
-                label="Void entry"
-                size="sm"
-                onClick={() => {
-                  idemRef.current = null;
-                  setPending(e);
-                }}
-                className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/40"
-              >
-                <Trash2 className="h-4 w-4" />
-              </IconButton>
-            </div>
+            <span className="text-xs text-ink-subtle">—</span>
           ),
       },
     ],
-    [navigate]
+    [canVoid, busy, pending?.id]
   );
 
   return (
@@ -269,7 +268,7 @@ export default function CashBookListPage() {
       <PageHeader
         eyebrow="Accounts"
         title="Cash book"
-        subtitle="Non-bill money movements: expenses, income, and transfers between cash and banks."
+        subtitle="Non-bill money movements: expenses, income, and transfers. Owner can void wrong entries — balances reverse automatically."
         actions={
           <Link to="/accounts/cashbook/new">
             <Button leftIcon={<Plus className="h-4 w-4" />}>New entry</Button>

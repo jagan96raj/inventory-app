@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus, UserPlus } from "lucide-react";
 import {
   api,
-  idempotencyHeaders,
+  idempotencyHeadersOptionalAuth,
   newIdempotencyKey,
   type BagType,
   type Bill,
@@ -13,6 +13,15 @@ import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { useBagTypeCache } from "../hooks/useBagTypeCache";
 import { isLooseBagType, calcPreviewTotalKg } from "../lib/bagType";
 import { formatInr, formatQtyKg } from "../lib/format";
+import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
+import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
+import {
+  exceedsAvailableStock,
+  formatRemainingStockAfterReserved,
+  reservedStockFromEarlierLines,
+  reservedStockFromSiblingLines,
+  stockExceedsMessageWithReserved,
+} from "../lib/stockWarning";
 import {
   fetchBagTypesByIds,
   searchBagTypes,
@@ -84,6 +93,7 @@ function resetLineFrom(line: LineForm, step: "product" | "brand" | "bag_type" | 
 }
 
 function isDuplicateLine(lines: LineForm[], idx: number, isSales: boolean): boolean {
+  if (isSales) return false;
   const line = lines[idx];
   if (!line.product_id || !line.brand_id || !line.bag_type_id) return false;
   return lines.some(
@@ -91,8 +101,7 @@ function isDuplicateLine(lines: LineForm[], idx: number, isSales: boolean): bool
       i !== idx &&
       l.product_id === line.product_id &&
       l.brand_id === line.brand_id &&
-      l.bag_type_id === line.bag_type_id &&
-      (!isSales || l.stock_source === line.stock_source)
+      l.bag_type_id === line.bag_type_id
   );
 }
 
@@ -139,6 +148,8 @@ export default function BillFormPage({
   const [stock, setStock] = useState<StockRow[]>([]);
   const [stockLoading, setStockLoading] = useState(false);
   const [error, setError] = useState("");
+  const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
+  const [backdateAuthError, setBackdateAuthError] = useState("");
   const { submitting, guardedSubmit, submitDisabled } = useSubmitGuard();
   const idemKeyRef = useRef<string | null>(null);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
@@ -328,26 +339,48 @@ export default function BillFormPage({
   const stockWarnings = useMemo(() => {
     if (billType !== "sales" || !headerReady) return [] as string[];
     const warnings: string[] = [];
-    for (const line of lines) {
-      if (!line.product_id || !line.brand_id || !line.bag_type_id) continue;
+    const seenBuckets = new Set<string>();
+
+    lines.forEach((line) => {
+      if (!line.product_id || !line.brand_id || !line.bag_type_id) return;
+      const bucketKey = `${line.product_id}|${line.brand_id}|${line.bag_type_id}|${line.stock_source}`;
+      if (seenBuckets.has(bucketKey)) return;
+      seenBuckets.add(bucketKey);
+
       const bt = getBagType(line.bag_type_id);
-      const qty = orderedQtyKg(line, bt);
-      if (qty <= 0) continue;
       const owner = stockOwnerFilter(line.stock_source, header.customer_id);
       const scopedStock = filterStockForOwner(stock, owner);
-      const row = stockRow(
-        scopedStock,
-        line.product_id,
-        line.brand_id,
-        line.bag_type_id,
-        owner
-      );
+      const row = stockRow(scopedStock, line.product_id, line.brand_id, line.bag_type_id, owner);
       const sourceLabel = line.stock_source === "job_work" ? "job work" : "owned";
-      if (!row || qty > Number(row.total_quantity_kg)) {
-        const label = row?.product_name ?? `Product #${line.product_id}`;
+      const label = row?.product_name ?? `Product #${line.product_id}`;
+
+      let totalBags = 0;
+      let totalLooseKg = 0;
+      for (const ln of lines) {
+        if (
+          ln.product_id !== line.product_id ||
+          ln.brand_id !== line.brand_id ||
+          ln.bag_type_id !== line.bag_type_id ||
+          ln.stock_source !== line.stock_source
+        ) {
+          continue;
+        }
+        if (!ln.product_id || !ln.brand_id || !ln.bag_type_id) continue;
+        const lnBt = getBagType(ln.bag_type_id);
+        if (isLooseBagType(lnBt)) {
+          totalLooseKg += Number(ln.ordered_loose_kg) || 0;
+        } else {
+          totalBags += Number(ln.ordered_bags) || 0;
+        }
+      }
+
+      const totalKg = calcPreviewTotalKg(bt, totalBags, totalLooseKg);
+      if (totalKg <= 0) return;
+
+      if (!row || exceedsAvailableStock(bt, totalBags, totalLooseKg, row)) {
         warnings.push(`${label}: insufficient ${sourceLabel} stock at this location`);
       }
-    }
+    });
     return warnings;
   }, [billType, headerReady, lines, getBagType, stock, header.customer_id]);
 
@@ -420,7 +453,7 @@ export default function BillFormPage({
     await guardedSubmit(async () => {
       try {
         const updated = await api.patch<Bill>(`/api/bills/${bill.id}`, buildEditPayload(), {
-          headers: idempotencyHeaders(idemKey()),
+          headers: idempotencyHeadersOptionalAuth(idemKey()),
         });
         clearIdemKey();
         setBill(updated);
@@ -429,6 +462,14 @@ export default function BillFormPage({
         setError(errMsg(err));
       }
     });
+  };
+
+  const postCreateBill = async (authorizationPassword?: string) => {
+    await api.post<Bill>("/api/bills", buildCreatePayload(), {
+      headers: idempotencyHeadersOptionalAuth(idemKey(), authorizationPassword),
+    });
+    clearIdemKey();
+    navigate(listPath);
   };
 
   const submitCreate = async (e: FormEvent) => {
@@ -461,15 +502,35 @@ export default function BillFormPage({
       clearIdemKey();
       return;
     }
+    if (isBackdatedDate(billDate)) {
+      setBackdateAuthError("");
+      setBackdateAuthOpen(true);
+      return;
+    }
     await guardedSubmit(async () => {
       try {
-        await api.post<Bill>("/api/bills", buildCreatePayload(), {
-          headers: idempotencyHeaders(idemKey()),
-        });
-        clearIdemKey();
-        navigate(listPath);
+        await postCreateBill();
       } catch (err) {
         setError(errMsg(err));
+      }
+    });
+  };
+
+  const confirmBackdateAuth = async (authorizationPassword: string) => {
+    setBackdateAuthError("");
+    await guardedSubmit(async () => {
+      try {
+        await postCreateBill(authorizationPassword);
+        setBackdateAuthOpen(false);
+      } catch (err) {
+        const msg = errMsg(err);
+        if (isAuthPasswordError(msg)) {
+          setBackdateAuthError(msg);
+        } else {
+          setError(msg);
+          setBackdateAuthOpen(false);
+        }
+        throw err;
       }
     });
   };
@@ -496,8 +557,30 @@ export default function BillFormPage({
     const s2 = s1 && Boolean(line.brand_id);
     const s3 = s2 && Boolean(line.bag_type_id);
     const s4 = s3 && line.rate_per_kg !== "" && Number(line.rate_per_kg) >= 0;
+    const lineStockLines = lines.map((l) => ({
+      bag_count: l.ordered_bags,
+      loose_kg: l.ordered_loose_kg,
+    }));
+    const sameBucket = (i: number) =>
+      lines[i].product_id === line.product_id &&
+      lines[i].brand_id === line.brand_id &&
+      lines[i].bag_type_id === line.bag_type_id &&
+      lines[i].stock_source === line.stock_source;
+    const reservedEarlier = reservedStockFromEarlierLines(bt, lineStockLines, idx, sameBucket);
+    const reservedSiblings = reservedStockFromSiblingLines(bt, lineStockLines, idx, sameBucket);
+    const hasEarlierReserved = reservedEarlier.bagCount > 0 || reservedEarlier.looseKg > 0;
+    const remainingDisplay =
+      inv && bt ? formatRemainingStockAfterReserved(bt, inv, reservedEarlier.bagCount, reservedEarlier.looseKg) : "";
+    const exceedMsg = stockExceedsMessageWithReserved(
+      bt,
+      line.ordered_bags,
+      line.ordered_loose_kg,
+      inv,
+      reservedSiblings.bagCount,
+      reservedSiblings.looseKg
+    );
     const qtyKg = orderedQtyKg(line, bt);
-    const dup = isDuplicateLine(lines, idx, isSales);
+    const dup = !isSales && isDuplicateLine(lines, idx, isSales);
     const productDisabled =
       !linesEnabled || (isSales && (stockLoading || scopedStock.length === 0));
     const productPlaceholder = !linesEnabled
@@ -712,12 +795,10 @@ export default function BillFormPage({
         </div>
         {inv && s3 && (
           <div className="stock-hint">
-            Available ({line.stock_source === "job_work" ? "job work" : "owned"}):{" "}
-            {isLooseBagType(bt)
-              ? formatQtyKg(inv.total_quantity_kg)
-              : `${inv.bag_count} bags · ${formatQtyKg(inv.total_quantity_kg)}`}
-            {isSales && inv && s4 && qtyKg > Number(inv.total_quantity_kg) && (
-              <span className="stock-warning"> — exceeds available stock at this location</span>
+            {hasEarlierReserved ? "Remaining" : "Available"} (
+            {line.stock_source === "job_work" ? "job work" : "owned"}): {remainingDisplay}
+            {isSales && exceedMsg && (
+              <span className="stock-warning"> — {exceedMsg.replace(" — cannot submit", "")}</span>
             )}
           </div>
         )}
@@ -911,6 +992,11 @@ export default function BillFormPage({
                     onChange={(e) => setBillDate(e.target.value)}
                     required
                   />
+                  {isBackdatedDate(billDate) ? (
+                    <span className="mt-1 block text-xs text-ink-muted">
+                      Past date — authorization password required on save.
+                    </span>
+                  ) : null}
                 </label>
               )}
               <div style={{ gridColumn: "1 / -1" }}>
@@ -1119,6 +1205,14 @@ export default function BillFormPage({
         open={addCustomerOpen}
         onClose={() => setAddCustomerOpen(false)}
         onCreated={handleCustomerCreated}
+      />
+
+      <BackdateAuthDialog
+        open={backdateAuthOpen}
+        onClose={() => setBackdateAuthOpen(false)}
+        onConfirm={confirmBackdateAuth}
+        dateLabel={billDate}
+        authError={backdateAuthError || undefined}
       />
     </>
   );

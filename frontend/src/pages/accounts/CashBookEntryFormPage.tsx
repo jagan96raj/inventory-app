@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, Trash2 } from "lucide-react";
 import {
   bankAccountsApi,
   billsApi,
@@ -15,8 +15,14 @@ import {
   type ExpenseCategory,
 } from "../../api/client";
 import { useSubmitGuard } from "../../hooks/useSubmitGuard";
+import { usePermissions } from "../../lib/permissions";
+import { formatDateTime, formatInr, localIsoDate, validateDateNotFuture } from "../../lib/format";
+import { isAuthPasswordError, isBackdatedDate } from "../../lib/backdateAuth";
+import BusinessDateField from "../../components/ui/BusinessDateField";
+import BackdateAuthDialog from "../../components/ui/BackdateAuthDialog";
 import PageHeader from "../../components/ui/PageHeader";
 import Button from "../../components/ui/Button";
+import Badge from "../../components/ui/Badge";
 import Banner from "../../components/ui/Banner";
 import { Card, CardBody, CardFooter, CardHeader } from "../../components/ui/Card";
 import FormField from "../../components/ui/FormField";
@@ -25,6 +31,7 @@ import NumberInput from "../../components/ui/NumberInput";
 import Select from "../../components/ui/Select";
 import SegmentedControl from "../../components/ui/SegmentedControl";
 import Textarea from "../../components/ui/Textarea";
+import VoidConfirmDialog from "../../components/ui/VoidConfirmDialog";
 import { toast } from "../../components/ui/Toaster";
 
 type Mode = "cash" | "bank";
@@ -60,6 +67,7 @@ type FormState = {
   source_bank_id: number | "";
   dest_mode: PaymentMode;
   dest_bank_id: number | "";
+  entry_date: string;
 };
 
 function blankState(initial?: Partial<FormState>): FormState {
@@ -74,6 +82,7 @@ function blankState(initial?: Partial<FormState>): FormState {
     source_bank_id: "",
     dest_mode: "bank",
     dest_bank_id: "",
+    entry_date: localIsoDate(),
     ...initial,
   };
 }
@@ -87,6 +96,7 @@ function pickDefaultBank(banks: BankAccount[]): number | "" {
 
 export default function CashBookEntryFormPage() {
   const navigate = useNavigate();
+  const { canVoid } = usePermissions();
   const { id: idParam } = useParams<{ id?: string }>();
   const editing = !!idParam;
   const entryId = idParam ? Number(idParam) : null;
@@ -102,8 +112,14 @@ export default function CashBookEntryFormPage() {
   const [billOptions, setBillOptions] = useState<BillPickerItem[]>([]);
   const [selectedBillLabel, setSelectedBillLabel] = useState("");
   const [error, setError] = useState("");
+  const [voidAuthError, setVoidAuthError] = useState("");
+  const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
+  const [backdateAuthError, setBackdateAuthError] = useState("");
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [voidBusy, setVoidBusy] = useState(false);
   const { submitting: busy, guardedSubmit, submitDisabled } = useSubmitGuard();
   const [original, setOriginal] = useState<CashBookEntry | null>(null);
+  const voidIdemRef = useRef<string | null>(null);
 
   const [state, setState] = useState<FormState>(() =>
     blankState({
@@ -281,33 +297,107 @@ export default function CashBookEntryFormPage() {
           : null;
       if (state.source_mode === "bank" && base.source_bank_account_id == null) return null;
     }
+    if (!editing) {
+      base.entry_date = state.entry_date;
+    }
     return base;
-  }, [state, showBillLink]);
+  }, [state, showBillLink, editing]);
+
+  const saveEntry = async (authorizationPassword?: string) => {
+    if (!payload) return;
+    if (!idemRef.current) idemRef.current = newIdempotencyKey();
+    if (editing && original) {
+      await cashBookApi.update(original.id, { ...payload, expected_version: original.version }, idemRef.current);
+      toast.success("Entry updated");
+    } else {
+      await cashBookApi.create(payload, idemRef.current, authorizationPassword);
+      toast.success("Entry recorded");
+    }
+    idemRef.current = null;
+    navigate("/accounts/cashbook");
+  };
 
   const onSubmit = async () => {
     if (!payload) {
       setError("Fill all required fields. Transfers must have different source and destination.");
       return;
     }
+    if (!editing) {
+      const dateError = validateDateNotFuture(state.entry_date);
+      if (dateError) {
+        setError(dateError);
+        return;
+      }
+    }
     setError("");
+    if (!editing && isBackdatedDate(state.entry_date)) {
+      setBackdateAuthError("");
+      setBackdateAuthOpen(true);
+      return;
+    }
     if (!idemRef.current) idemRef.current = newIdempotencyKey();
     await guardedSubmit(async () => {
       try {
-        if (editing && original) {
-          await cashBookApi.update(original.id, { ...payload, expected_version: original.version }, idemRef.current!);
-          toast.success("Entry updated");
-        } else {
-          await cashBookApi.create(payload, idemRef.current!);
-          toast.success("Entry recorded");
-        }
-        idemRef.current = null;
-        navigate("/accounts/cashbook");
+        await saveEntry();
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Could not save entry";
         setError(msg);
         toast.error(msg);
       }
     });
+  };
+
+  const confirmBackdateAuth = async (authorizationPassword: string) => {
+    setBackdateAuthError("");
+    await guardedSubmit(async () => {
+      try {
+        await saveEntry(authorizationPassword);
+        setBackdateAuthOpen(false);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not save entry";
+        if (isAuthPasswordError(msg)) {
+          setBackdateAuthError(msg);
+        } else {
+          setError(msg);
+          toast.error(msg);
+          setBackdateAuthOpen(false);
+        }
+        throw err;
+      }
+    });
+  };
+
+  const isVoided = Boolean(original?.voided_at);
+  const canVoidEntry = editing && original && !isVoided && canVoid;
+
+  const voidEntry = async (authorizationPassword: string) => {
+    if (!original) return;
+    if (!voidIdemRef.current) voidIdemRef.current = newIdempotencyKey();
+    setVoidBusy(true);
+    setVoidAuthError("");
+    try {
+      const voided = await cashBookApi.void(
+        original.id,
+        original.version,
+        voidIdemRef.current,
+        authorizationPassword
+      );
+      voidIdemRef.current = null;
+      setOriginal(voided);
+      setVoidOpen(false);
+      toast.success("Entry voided — cash and bank balances have been reversed.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not void entry";
+      if (msg.toLowerCase().includes("authorization") || msg.toLowerCase().includes("password")) {
+        setVoidAuthError(msg);
+      } else {
+        setError(msg);
+        toast.error(msg);
+      }
+      throw err;
+    } finally {
+      setVoidBusy(false);
+    }
   };
 
   const billLabelFor = (b: BillPickerItem) =>
@@ -320,15 +410,36 @@ export default function CashBookEntryFormPage() {
         title={editing ? "Edit cash-book entry" : "New cash-book entry"}
         subtitle={
           editing
-            ? "Updates re-derive cash and bank balances."
-            : "Record a non-bill money movement. Date and time are set by the server."
+            ? "Updates re-derive cash and bank balances. Entry date cannot be changed."
+            : "Record a non-bill money movement. Date defaults to today; past dates allowed."
         }
         actions={
-          <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate(-1)}>
-            Back
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {canVoidEntry && (
+              <Button
+                variant="danger"
+                leftIcon={<Trash2 className="h-4 w-4" />}
+                onClick={() => {
+                  voidIdemRef.current = null;
+                  setVoidAuthError("");
+                  setVoidOpen(true);
+                }}
+              >
+                Void entry
+              </Button>
+            )}
+            <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate(-1)}>
+              Back
+            </Button>
+          </div>
         }
       />
+
+      {isVoided && original?.voided_at && (
+        <Banner tone="warning" className="mb-4">
+          This entry was voided on {formatDateTime(original.voided_at)}. It no longer affects cash or bank balances.
+        </Banner>
+      )}
 
       {error && (
         <Banner tone="danger" className="mb-4" onClose={() => setError("")}>
@@ -337,8 +448,12 @@ export default function CashBookEntryFormPage() {
       )}
 
       <Card>
-        <CardHeader title="Entry details" />
+        <CardHeader
+          title="Entry details"
+          actions={isVoided ? <Badge tone="danger">Voided</Badge> : undefined}
+        />
         <CardBody className="space-y-5">
+          <fieldset disabled={isVoided} className="space-y-5 disabled:opacity-70">
           <div>
             <SegmentedControl
               ariaLabel="Entry type"
@@ -351,6 +466,18 @@ export default function CashBookEntryFormPage() {
               ]}
             />
           </div>
+
+          {!editing && (
+            <BusinessDateField
+              value={state.entry_date}
+              onChange={(entry_date) => setState((prev) => ({ ...prev, entry_date }))}
+            />
+          )}
+          {editing && original && (
+            <FormField label="Entry date">
+              <Input readOnly value={original.entry_date} />
+            </FormField>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField label="Amount (₹)" required>
@@ -593,16 +720,45 @@ export default function CashBookEntryFormPage() {
               placeholder="Notes for this entry"
             />
           </FormField>
+          </fieldset>
         </CardBody>
         <CardFooter>
-          <Button variant="ghost" onClick={() => navigate(-1)} disabled={busy}>
-            Cancel
+          <Button variant="ghost" onClick={() => navigate(-1)} disabled={busy || voidBusy}>
+            {isVoided ? "Back to cash book" : "Cancel"}
           </Button>
-          <Button onClick={onSubmit} disabled={submitDisabled || busy || !payload} loading={busy} leftIcon={<Save className="h-4 w-4" />}>
-            {busy ? "Saving…" : editing ? "Save changes" : "Record entry"}
-          </Button>
+          {!isVoided && (
+            <Button onClick={onSubmit} disabled={submitDisabled || busy || !payload} loading={busy} leftIcon={<Save className="h-4 w-4" />}>
+              {busy ? "Saving…" : editing ? "Save changes" : "Record entry"}
+            </Button>
+          )}
         </CardFooter>
       </Card>
+
+      <VoidConfirmDialog
+        open={voidOpen}
+        onClose={() => {
+          voidIdemRef.current = null;
+          setVoidAuthError("");
+          setVoidOpen(false);
+        }}
+        onConfirm={voidEntry}
+        title="Void this cash-book entry?"
+        description={
+          original
+            ? `Void this ${original.entry_type} of ${formatInr(original.amount)} — cash and bank balances will be reversed.`
+            : ""
+        }
+        confirmLabel={voidBusy ? "Voiding…" : "Void entry"}
+        authError={voidAuthError || undefined}
+      />
+
+      <BackdateAuthDialog
+        open={backdateAuthOpen}
+        onClose={() => setBackdateAuthOpen(false)}
+        onConfirm={confirmBackdateAuth}
+        dateLabel={state.entry_date}
+        authError={backdateAuthError || undefined}
+      />
     </>
   );
 }

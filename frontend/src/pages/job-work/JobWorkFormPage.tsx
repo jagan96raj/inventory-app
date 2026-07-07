@@ -18,6 +18,12 @@ import { calcPreviewTotalKg, isLooseBagType } from "../../lib/bagType";
 
 import { formatQtyKg } from "../../lib/format";
 
+import { isAuthPasswordError, isBackdatedDate } from "../../lib/backdateAuth";
+
+import BusinessDateField from "../../components/ui/BusinessDateField";
+
+import BackdateAuthDialog from "../../components/ui/BackdateAuthDialog";
+
 import {
 
   searchBagTypes,
@@ -136,6 +142,10 @@ export default function JobWorkFormPage() {
 
   const [error, setError] = useState("");
 
+  const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
+
+  const [backdateAuthError, setBackdateAuthError] = useState("");
+
   const [saving, setSaving] = useState(false);
 
   const idemRef = useRef<string | null>(null);
@@ -163,6 +173,32 @@ export default function JobWorkFormPage() {
   };
 
 
+
+  const createOrder = async (authorizationPassword?: string) => {
+    const complete = lines.filter((l) => l.product_id && l.brand_id && l.bag_type_id);
+    if (!idemRef.current) idemRef.current = newIdempotencyKey();
+    const order = await jobWorkApi.create(
+      {
+        customer_id: customerId!,
+        job_date: jobDate,
+        notes: notes.trim() || null,
+        lines: complete.map((l) => {
+          const bt = bagTypeCache.get(l.bag_type_id)!;
+          return {
+            product_id: Number(l.product_id),
+            brand_id: Number(l.brand_id),
+            bag_type_id: Number(l.bag_type_id),
+            ordered_bags: isLooseBagType(bt) ? 0 : parseBagCount(l.ordered_bags),
+            ordered_loose_kg: isLooseBagType(bt) ? parseLooseKg(l.ordered_loose_kg) : 0,
+          };
+        }),
+      },
+      idemRef.current,
+      authorizationPassword
+    );
+    idemRef.current = null;
+    navigate(`/job-work/${order.id}`);
+  };
 
   const submit = async (e: FormEvent) => {
 
@@ -222,49 +258,17 @@ export default function JobWorkFormPage() {
 
     if (!idemRef.current) idemRef.current = newIdempotencyKey();
 
+    if (isBackdatedDate(jobDate)) {
+      setBackdateAuthError("");
+      setBackdateAuthOpen(true);
+      return;
+    }
+
     setSaving(true);
 
     try {
 
-      const order = await jobWorkApi.create(
-
-        {
-
-          customer_id: customerId,
-
-          job_date: jobDate,
-
-          notes: notes.trim() || null,
-
-          lines: complete.map((l) => {
-
-            const bt = bagTypeCache.get(l.bag_type_id)!;
-
-            return {
-
-              product_id: Number(l.product_id),
-
-              brand_id: Number(l.brand_id),
-
-              bag_type_id: Number(l.bag_type_id),
-
-              ordered_bags: isLooseBagType(bt) ? 0 : parseBagCount(l.ordered_bags),
-
-              ordered_loose_kg: isLooseBagType(bt) ? parseLooseKg(l.ordered_loose_kg) : 0,
-
-            };
-
-          }),
-
-        },
-
-        idemRef.current
-
-      );
-
-      idemRef.current = null;
-
-      navigate(`/job-work/${order.id}`);
+      await createOrder();
 
     } catch (err) {
 
@@ -278,7 +282,25 @@ export default function JobWorkFormPage() {
 
   };
 
-
+  const confirmBackdateAuth = async (authorizationPassword: string) => {
+    setBackdateAuthError("");
+    setSaving(true);
+    try {
+      await createOrder(authorizationPassword);
+      setBackdateAuthOpen(false);
+    } catch (err) {
+      const msg = errMsg(err);
+      if (isAuthPasswordError(msg)) {
+        setBackdateAuthError(msg);
+      } else {
+        setError(msg);
+        setBackdateAuthOpen(false);
+      }
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
 
@@ -290,7 +312,7 @@ export default function JobWorkFormPage() {
 
         title="New job work order"
 
-        subtitle="Record customer material expected for processing. Receive stock against each line when material arrives."
+        subtitle="Create order for customer material — receive against each line in fulfillment (no payment)."
 
         actions={
 
@@ -358,15 +380,7 @@ export default function JobWorkFormPage() {
 
             </FormField>
 
-            <FormField label="Job date" required>
-
-              {({ id }) => (
-
-                <Input id={id} type="date" max={maxDate} value={jobDate} onChange={(e) => setJobDate(e.target.value)} required />
-
-              )}
-
-            </FormField>
+            <BusinessDateField label="Job date" value={jobDate} onChange={setJobDate} />
 
             <div className="sm:col-span-2">
 
@@ -657,6 +671,14 @@ export default function JobWorkFormPage() {
         </div>
 
       </form>
+
+      <BackdateAuthDialog
+        open={backdateAuthOpen}
+        onClose={() => setBackdateAuthOpen(false)}
+        onConfirm={confirmBackdateAuth}
+        dateLabel={jobDate}
+        authError={backdateAuthError || undefined}
+      />
 
     </>
 

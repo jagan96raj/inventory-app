@@ -1,5 +1,6 @@
 """Spec v12.18 — app-wide list pagination."""
 import unittest
+from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -174,6 +175,22 @@ class PaginationV1218Tests(unittest.TestCase):
         body = res.json()
         for item in body["items"]:
             self.assertIn("alpha", item["customer_name"].lower())
+
+    def test_bills_date_filter(self):
+        self.bills[0].bill_date = date(2026, 1, 15)
+        self.bills[1].bill_date = date(2026, 2, 10)
+        self.bills[2].bill_date = date(2026, 3, 20)
+        self.db.commit()
+
+        res = self.client.get("/api/bills?bill_type=sales&date_from=2026-02-01&date_to=2026-02-28")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(body["items"][0]["id"], self.bills[1].id)
+        self.assertEqual(body["summary"]["total_count"], 1)
+
+        bad = self.client.get("/api/bills?date_from=2026-03-01&date_to=2026-02-01")
+        self.assertEqual(bad.status_code, 400)
 
     def test_payments_paginated(self):
         bill = self.bills[0]

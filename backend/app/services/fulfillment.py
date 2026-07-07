@@ -1,6 +1,7 @@
-from app.utils.time import utc_now
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
+
+from app.utils.time import resolve_business_entry, utc_now
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -682,6 +683,7 @@ def create_fulfillment(
     vehicle_no: str | None = None,
     *,
     expected_version: int | None = None,
+    fulfilled_date: date | None = None,
 ) -> FulfillmentEntry:
     line = db.scalar(
         select(BillLine)
@@ -698,7 +700,7 @@ def create_fulfillment(
         raise ValueError("Bill not found")
     assert_bill_version(locked_bill, expected_version)
 
-    at = utc_now()
+    _, at = resolve_business_entry(fulfilled_date)
     entry = _apply_fulfillment_to_line(
         db,
         bill,

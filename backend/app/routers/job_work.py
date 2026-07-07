@@ -14,7 +14,7 @@ from app.core.permissions import (
     require_permission,
     require_void_user,
 )
-from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
+from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.database import get_db
 from app.models.entities import JobWorkOrderStatus, User
 from app.schemas import (
@@ -86,7 +86,9 @@ def create_order(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.job_date, void_password, user)
     route_key = "POST /api/job-work"
     request_hash = hash_pydantic_body(body)
 
@@ -109,13 +111,13 @@ def create_order(
 
 @router.get("/job-work/fulfillment/orders", response_model=JobWorkFulfillmentOrderPageOut, dependencies=FULFILLMENT)
 def list_fulfillment_orders(
-    tab: str = Query("receive", pattern="^(receive|return)$"),
+    tab: str = Query("all", pattern="^(all|receive|return)$"),
     visibility: str = Query("actionable", pattern="^(actionable|all)$"),
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
-    """Open JW orders grouped for receive/return workflows (separate from bill fulfillment)."""
+    """Open JW orders with bill-like receive/return lines (unified list; tab receive/return for legacy filters)."""
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     rows, total = list_jw_fulfillment_orders(
@@ -163,7 +165,9 @@ def receive_material(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.received_date, void_password, user)
     route_key = "POST /api/job-work/receive"
     request_hash = hash_pydantic_body(body)
 
@@ -177,6 +181,7 @@ def receive_material(
                 loose_kg=body.loose_kg,
                 vehicle_no=body.vehicle_no,
                 notes=body.notes,
+                received_date=body.received_date,
             )
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
@@ -215,7 +220,9 @@ def return_to_customer(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.received_date, void_password, user)
     route_key = "POST /api/job-work/return"
     request_hash = hash_pydantic_body(body)
 
@@ -228,6 +235,7 @@ def return_to_customer(
                 bag_count=body.bag_count,
                 loose_kg=body.loose_kg,
                 notes=body.notes,
+                received_date=body.received_date,
             )
         except ValueError as e:
             raise HTTPException(400, str(e)) from e

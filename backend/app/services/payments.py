@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -21,7 +21,7 @@ from app.services.bill_concurrency import (
     bump_bill_version,
     bump_bills_version,
 )
-from app.utils.time import utc_now
+from app.utils.time import resolve_business_entry, utc_now
 
 PAYMENT_VOID_SETOFF_MSG = (
     "Void the primary payment instead; linked set-off payments will be voided automatically."
@@ -406,8 +406,9 @@ def _resolve_bank_account(
 def create_payment(
     db: Session, bill_id: int, amount: Decimal, payment_mode: PaymentMode,
     *, expected_version: int | None, bank_account_id: int | None = None,
+    paid_date: date | None = None,
 ) -> Payment:
-    paid_at = utc_now()
+    _, paid_at = resolve_business_entry(paid_date)
 
     if payment_mode == PaymentMode.setoff:
 

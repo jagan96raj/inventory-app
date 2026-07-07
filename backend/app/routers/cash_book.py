@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.permissions import Permission, require_permission, require_void_user
-from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
+from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.database import get_db
@@ -101,7 +101,9 @@ def post_cash_book_entry(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.entry_date, void_password, user)
     route_key = "POST /api/cashbook"
     request_hash = hash_pydantic_body(body)
 
@@ -119,6 +121,7 @@ def post_cash_book_entry(
                 source_bank_account_id=body.source_bank_account_id,
                 dest_payment_mode=body.dest_payment_mode,
                 dest_bank_account_id=body.dest_bank_account_id,
+                entry_date=body.entry_date,
             )
         except ValueError as e:
             raise _http_for_value_error(e) from e

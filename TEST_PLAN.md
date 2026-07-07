@@ -1,8 +1,53 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 22 Jun 2026 — covers Spec v5.4 through **v16.0.15**; backend v12.21 + v12.22  
+**Last updated:** 07 Jul 2026 — covers Spec v5.4 through **v16.0.20**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v16.0.20 — Fulfillment dialog layout + bill edit save fix
+
+1. **Sales deliver dialog layout** — Open Deliver on a sales bill line: **Billed from this location** banner stays at top; below it, **Product/context** and **Delivery details** show side-by-side on wide screens.
+2. **Purchase receive dialog layout** — Open Receive on a purchase line: context and receive form appear side-by-side on wide screens; stacked on mobile/smaller widths.
+3. **Quantity stat rendering** — In context cards, values like `10 bags` or `1250.000 kg` stay on one line (no split word wrapping).
+4. **Bill edit save** — Edit a finalized bill (discount/adjustment), click Save changes; request succeeds and no `idempotencyHeaders is not defined` runtime error appears.
+
+## v16.0.19 — Backdated transaction dates
+
+1. **Record payment** — Date field defaults to today; set a past date → payment `paid_at` reflects that date.
+2. **Bill fulfillment** (deliver/return dialog) — Date field; past date allowed.
+3. **Cash book new entry** — Entry date editable on create; read-only on edit.
+4. **Job work receive/return** — Date field on action dialog.
+5. **Future date** — UI blocks with `max=today`; API returns 422.
+6. **Past date** — password dialog on save; API returns 403 without `X-Void-Authorization`.
+
+## v16.0.18 — Processing input: no JW order picker
+
+**Processing job → Input tab:**
+
+1. **Job work line** — Select Stock owner **Job work (customer)** → pick customer → location/bag/qty. **No** “Job work order” / `JW-000001` dropdown.
+2. **Stock filter** — Available stock still scoped to that customer's job_work custody at the location (same as before without picking an order).
+3. **Submit** — Input batch saves; snapshot panel (Fresh in, mass balance) unchanged.
+
+## v16.0.16 — Running remaining stock per line (multi-line bill & processing UX)
+
+**Sales bill create** (`/sales-bills/new`):
+
+1. Pick customer + location with **100 bags** of one product (e.g. Bajra) in owned stock.
+2. Line 1: same product/brand/bag, **50 bags** → hint shows **100 bags** remaining (full stock for line 1).
+3. Add line 2: same product/brand/bag/stock source, **50 bags** → hint shows **50 bags** remaining (100 minus line 1).
+4. Line 2 at **60 bags** → exceed warning; submit blocked.
+5. Two lines same product at **50 + 50** → bill **creates successfully** (no duplicate-line error).
+
+**Purchase bill create** (`/purchase-bills/new`):
+
+6. Two lines with same product/brand/bag → **duplicate-line error** (unchanged).
+
+**Processing job input tab:**
+
+7. Two input lines same location/bag/owner → line 1 shows full available; line 2 shows **Remaining (after earlier lines)** reduced by line 1 qty.
+8. Submit validation still blocks when combined qty exceeds stock.
+
+**Backend:** `tests/test_bill_running_stock_v16016.py` — sales duplicate lines OK; purchase duplicate 400.
 
 ## v16.0.15 — CI pipeline (go-live drawback #38)
 

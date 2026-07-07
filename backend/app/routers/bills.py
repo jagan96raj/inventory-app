@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.auth import get_current_user
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.permissions import Permission, require_permission, require_void_user
-from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
+from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.pagination import (
     DEFAULT_LIMIT,
     clamp_limit,
@@ -151,6 +152,8 @@ def _apply_bill_list_filters(
     payment_status: str | None,
     delivery_status: str | None,
     search: str | None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ):
     q = q.where(Bill.status == BillStatus.finalized)
     if bill_type is not None:
@@ -159,6 +162,10 @@ def _apply_bill_list_filters(
         q = q.where(Bill.payment_status == PaymentStatus(payment_status))
     if delivery_status:
         q = q.where(Bill.order_delivery_status == DeliveryStatus(delivery_status))
+    if date_from is not None:
+        q = q.where(Bill.bill_date >= date_from)
+    if date_to is not None:
+        q = q.where(Bill.bill_date <= date_to)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         q = q.outerjoin(Customer, Bill.customer_id == Customer.id).where(
@@ -248,6 +255,8 @@ def bill_to_out(bill: Bill, db: Session | None = None, *, include_payments: bool
 
 
 def validate_lines(db: Session, bill: Bill, lines_in: list[BillLineIn]) -> None:
+    if bill.bill_type == BillType.sales:
+        return
     seen: set[tuple[int, int, int]] = set()
     for li in lines_in:
         key = (li.product_id, li.brand_id, li.bag_type_id)
@@ -343,6 +352,8 @@ def list_bills(
     payment_status: str | None = None,
     delivery_status: str | None = None,
     search: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -351,6 +362,8 @@ def list_bills(
         raise HTTPException(400, "Invalid payment_status")
     if delivery_status is not None and delivery_status not in ("not_delivered", "partial", "delivered"):
         raise HTTPException(400, "Invalid delivery_status")
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(400, "date_from must be on or before date_to")
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
 
@@ -360,6 +373,8 @@ def list_bills(
         payment_status=payment_status,
         delivery_status=delivery_status,
         search=search,
+        date_from=date_from,
+        date_to=date_to,
     )
     summary = _bills_list_summary(db, base_q)
 
@@ -372,6 +387,8 @@ def list_bills(
         payment_status=payment_status,
         delivery_status=delivery_status,
         search=search,
+        date_from=date_from,
+        date_to=date_to,
     ).order_by(Bill.id.desc())
 
     bills, total = paginate_select(db, items_q, limit=limit, offset=offset)
@@ -399,7 +416,9 @@ def create_finalized_bill(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.bill_date, void_password, user)
     route_key = "POST /api/bills"
     request_hash = hash_pydantic_body(body)
 

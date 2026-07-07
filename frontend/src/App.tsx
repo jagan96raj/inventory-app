@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import AppShell from "./components/AppShell";
 import RequireAuth from "./components/RequireAuth";
@@ -50,12 +50,6 @@ import BookSettingsPage from "./pages/accounts/BookSettingsPage";
 import PendingAccessPage from "./pages/PendingAccessPage";
 import UsersPage from "./pages/UsersPage";
 
-function JobWorkFulfillmentIndexRedirect() {
-  const [searchParams] = useSearchParams();
-  const tab = searchParams.get("tab") === "return" ? "return" : "receive";
-  return <Navigate to={`/job-work/fulfillment/${tab}`} replace />;
-}
-
 export default function App() {
   return (
     <Routes>
@@ -84,10 +78,10 @@ export default function App() {
             <Route path="/inventory" element={<InventoryPage />} />
           </Route>
           <Route element={<RequireRole permission="job_work_fulfillment_write" />}>
-            <Route path="/job-work/fulfillment/receive" element={<JobWorkFulfillmentPage />} />
-            <Route path="/job-work/fulfillment/return" element={<JobWorkFulfillmentPage />} />
-            <Route path="/job-work/fulfillment" element={<JobWorkFulfillmentIndexRedirect />} />
-            <Route path="/job-work/return" element={<Navigate to="/job-work/fulfillment/return" replace />} />
+            <Route path="/job-work/fulfillment" element={<JobWorkFulfillmentPage />} />
+            <Route path="/job-work/fulfillment/receive" element={<Navigate to="/job-work/fulfillment" replace />} />
+            <Route path="/job-work/fulfillment/return" element={<Navigate to="/job-work/fulfillment" replace />} />
+            <Route path="/job-work/return" element={<Navigate to="/job-work/fulfillment" replace />} />
           </Route>
           <Route element={<RequireRole permission="job_work_manage" />}>
             <Route path="/job-work" element={<JobWorkListPage />} />

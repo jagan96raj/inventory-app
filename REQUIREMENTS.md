@@ -1,13 +1,16 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 22 Jun 2026  
-**Spec range:** v5 (bills / payments / edit) through **v16.0.15** (CI pipeline); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments  
+**Last updated:** 07 Jul 2026
+**Spec range:** v5 (bills / payments / edit) through **v16.0.20** (fulfillment dialog layout + bill edit idempotency fix); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v16.0.20** — Fulfillment deliver/receive dialog UX polish: keep billed location on top, show product context and delivery/receive form side-by-side on larger screens, and keep quantity values (e.g. `10 bags`) on one line in stat cards. Also fixed bill edit save crash by switching to `idempotencyHeadersOptionalAuth(...)` in `BillFormPage` update flow. See **Spec v16.0.20** below.
+- **v16.0.19** — Backdated transaction dates: optional date on **payments**, **bill fulfillment**, **cash book** (new entry), **job work receive/return**, **bill create**, and **job work order create** — defaults to today, past dates allowed with **authorization password** (same as void: admin void password or login password), future blocked (client + API). See **Spec v16.0.19** below.
+- **v16.0.18** — Processing input: remove optional **Job work order** picker (`JW-000001` etc.) from input lines — stock filters by `owner_type` + `customer_id` only; DB column `job_work_order_id` retained for API/legacy rows but UI no longer sets it. See **Spec v16.0.18** below.
 - **v16.0.15** — CI pipeline (go-live drawback #38): `.github/workflows/ci.yml` — backend `unittest discover` + frontend `npm run build` on push/PR to `main`/`master`; optional `pip-audit` / `npm audit` (non-blocking). No production DB or deploy. See **Spec v16.0.15** below.
 - **v16.0.14** — Pin backend dependencies (go-live drawback #37): `requirements.txt` direct deps with `==` pins; `requirements.lock` full transitive freeze; README install/upgrade policy and optional `pip-audit`. No API, schema, or business logic changes. See **Spec v16.0.14** below.
 - **v16.0.13** — Split `processing.py` monolith (go-live drawback #36): `app/services/processing/` package (`allocation`, `powder`, `batch`, `batch_helpers`, `mass_balance`, `serialization`, `constants`, `deps`); `app.services.processing` facade re-exports unchanged public API. No migrations or business rule changes. See **Spec v16.0.13** below.
@@ -1613,7 +1616,7 @@ VOID_AUTH_PASSWORD=admin-void   # .env.example; required for void/edit authoriza
 
 ### D. Processing — proportional owner allocation
 
-- Input lines: `owner_type`, `customer_id`, optional `job_work_order_id`.
+- Input lines: `owner_type`, `customer_id` (filters job_work stock by customer). No JW order picker on input (**v16.0.18**); optional `job_work_order_id` DB column retained for API/legacy only.
 - On batch submit: compute input **kg** share per owner (`_owner_weights_from_inputs`).
 - **Single owner** (owned or one job_work customer): all outputs and balance returns go to that owner — no split.
 - **Mixed owners** (2+ owner keys; internal customers only): see **Spec v14.4** — bagged output lines use integer **bag** largest-remainder; loose lines, balance returns with loose kg, and waste fields use **kg** largest-remainder (`proportional_split_kg` at 0.001 kg).
@@ -3293,6 +3296,38 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v16.0.20 — Fulfillment dialog layout polish + bill edit idempotency fix
+
+**Problem:** Deliver/receive dialog sections stacked vertically and required extra scrolling; quantity values in stat cards wrapped awkwardly (`10` / `bags`). Bill edit save path referenced `idempotencyHeaders` in a file that only imported `idempotencyHeadersOptionalAuth`, causing runtime error when editing discount/adjustment.
+
+**Solution:** In `FulfillmentActionDialog`, keep billed location banner at top and render product/context + delivery/receive details in a responsive two-column layout (`xl` and above). In `FulfillmentActionPanels`, enforce single-line quantity values with `whitespace-nowrap` and tuned font sizing. In `BillFormPage`, use `idempotencyHeadersOptionalAuth(idemKey())` for edit PATCH headers.
+
+**Files changed:** `frontend/src/components/FulfillmentActionDialog.tsx`, `frontend/src/components/FulfillmentActionPanels.tsx`, `frontend/src/pages/BillFormPage.tsx`.
+
+**Tests:** Frontend build (`npm run build`) passes after changes.
+
+## Spec v16.0.19 — Backdated transaction dates (past only)
+
+**Problem:** Payments, fulfillment, cash book, and job work receive/return always stamped **now** — no way to record something that happened earlier.
+
+**Solution:** Optional date field on create forms (defaults to today, `max` = today). API accepts optional date fields with future-date rejection. **Past dates require `X-Void-Authorization`** (admin void password or user login password). UI prompts via `BackdateAuthDialog` before submit when date &lt; today.
+
+**UI:** `BusinessDateField` component; updated `PaymentPage`, `FulfillmentActionDialog`, `CashBookEntryFormPage` (create only), `JobWorkFulfillmentActionDialog`.
+
+**Unchanged:** Bill create and job work order create already had editable dates. Operations (bag change, transfer, disposal, processing batches) remain server-timestamped.
+
+**Tests:** `tests/test_backdate_transactions_v16019.py`.
+
+## Spec v16.0.18 — Processing input: no JW order picker
+
+**Problem:** Processing **Input** tab showed an optional **Job work order** dropdown (`JW-000001`, etc.) that did not affect stock filtering — only `owner_type` and `customer_id` filter job_work inventory. Users confused it with a required filter.
+
+**Solution:** Remove the picker from `ProcessingJobPage` input lines. Job work input still requires **Stock owner = Job work** + **Customer**; available stock and validation unchanged.
+
+**Unchanged:** DB column `processing_input_lines.job_work_order_id` and API field remain optional for legacy rows; sales bill lines may still link `job_work_order_id`; JW order void checks processing links unchanged.
+
+**Files changed:** `frontend/src/pages/ProcessingJobPage.tsx`.
 
 ## Spec v16.0.15 — CI pipeline (go-live drawback #38)
 

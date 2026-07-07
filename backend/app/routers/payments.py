@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import get_current_user
 from app.core.permissions import Permission, require_permission, require_void_user
-from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
+from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.database import get_db
@@ -105,7 +105,9 @@ def add_payment(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.paid_date, void_password, user)
     route_key = "POST /api/payments"
     request_hash = hash_pydantic_body(body)
 
@@ -118,6 +120,7 @@ def add_payment(
                 body.payment_mode,
                 expected_version=body.expected_version,
                 bank_account_id=body.bank_account_id,
+                paid_date=body.paid_date,
             )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e

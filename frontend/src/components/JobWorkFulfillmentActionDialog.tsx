@@ -9,8 +9,11 @@ import {
 } from "../api/client";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { calcPreviewTotalKg, isLooseBagType } from "../lib/bagType";
-import { formatQtyKg } from "../lib/format";
-import { formatJwPrimaryQty, jwCustodyQty, jwRemainingReceiveQty } from "../lib/jwQty";
+import { formatQtyKg, localIsoDate, validateDateNotFuture } from "../lib/format";
+import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
+import BusinessDateField from "./ui/BusinessDateField";
+import BackdateAuthDialog from "./ui/BackdateAuthDialog";
+import { formatJwPrimaryQty, jwNetReceivedQty, jwRemainingReceiveQty } from "../lib/jwQty";
 import { searchLocations } from "../lib/masterSearch";
 import { parseBagCount, parseLooseKg, PH_BAGS, PH_LOOSE_KG } from "../lib/qtyInput";
 import Banner from "./ui/Banner";
@@ -40,11 +43,14 @@ const emptyForm = () => ({
   loose_kg: "",
   vehicle_no: "",
   notes: "",
+  received_date: localIsoDate(),
 });
 
 export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClose, onSuccess }: Props) {
   const [form, setForm] = useState(emptyForm());
   const [error, setError] = useState("");
+  const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
+  const [backdateAuthError, setBackdateAuthError] = useState("");
   const { submitting, guardedSubmit, submitDisabled } = useSubmitGuard();
   const idemRef = useRef<string | null>(null);
 
@@ -80,6 +86,45 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
     return returnLocations.find((loc) => String(loc.location_id) === form.location_id);
   }, [form.location_id, isReceive, returnLocations]);
 
+  const saveFulfillment = async (authorizationPassword?: string) => {
+    if (!line || !idemRef.current) return;
+    const bags = isLooseBagType(bagType) ? 0 : parseBagCount(form.bag_count);
+    const loose = isLooseBagType(bagType) ? parseLooseKg(form.loose_kg) : 0;
+    if (isReceive) {
+      await jobWorkApi.receive(
+        {
+          line_id: line.line_id,
+          location_id: Number(form.location_id),
+          bag_count: bags,
+          loose_kg: loose,
+          vehicle_no: form.vehicle_no.trim() || null,
+          notes: form.notes.trim() || null,
+          received_date: form.received_date,
+        },
+        idemRef.current,
+        authorizationPassword
+      );
+      toast.success("Material received");
+    } else {
+      await jobWorkApi.returnToCustomer(
+        {
+          line_id: line.line_id,
+          location_id: Number(form.location_id),
+          bag_count: bags,
+          loose_kg: loose,
+          notes: form.notes.trim() || null,
+          received_date: form.received_date,
+        },
+        idemRef.current,
+        authorizationPassword
+      );
+      toast.success("Returned to customer");
+    }
+    idemRef.current = null;
+    onSuccess();
+    onClose();
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!line) return;
@@ -105,42 +150,41 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
       }
     }
     if (!idemRef.current) idemRef.current = newIdempotencyKey();
+    const dateError = validateDateNotFuture(form.received_date);
+    if (dateError) {
+      setError(dateError);
+      return;
+    }
+    if (isBackdatedDate(form.received_date)) {
+      setBackdateAuthError("");
+      setBackdateAuthOpen(true);
+      return;
+    }
     setError("");
     await guardedSubmit(async () => {
       try {
-        const bags = isLooseBagType(bagType) ? 0 : parseBagCount(form.bag_count);
-        const loose = isLooseBagType(bagType) ? parseLooseKg(form.loose_kg) : 0;
-        if (isReceive) {
-          await jobWorkApi.receive(
-            {
-              line_id: line.line_id,
-              location_id: Number(form.location_id),
-              bag_count: bags,
-              loose_kg: loose,
-              vehicle_no: form.vehicle_no.trim() || null,
-              notes: form.notes.trim() || null,
-            },
-            idemRef.current!
-          );
-          toast.success("Material received");
-        } else {
-          await jobWorkApi.returnToCustomer(
-            {
-              line_id: line.line_id,
-              location_id: Number(form.location_id),
-              bag_count: bags,
-              loose_kg: loose,
-              notes: form.notes.trim() || null,
-            },
-            idemRef.current!
-          );
-          toast.success("Returned to customer");
-        }
-        idemRef.current = null;
-        onSuccess();
-        onClose();
+        await saveFulfillment();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not save");
+      }
+    });
+  };
+
+  const confirmBackdateAuth = async (authorizationPassword: string) => {
+    setBackdateAuthError("");
+    await guardedSubmit(async () => {
+      try {
+        await saveFulfillment(authorizationPassword);
+        setBackdateAuthOpen(false);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not save";
+        if (isAuthPasswordError(msg)) {
+          setBackdateAuthError(msg);
+        } else {
+          setError(msg);
+          setBackdateAuthOpen(false);
+        }
+        throw err;
       }
     });
   };
@@ -149,6 +193,7 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
   const noReturnLocations = !isReceive && returnLocations.length === 0;
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -183,14 +228,18 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
         )}
         {line && (
           <p className="text-sm text-ink-muted">
-            {isReceive ? "Remaining to receive" : "In custody"}:{" "}
+            {isReceive ? "Remaining to receive" : "Received (net)"}:{" "}
             <span className="v2-mono font-semibold text-ink">
               {formatJwPrimaryQty(
-                isReceive ? jwRemainingReceiveQty(line) : jwCustodyQty(line)
+                isReceive ? jwRemainingReceiveQty(line) : jwNetReceivedQty(line)
               )}
             </span>
           </p>
         )}
+        <BusinessDateField
+          value={form.received_date}
+          onChange={(received_date) => setForm((f) => ({ ...f, received_date }))}
+        />
         {isReceive ? (
           <FormField label="Location" required>
             {() => (
@@ -294,5 +343,13 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
         </FormField>
       </form>
     </Modal>
+    <BackdateAuthDialog
+      open={backdateAuthOpen}
+      onClose={() => setBackdateAuthOpen(false)}
+      onConfirm={confirmBackdateAuth}
+      dateLabel={form.received_date}
+      authError={backdateAuthError || undefined}
+    />
+    </>
   );
 }

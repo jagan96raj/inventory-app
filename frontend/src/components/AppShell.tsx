@@ -10,6 +10,7 @@ import { toast } from "./ui/Toaster";
 
 export default function AppShell() {
   const { pathname } = useLocation();
+  const isProcessingJobPage = /^\/operations\/processing\/[^/]+$/.test(pathname);
   const [collapsed, , toggleCollapsed] = useSidebarCollapsed();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -60,11 +61,11 @@ export default function AppShell() {
           <AnimatePresence mode="wait">
             <motion.div
               key={pathname}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
-              className="mx-auto w-full max-w-7xl"
+              className={cn("mx-auto w-full min-w-0", isProcessingJobPage ? "max-w-none" : "max-w-7xl")}
             >
               <Outlet />
             </motion.div>

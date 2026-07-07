@@ -17,7 +17,7 @@ from app.models.entities import (
     ExpenseCategoryKind,
     User,
 )
-from app.utils.time import business_today, utc_now
+from app.utils.time import resolve_business_entry, utc_now
 
 
 CASH_BOOK_NOT_FOUND_MSG = "Cash book entry not found"
@@ -101,6 +101,7 @@ def create_cash_book_entry(
     source_bank_account_id: int | None,
     dest_payment_mode: CashBookSourceMode | None,
     dest_bank_account_id: int | None,
+    entry_date: date | None = None,
 ) -> CashBookEntry:
     _validate_category(db, category_id, entry_type)
     src_mode, src_bank, dst_mode, dst_bank = _normalize_payload(
@@ -118,6 +119,7 @@ def create_cash_book_entry(
         dest_bank_id=dst_bank,
     )
     _validate_bill(db, bill_id)
+    resolved_date, entry_at = resolve_business_entry(entry_date)
     entry = CashBookEntry(
         entry_type=entry_type,
         category_id=category_id,
@@ -129,8 +131,8 @@ def create_cash_book_entry(
         source_bank_account_id=src_bank,
         dest_payment_mode=dst_mode,
         dest_bank_account_id=dst_bank,
-        entry_date=business_today(),
-        entry_at=utc_now(),
+        entry_date=resolved_date,
+        entry_at=entry_at,
         version=1,
     )
     db.add(entry)

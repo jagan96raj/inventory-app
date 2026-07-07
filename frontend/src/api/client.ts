@@ -64,6 +64,15 @@ export function idempotencyVoidAuthHeaders(
   return voidAuthHeaders(password, idempotencyHeaders(key, extra));
 }
 
+export function idempotencyHeadersOptionalAuth(
+  key: string,
+  authPassword?: string,
+  extra?: Record<string, string>
+): Record<string, string> {
+  if (authPassword) return idempotencyVoidAuthHeaders(key, authPassword, extra);
+  return idempotencyHeaders(key, extra);
+}
+
 export type AuthUser = {
   id: number;
   email: string;
@@ -916,6 +925,7 @@ export type CashBookEntryIn = {
   source_bank_account_id?: number | null;
   dest_payment_mode?: CashBookSourceMode | null;
   dest_bank_account_id?: number | null;
+  entry_date?: string | null;
 };
 
 export type CashBookEntryEditIn = CashBookEntryIn & { expected_version: number };
@@ -1076,8 +1086,10 @@ export const cashBookApi = {
         search: p.search,
       })}`
     ),
-  create: (body: CashBookEntryIn, key: string) =>
-    api.post<CashBookEntry>("/api/cashbook", body, { headers: idempotencyHeaders(key) }),
+  create: (body: CashBookEntryIn, key: string, authorizationPassword?: string) =>
+    api.post<CashBookEntry>("/api/cashbook", body, {
+      headers: idempotencyHeadersOptionalAuth(key, authorizationPassword),
+    }),
   update: (id: number, body: CashBookEntryEditIn, key: string) =>
     api.patch<CashBookEntry>(`/api/cashbook/${id}`, body, { headers: idempotencyHeaders(key) }),
   void: (id: number, expectedVersion: number, key: string, authorizationPassword: string) =>
@@ -1205,6 +1217,7 @@ export type JobWorkReceiveIn = {
   loose_kg?: string | number;
   vehicle_no?: string | null;
   notes?: string | null;
+  received_date?: string | null;
 };
 
 export type JobWorkReturnIn = {
@@ -1213,6 +1226,7 @@ export type JobWorkReturnIn = {
   bag_count?: number;
   loose_kg?: string | number;
   notes?: string | null;
+  received_date?: string | null;
 };
 
 export type JobWorkFulfillmentReceipt = {
@@ -1284,7 +1298,7 @@ export type JobWorkFulfillmentOrder = {
 };
 
 export type JobWorkFulfillmentListParams = ListParams & {
-  tab?: "receive" | "return";
+  tab?: "all" | "receive" | "return";
   visibility?: "actionable" | "all";
 };
 
@@ -1333,16 +1347,22 @@ export const jobWorkApi = {
     api.post<JobWorkOrder>(`/api/job-work/${orderId}/void`, {}, {
       headers: idempotencyVoidAuthHeaders(key, authorizationPassword),
     }),
-  create: (body: JobWorkOrderCreate, key: string) =>
-    api.post<JobWorkOrder>("/api/job-work", body, { headers: idempotencyHeaders(key) }),
-  receive: (body: JobWorkReceiveIn, key: string) =>
-    api.post<JobWorkReceipt>("/api/job-work/receive", body, { headers: idempotencyHeaders(key) }),
+  create: (body: JobWorkOrderCreate, key: string, authorizationPassword?: string) =>
+    api.post<JobWorkOrder>("/api/job-work", body, {
+      headers: idempotencyHeadersOptionalAuth(key, authorizationPassword),
+    }),
+  receive: (body: JobWorkReceiveIn, key: string, authorizationPassword?: string) =>
+    api.post<JobWorkReceipt>("/api/job-work/receive", body, {
+      headers: idempotencyHeadersOptionalAuth(key, authorizationPassword),
+    }),
   voidReceipt: (receiptId: number, key: string, authorizationPassword: string) =>
     api.post<JobWorkReceipt>(`/api/job-work/receipts/${receiptId}/void`, {}, {
       headers: idempotencyVoidAuthHeaders(key, authorizationPassword),
     }),
-  returnToCustomer: (body: JobWorkReturnIn, key: string) =>
-    api.post<JobWorkOrder>("/api/job-work/return", body, { headers: idempotencyHeaders(key) }),
+  returnToCustomer: (body: JobWorkReturnIn, key: string, authorizationPassword?: string) =>
+    api.post<JobWorkOrder>("/api/job-work/return", body, {
+      headers: idempotencyHeadersOptionalAuth(key, authorizationPassword),
+    }),
   statement: (customerId: number, p: { from_date?: string; to_date?: string } = {}) =>
     api.get<JobWorkStatement>(
       `/api/job-work/customers/${customerId}/statement${qs({
@@ -1358,7 +1378,7 @@ export const jobWorkFulfillmentApi = {
       `/api/job-work/fulfillment/orders${qs({
         limit: p.limit ?? DEFAULT_PAGE_LIMIT,
         offset: p.offset ?? 0,
-        tab: p.tab ?? "receive",
+        tab: p.tab ?? "all",
         visibility: p.visibility ?? "actionable",
       })}`
     ),

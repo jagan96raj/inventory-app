@@ -25,13 +25,13 @@ from app.models.entities import (
 )
 from app.services.operations import add_inventory, prune_zero_inventory, subtract_inventory
 from app.utils import calc_quantity_kg, recalc_inventory_row, validate_bags_loose
-from app.utils.time import utc_now
+from app.utils.time import resolve_business_entry, utc_now
 
 JW_ALREADY_VOIDED_MSG = "Receipt already voided"
 JW_ORDER_NOT_OPEN_MSG = "Job work order is not open"
 JW_ORDER_ALREADY_CANCELLED_MSG = "Job work order already cancelled"
 JW_VOID_CUSTODY_MSG = (
-    "Cannot void job work order while material is in custody — return to customer first"
+    "Cannot void job work order while material is still received — return to customer first"
 )
 JW_VOID_LINKED_MSG = "Cannot void job work order linked to bills or processing"
 JW_RETURN_LOCATION_MSG = "Return must be from a location where material was received"
@@ -113,6 +113,10 @@ def _jw_line_has_custody(progress: dict) -> bool:
     if progress["custody_bags"] > 0:
         return True
     return progress["custody_kg"] > 0
+
+
+def _jw_line_is_actionable(progress: dict) -> bool:
+    return _jw_line_has_remaining_receive(progress) or _jw_line_has_custody(progress)
 
 
 def _jw_return_locations(
@@ -313,6 +317,7 @@ def receive_job_work(
     loose_kg: Decimal,
     vehicle_no: str | None = None,
     notes: str | None = None,
+    received_date: date | None = None,
 ) -> JobWorkReceipt:
     line = db.scalar(
         select(JobWorkLine)
@@ -349,6 +354,8 @@ def receive_job_work(
         customer_id=line.order.customer_id,
     )
 
+    _, received_at = resolve_business_entry(received_date)
+
     receipt = JobWorkReceipt(
         line_id=line.id,
         location_id=location_id,
@@ -358,7 +365,7 @@ def receive_job_work(
         vehicle_no=vehicle_no,
         notes=notes,
         entry_type=JobWorkReceiptEntryType.receive,
-        received_at=utc_now(),
+        received_at=received_at,
     )
     db.add(receipt)
     db.flush()
@@ -487,6 +494,7 @@ def return_job_work_to_customer(
     bag_count: int,
     loose_kg: Decimal,
     notes: str | None = None,
+    received_date: date | None = None,
 ) -> JobWorkReceipt:
     line = db.scalar(
         select(JobWorkLine)
@@ -531,6 +539,8 @@ def return_job_work_to_customer(
         customer_id=line.order.customer_id,
     )
 
+    _, received_at = resolve_business_entry(received_date)
+
     receipt = JobWorkReceipt(
         line_id=line.id,
         location_id=location_id,
@@ -540,7 +550,7 @@ def return_job_work_to_customer(
         vehicle_no=None,
         notes=notes,
         entry_type=JobWorkReceiptEntryType.return_,
-        received_at=utc_now(),
+        received_at=received_at,
     )
     db.add(receipt)
     db.flush()
@@ -697,7 +707,9 @@ def serialize_jw_fulfillment_order(order: JobWorkOrder, db: Session, *, tab: str
     lines: list[dict] = []
     for line in sorted(order.lines or [], key=lambda x: x.line_index):
         row = serialize_jw_fulfillment_line(line, order, db)
-        if tab == "receive" and _jw_line_has_remaining_receive(row):
+        if tab == "all":
+            lines.append(row)
+        elif tab == "receive" and _jw_line_has_remaining_receive(row):
             lines.append(row)
         elif tab == "return" and _jw_line_has_custody(row):
             lines.append(row)
@@ -717,7 +729,7 @@ def serialize_jw_fulfillment_order(order: JobWorkOrder, db: Session, *, tab: str
 def list_jw_fulfillment_orders(
     db: Session,
     *,
-    tab: str = "receive",
+    tab: str = "all",
     visibility: str = "actionable",
     limit: int = 50,
     offset: int = 0,
@@ -737,7 +749,12 @@ def list_jw_fulfillment_orders(
         data = serialize_jw_fulfillment_order(order, db, tab=tab)
         if not data:
             continue
-        if visibility == "actionable" and not data["lines"]:
+        if visibility == "actionable":
+            data = {
+                **data,
+                "lines": [ln for ln in data["lines"] if _jw_line_is_actionable(ln)],
+            }
+        if not data["lines"]:
             continue
         result.append(data)
     total = len(result)

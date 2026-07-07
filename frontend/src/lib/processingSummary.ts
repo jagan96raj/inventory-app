@@ -34,6 +34,74 @@ export function batchTotalWasteKg(batch: ProcessingBatch): number {
   );
 }
 
+export function totalPowderKgFromBatches(batches: ProcessingBatch[]): number {
+  return activeProcessingBatches(batches).reduce((sum, batch) => sum + Number(batch.powder_kg ?? 0), 0);
+}
+
+export type ProcessingEntryCounts = {
+  freshInputLines: number;
+  outputLines: number;
+  balanceReturnLines: number;
+  balanceReprocessLines: number;
+  netBalanceLines: number;
+  batches: number;
+  wasteBatches: number;
+  powderBatches: number;
+  lossBatches: number;
+};
+
+/** Line/batch counts behind summary metrics — shown in brackets next to each value. */
+export function computeProcessingEntryCounts(batches: ProcessingBatch[]): ProcessingEntryCounts {
+  const active = activeProcessingBatches(batches);
+  let freshInputLines = 0;
+  let outputLines = 0;
+  let balanceReturnLines = 0;
+  let balanceReprocessLines = 0;
+  let wasteBatches = 0;
+  let powderBatches = 0;
+
+  for (const batch of active) {
+    if (Number(batch.powder_kg ?? 0) > 0) {
+      powderBatches += 1;
+    }
+    if (explicitWasteKg(batch) > 0 || Number(batch.powder_kg ?? 0) > 0) {
+      wasteBatches += 1;
+    }
+    for (const ln of batch.input_lines) {
+      if ((ln.input_source ?? "fresh") === "balance_reprocess") {
+        balanceReprocessLines += 1;
+      } else {
+        freshInputLines += 1;
+      }
+    }
+    outputLines += batch.output_lines.length;
+    balanceReturnLines += (batch.balance_return_lines ?? []).length;
+  }
+
+  return {
+    freshInputLines,
+    outputLines,
+    balanceReturnLines,
+    balanceReprocessLines,
+    netBalanceLines: balanceReturnLines + balanceReprocessLines,
+    batches: active.length,
+    wasteBatches,
+    powderBatches,
+    lossBatches: active.length,
+  };
+}
+
+/** Output line count per brand — shown in brackets on snapshot output-by-brand rows. */
+export function computeOutputLineCountsByBrand(batches: ProcessingBatch[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const batch of activeProcessingBatches(batches)) {
+    for (const ln of batch.output_lines) {
+      counts.set(ln.brand_id, (counts.get(ln.brand_id) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export function explicitWasteKg(batch: ProcessingBatch): number {
   return (
     Number(batch.dust_kg) +

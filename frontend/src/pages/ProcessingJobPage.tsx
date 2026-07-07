@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowDownToLine,
@@ -26,7 +26,6 @@ import {
   type ProcessingJobSummary,
   type ProcessingOwnerAllocationWeight,
   type ProcessingWasteAllocation,
-  jobWorkApi,
 } from "../api/client";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { useBagTypeCache } from "../hooks/useBagTypeCache";
@@ -51,10 +50,12 @@ import SegmentedControl from "../components/ui/SegmentedControl";
 import { cn } from "../lib/cn";
 import { calcPreviewTotalKg, isLooseBagType } from "../lib/bagType";
 import { formatDateTime, formatQtyKg } from "../lib/format";
-import { computeMassBalance, jobAvailableReprocessKg, jobSummary, totalOutputKg, activeProcessingBatches } from "../lib/processingSummary";
+import { computeMassBalance, computeOutputLineCountsByBrand, computeProcessingEntryCounts, jobAvailableReprocessKg, jobSummary, totalOutputKg, totalPowderKgFromBatches, activeProcessingBatches } from "../lib/processingSummary";
 import { usePermissions } from "../lib/permissions";
+import { useSidebarCollapsed } from "../components/Sidebar";
 import {
-  formatAvailableStock,
+  formatRemainingStockAfterReserved,
+  reservedStockFromEarlierLines,
   reservedStockFromSiblingLines,
   stockExceedsMessageWithReserved,
 } from "../lib/stockWarning";
@@ -86,12 +87,17 @@ import {
 
 type TabId = "input" | "output" | "waste" | "summary" | "batches";
 
+const PROCESSING_LAYOUT_GUTTER_FR = 3;
+const PROCESSING_LAYOUT_CONTENT_FR = 71;
+const PROCESSING_LAYOUT_SNAPSHOT_FR = 25;
+const PROCESSING_LAYOUT_TOTAL_FR =
+  PROCESSING_LAYOUT_GUTTER_FR * 2 + PROCESSING_LAYOUT_CONTENT_FR + PROCESSING_LAYOUT_SNAPSHOT_FR;
+
 type InputLineForm = {
   key: string;
   input_source: ProcessingInputSource;
   owner_type: "owned" | "job_work";
   customer_id: string;
-  job_work_order_id: string;
   location_id: string;
   bag_type_id: string;
   bag_count: string;
@@ -120,7 +126,6 @@ const emptyInputLine = (): InputLineForm => ({
   input_source: "fresh",
   owner_type: "owned",
   customer_id: "",
-  job_work_order_id: "",
   location_id: "",
   bag_type_id: "",
   ...emptyQtyFields(),
@@ -427,7 +432,6 @@ export default function ProcessingJobPage() {
   const getBagType = bagTypeCache.get;
   const [customerLabels, setCustomerLabels] = useState<CustomerLabelLookup>({});
   const [stockByLocation, setStockByLocation] = useState<Record<string, StockAtLocation[]>>({});
-  const [jwOrdersByCustomer, setJwOrdersByCustomer] = useState<Record<string, { id: number; job_number: string }[]>>({});
   const [bookSettings, setBookSettings] = useState<BookSettings | null>(null);
   const [inputForm, setInputForm] = useState(emptyInputForm);
   const [outputForm, setOutputForm] = useState(emptyOutputForm);
@@ -449,6 +453,38 @@ export default function ProcessingJobPage() {
 
   const { canVoid } = usePermissions();
   const summary = useMemo(() => (job ? jobSummary(job) : null), [job]);
+  const [sidebarCollapsed] = useSidebarCollapsed();
+  const layoutGridRef = useRef<HTMLDivElement>(null);
+  const [fixedSnapshotBox, setFixedSnapshotBox] = useState<{ left: number; width: number } | null>(null);
+
+  const updateFixedSnapshotBox = useCallback(() => {
+    const grid = layoutGridRef.current;
+    if (!grid || window.innerWidth < 1024) {
+      setFixedSnapshotBox(null);
+      return;
+    }
+    const rect = grid.getBoundingClientRect();
+    const width = (rect.width * PROCESSING_LAYOUT_SNAPSHOT_FR) / PROCESSING_LAYOUT_TOTAL_FR;
+    const left =
+      rect.left +
+      (rect.width *
+        (PROCESSING_LAYOUT_GUTTER_FR + PROCESSING_LAYOUT_CONTENT_FR + PROCESSING_LAYOUT_GUTTER_FR)) /
+        PROCESSING_LAYOUT_TOTAL_FR;
+    setFixedSnapshotBox({ left, width });
+  }, []);
+
+  useLayoutEffect(() => {
+    updateFixedSnapshotBox();
+    window.addEventListener("resize", updateFixedSnapshotBox);
+    const observer = new ResizeObserver(updateFixedSnapshotBox);
+    if (layoutGridRef.current) observer.observe(layoutGridRef.current);
+    const afterSidebarTransition = window.setTimeout(updateFixedSnapshotBox, 220);
+    return () => {
+      window.removeEventListener("resize", updateFixedSnapshotBox);
+      observer.disconnect();
+      window.clearTimeout(afterSidebarTransition);
+    };
+  }, [updateFixedSnapshotBox, sidebarCollapsed, summary, jobLoadDone]);
   const availableReprocessKg = useMemo(
     () => (summary ? jobAvailableReprocessKg(summary) : 0),
     [summary]
@@ -484,7 +520,6 @@ export default function ProcessingJobPage() {
         ...ln,
         owner_type: lockedInputOwner.owner_type,
         customer_id: lockedInputOwner.customer_id,
-        job_work_order_id: "",
         bag_type_id: "",
         ...emptyQtyFields(),
       })),
@@ -596,19 +631,6 @@ export default function ProcessingJobPage() {
     };
   }, [job]);
 
-  const loadJwOrdersForCustomer = useCallback((customerId: string) => {
-    if (!customerId || jwOrdersByCustomer[customerId]) return;
-    jobWorkApi
-      .list({ customer_id: Number(customerId), status: "open", limit: 100 })
-      .then((page) => {
-        setJwOrdersByCustomer((prev) => ({
-          ...prev,
-          [customerId]: page.items.map((o) => ({ id: o.id, job_number: o.job_number })),
-        }));
-      })
-      .catch(() => {});
-  }, [jwOrdersByCustomer]);
-
   useEffect(() => {
     reloadInputLocationsStock(inputForm.input_lines);
   }, [inputForm.input_lines, reloadInputLocationsStock]);
@@ -625,8 +647,6 @@ export default function ProcessingJobPage() {
           input_source: ln.input_source,
           owner_type: ln.owner_type,
           customer_id: ln.owner_type === "job_work" && ln.customer_id ? Number(ln.customer_id) : null,
-          job_work_order_id:
-            ln.owner_type === "job_work" && ln.job_work_order_id ? Number(ln.job_work_order_id) : null,
         })),
     [inputForm.input_lines]
   );
@@ -745,7 +765,7 @@ export default function ProcessingJobPage() {
   );
 
   const inputLineStockInfo = useMemo(() => {
-    if (!job) return [] as { available: string; warning: string }[];
+    if (!job) return [] as { available: string; warning: string; hasEarlierReserved: boolean }[];
     return inputForm.input_lines.map((ln, idx) => {
       const stock = stockByLocation[ln.location_id] ?? [];
       const bt = getBagType(ln.bag_type_id);
@@ -756,30 +776,41 @@ export default function ProcessingJobPage() {
         ln.bag_type_id,
         ownerFilterForLine(ln)
       );
-      const reserved = reservedStockFromSiblingLines(
+      const sameBucket = (i: number) =>
+        inputForm.input_lines[i].location_id === ln.location_id &&
+        inputForm.input_lines[i].bag_type_id === ln.bag_type_id &&
+        inputForm.input_lines[i].owner_type === ln.owner_type &&
+        inputForm.input_lines[i].customer_id === ln.customer_id;
+      const reservedEarlier = reservedStockFromEarlierLines(
         bt,
         inputForm.input_lines,
         idx,
-        (i) =>
-          inputForm.input_lines[i].location_id === ln.location_id &&
-          inputForm.input_lines[i].bag_type_id === ln.bag_type_id &&
-          inputForm.input_lines[i].owner_type === ln.owner_type &&
-          inputForm.input_lines[i].customer_id === ln.customer_id
+        sameBucket
       );
-      const available = row && bt ? formatAvailableStock(bt, row) : "";
+      const reservedSiblings = reservedStockFromSiblingLines(
+        bt,
+        inputForm.input_lines,
+        idx,
+        sameBucket
+      );
+      const hasEarlierReserved = reservedEarlier.bagCount > 0 || reservedEarlier.looseKg > 0;
+      const available =
+        row && bt
+          ? formatRemainingStockAfterReserved(bt, row, reservedEarlier.bagCount, reservedEarlier.looseKg)
+          : "";
       const warning = stockExceedsMessageWithReserved(
         bt,
         ln.bag_count,
         ln.loose_kg,
         row,
-        reserved.bagCount,
-        reserved.looseKg
+        reservedSiblings.bagCount,
+        reservedSiblings.looseKg
       );
       const reprocessWarning =
         ln.input_source === "balance_reprocess" && warning
           ? `Returned balance may have been sold; stock here: ${available || "none"}`
           : warning;
-      return { available, warning: reprocessWarning };
+      return { available, warning: reprocessWarning, hasEarlierReserved };
     });
   }, [inputForm.input_lines, job, getBagType, stockByLocation]);
 
@@ -910,6 +941,13 @@ export default function ProcessingJobPage() {
       pendingPowderKg,
     ]
   );
+
+  const massBalanceIncludesPending = activeTab === "output" || activeTab === "waste";
+  const displayMassBalance = useMemo(() => {
+    if (activeTab === "output") return outputPendingMassBalance;
+    if (activeTab === "waste") return wastePendingMassBalance;
+    return committedMassBalance;
+  }, [activeTab, committedMassBalance, outputPendingMassBalance, wastePendingMassBalance]);
 
   const canSubmitInput =
     !completed && !inputLocked && inputLinesForApi.length > 0 && inputValidationErrors.length === 0;
@@ -1178,10 +1216,14 @@ export default function ProcessingJobPage() {
     return (
       <>
         <PageHeader eyebrow="Processing job" title="Loading job…" />
-        <div className="space-y-4">
-          <Skeleton className="h-28 w-full rounded-2xl" />
-          <Skeleton className="h-12 w-full rounded-xl" />
-          <Skeleton className="h-64 w-full rounded-2xl" />
+        <div className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[3fr_71fr_3fr_25fr]">
+          <div className="hidden lg:col-start-2 lg:block">
+            <div className="space-y-4">
+              <Skeleton className="h-12 w-full rounded-xl" />
+              <Skeleton className="h-64 w-full rounded-2xl" />
+            </div>
+          </div>
+          <Skeleton className="hidden h-96 w-full rounded-2xl lg:col-start-4 lg:block" />
         </div>
       </>
     );
@@ -1248,20 +1290,35 @@ export default function ProcessingJobPage() {
         }
       />
 
-      {summary && <SummaryStrip summary={summary} massBalance={committedMassBalance} />}
+      <div className="min-w-0">
+        <div
+          ref={layoutGridRef}
+          className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[3fr_71fr_3fr_25fr]"
+        >
+          <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1">
+            {error && (
+              <Banner tone="danger" onClose={() => setError("")}>
+                {error}
+              </Banner>
+            )}
+            {success && (
+              <Banner tone="success" onClose={() => setSuccess("")}>
+                {success}
+              </Banner>
+            )}
 
-      {error && (
-        <Banner tone="danger" className="mb-4" onClose={() => setError("")}>
-          {error}
-        </Banner>
-      )}
-      {success && (
-        <Banner tone="success" className="mb-4" onClose={() => setSuccess("")}>
-          {success}
-        </Banner>
-      )}
+            <MassBalancePanel
+              balance={displayMassBalance}
+              includesPending={massBalanceIncludesPending}
+            />
 
-      <Tabs value={activeTab} onChange={(id) => setActiveTab(id as TabId)} variant="pill" className="mb-2">
+            <Tabs
+              value={activeTab}
+              onChange={(id) => setActiveTab(id as TabId)}
+              variant="pill"
+              size="lg"
+              className="min-w-0"
+            >
         <Tab id="input" label="Input batch" badge={activeBatchCount > 0 ? activeBatchCount : undefined}>
           <Card>
             <CardHeader
@@ -1325,7 +1382,12 @@ export default function ProcessingJobPage() {
                             footer={
                               <div className="mt-3 space-y-2">
                                 {stockInfo?.available && (
-                                  <p className="text-sm text-ink-muted">Available: {stockInfo.available}</p>
+                                  <p className="text-sm text-ink-muted">
+                                    {stockInfo.hasEarlierReserved
+                                      ? "Remaining (after earlier lines):"
+                                      : "Available:"}{" "}
+                                    {stockInfo.available}
+                                  </p>
                                 )}
                                 {stockInfo?.warning && (
                                   <Banner tone="warning">{stockInfo.warning}</Banner>
@@ -1366,7 +1428,6 @@ export default function ProcessingJobPage() {
                                         ...lines[idx],
                                         owner_type: v,
                                         customer_id: "",
-                                        job_work_order_id: "",
                                         bag_type_id: "",
                                         ...emptyQtyFields(),
                                       };
@@ -1380,76 +1441,46 @@ export default function ProcessingJobPage() {
                               )}
                             </FormField>
                             {ln.owner_type === "job_work" && (
-                              <>
-                                <FormField label="Customer" required>
-                                  {() => (
-                                    <AsyncSearchCombobox
-                                      value={ln.customer_id ? Number(ln.customer_id) : null}
-                                      disabled={Boolean(lockedInputOwner)}
-                                      onChange={(customerId, opt) => {
-                                        if (lockedInputOwner) return;
-                                        const v = customerId != null ? String(customerId) : "";
-                                        if (v) {
-                                          loadJwOrdersForCustomer(v);
-                                          if (opt?.label) {
-                                            setCustomerLabels((prev) => ({
-                                              ...prev,
-                                              [Number(v)]: opt.label,
-                                            }));
-                                          }
-                                        }
-                                        setInputForm((f) => {
-                                          const lines = [...f.input_lines];
-                                          lines[idx] = {
-                                            ...lines[idx],
-                                            customer_id: v,
-                                            job_work_order_id: "",
-                                            bag_type_id: "",
-                                            ...emptyQtyFields(),
-                                          };
-                                          return { ...f, input_lines: lines };
-                                        });
-                                      }}
-                                      searchFn={searchCustomers}
-                                      placeholder="Search customer…"
-                                      emptyText="No matching customer"
-                                      initialLabel={
-                                        ln.customer_id
-                                          ? resolveCustomerName(Number(ln.customer_id), customerLabels)
-                                          : lockedInputOwner?.customer_id === ln.customer_id
-                                            ? job.input_allowed_owner?.customer_name ??
-                                              job.single_allocation_customer_name ??
-                                              undefined
-                                            : undefined
+                              <FormField label="Customer" required>
+                                {() => (
+                                  <AsyncSearchCombobox
+                                    value={ln.customer_id ? Number(ln.customer_id) : null}
+                                    disabled={Boolean(lockedInputOwner)}
+                                    onChange={(customerId, opt) => {
+                                      if (lockedInputOwner) return;
+                                      const v = customerId != null ? String(customerId) : "";
+                                      if (v && opt?.label) {
+                                        setCustomerLabels((prev) => ({
+                                          ...prev,
+                                          [Number(v)]: opt.label,
+                                        }));
                                       }
-                                    />
-                                  )}
-                                </FormField>
-                                <FormField label="Job work order" hint="Optional link to an open order">
-                                  {({ id }) => (
-                                    <Select
-                                      id={id}
-                                      value={ln.job_work_order_id}
-                                      disabled={!ln.customer_id}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        setInputForm((f) => {
-                                          const lines = [...f.input_lines];
-                                          lines[idx] = { ...lines[idx], job_work_order_id: v };
-                                          return { ...f, input_lines: lines };
-                                        });
-                                      }}
-                                    >
-                                      <option value="">None</option>
-                                      {(jwOrdersByCustomer[ln.customer_id] ?? []).map((o) => (
-                                        <option key={o.id} value={o.id}>
-                                          {o.job_number}
-                                        </option>
-                                      ))}
-                                    </Select>
-                                  )}
-                                </FormField>
-                              </>
+                                      setInputForm((f) => {
+                                        const lines = [...f.input_lines];
+                                        lines[idx] = {
+                                          ...lines[idx],
+                                          customer_id: v,
+                                          bag_type_id: "",
+                                          ...emptyQtyFields(),
+                                        };
+                                        return { ...f, input_lines: lines };
+                                      });
+                                    }}
+                                    searchFn={searchCustomers}
+                                    placeholder="Search customer…"
+                                    emptyText="No matching customer"
+                                    initialLabel={
+                                      ln.customer_id
+                                        ? resolveCustomerName(Number(ln.customer_id), customerLabels)
+                                        : lockedInputOwner?.customer_id === ln.customer_id
+                                          ? job.input_allowed_owner?.customer_name ??
+                                            job.single_allocation_customer_name ??
+                                            undefined
+                                          : undefined
+                                    }
+                                  />
+                                )}
+                              </FormField>
                             )}
                             <FormField label="Source">
                               {({ id }) => (
@@ -1691,7 +1722,6 @@ export default function ProcessingJobPage() {
                   {ownerRulesMessage && (
                     <Banner tone="info">{ownerRulesMessage}</Banner>
                   )}
-                  <MassBalancePanel balance={outputPendingMassBalance} />
 
                   <ProcessingSection title="Output lines" subtitle="Finished stock added to inventory.">
                     <div className="space-y-4">
@@ -1982,10 +2012,6 @@ export default function ProcessingJobPage() {
                     </Banner>
                   )}
 
-                  {!outputPendingMassBalance.isValid && outputPendingMassBalance.errorMessage && (
-                    <Banner tone="danger">{outputPendingMassBalance.errorMessage}</Banner>
-                  )}
-
                   <div className="flex flex-wrap gap-2 border-t border-line/60 pt-4">
                     <Button type="submit" loading={saving} disabled={!canSubmitOutput}>
                       Submit output batch
@@ -2033,7 +2059,6 @@ export default function ProcessingJobPage() {
                 />
               ) : (
                 <form onSubmit={submitWasteBatch} className="space-y-6">
-                  <MassBalancePanel balance={wastePendingMassBalance} />
                   <ProcessingSection
                     title="Waste"
                     subtitle="Remaining unaccounted quantity is auto-calculated as Misc on the Summary tab."
@@ -2196,10 +2221,6 @@ export default function ProcessingJobPage() {
                     </Banner>
                   )}
 
-                  {!wastePendingMassBalance.isValid && wastePendingMassBalance.errorMessage && (
-                    <Banner tone="danger">{wastePendingMassBalance.errorMessage}</Banner>
-                  )}
-
                   <div className="flex flex-wrap gap-2 border-t border-line/60 pt-4">
                     <Button type="submit" loading={saving} disabled={!canSubmitWaste}>
                       Submit waste batch
@@ -2295,7 +2316,42 @@ export default function ProcessingJobPage() {
             </CardBody>
           </Card>
         </Tab>
-      </Tabs>
+            </Tabs>
+
+            {summary ? (
+              <SummarySidebar
+                layout="mobile"
+                summary={summary}
+                massBalance={committedMassBalance}
+                batches={activeProcessingBatches(allBatches)}
+              />
+            ) : null}
+          </div>
+
+          {summary ? <div className="hidden min-h-px min-w-0 lg:col-start-4 lg:block" aria-hidden="true" /> : null}
+        </div>
+
+        {summary && fixedSnapshotBox ? (
+          <div
+            className="pointer-events-none fixed z-30 hidden lg:block"
+            style={{
+              top: "5rem",
+              bottom: "1.5rem",
+              left: fixedSnapshotBox.left,
+              width: fixedSnapshotBox.width,
+            }}
+          >
+            <div className="pointer-events-auto h-full overflow-y-auto overscroll-contain pr-0.5">
+              <SummarySidebar
+                layout="desktop"
+                summary={summary}
+                massBalance={committedMassBalance}
+                batches={activeProcessingBatches(allBatches)}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <VoidConfirmDialog
         open={completeAuthOpen}
@@ -2337,39 +2393,64 @@ export default function ProcessingJobPage() {
 function MetricTile({
   label,
   value,
+  entryCount,
   tone = "neutral",
   highlight,
+  compact,
 }: {
   label: string;
   value: string;
+  /** Number of lines/batches that contributed to this metric — shown in brackets. */
+  entryCount?: number;
   tone?: "neutral" | "primary" | "success" | "warning" | "muted";
   highlight?: boolean;
+  compact?: boolean;
 }) {
   const toneClass = {
-    neutral: "border-line/80 bg-surface",
-    primary: "border-primary-200/70 bg-primary-50/50 dark:border-primary-800/40 dark:bg-primary-950/25",
-    success: "border-accent-200/70 bg-accent-50/50 dark:border-accent-800/40 dark:bg-accent-950/25",
-    warning: "border-warning-200/70 bg-warning-50/50 dark:border-warning-800/40 dark:bg-warning-950/25",
-    muted: "border-line/60 bg-surface-subtle/50",
+    neutral: "border-line/80 bg-surface/80",
+    primary: "border-primary-200/70 bg-primary-50/60 dark:border-primary-800/40 dark:bg-primary-950/30",
+    success: "border-accent-200/70 bg-accent-50/60 dark:border-accent-800/40 dark:bg-accent-950/30",
+    warning: "border-warning-200/70 bg-warning-50/60 dark:border-warning-800/40 dark:bg-warning-950/30",
+    muted: "border-line/60 bg-surface-subtle/60",
   }[tone];
 
   return (
     <div
       className={cn(
-        "rounded-2xl border p-4 shadow-sm",
+        "border shadow-sm backdrop-blur-[2px]",
+        compact ? "rounded-xl p-3" : "rounded-2xl p-4",
         toneClass,
         highlight && "ring-2 ring-primary-400/40 dark:ring-primary-500/30"
       )}
     >
-      <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
-      <p className={cn("mt-2 v2-mono text-xl font-bold text-ink", highlight && "text-primary-800 dark:text-primary-200")}>
+      <p className={cn("font-semibold uppercase tracking-wide text-ink-muted", compact ? "text-[10px]" : "text-xs")}>
+        {label}
+      </p>
+      <p
+        className={cn(
+          "v2-mono font-bold text-ink",
+          compact ? "mt-1 text-lg" : "mt-2 text-xl",
+          highlight && "text-primary-800 dark:text-primary-200"
+        )}
+      >
         {value}
+        {entryCount != null && entryCount > 0 ? (
+          <span className={cn("ml-1.5 font-semibold text-ink-muted", compact ? "text-sm" : "text-base")}>
+            ({entryCount})
+          </span>
+        ) : null}
       </p>
     </div>
   );
 }
 
-function MassBalancePanel({ balance }: { balance: ReturnType<typeof computeMassBalance> }) {
+function MassBalancePanel({
+  balance,
+  includesPending = false,
+}: {
+  balance: ReturnType<typeof computeMassBalance>;
+  includesPending?: boolean;
+}) {
   const usedPct =
     balance.freshInputKg > 0
       ? Math.min(100, (balance.totalOutflowKg / balance.freshInputKg) * 100)
@@ -2379,30 +2460,41 @@ function MassBalancePanel({ balance }: { balance: ReturnType<typeof computeMassB
   return (
     <div
       className={cn(
-        "rounded-2xl border p-5",
+        "rounded-2xl border p-4",
         warn
           ? "border-warning-300/70 bg-warning-50/40 dark:border-warning-700/50 dark:bg-warning-950/20"
           : "border-primary-200/60 bg-gradient-to-br from-primary-50/50 via-surface to-violet-50/30 dark:border-primary-800/40 dark:from-primary-950/25 dark:via-surface dark:to-violet-950/15"
       )}
     >
-      <div className="mb-4 flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Scale className="h-5 w-5 text-primary-600 dark:text-primary-300" aria-hidden="true" />
-        <h4 className="text-lg font-semibold text-ink">Mass balance preview</h4>
+        <h4 className="text-base font-semibold text-ink">Mass balance check</h4>
+        <span
+          className={cn(
+            "ml-auto v2-mono text-sm font-semibold",
+            warn ? "text-warning-800 dark:text-warning-200" : "text-accent-800 dark:text-accent-300"
+          )}
+        >
+          Allowance remaining: {formatQtyKg(balance.allowanceRemainingKg)}
+        </span>
       </div>
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <MetricTile label="Fresh input (job)" value={formatQtyKg(balance.freshInputKg)} tone="primary" />
-        <MetricTile label="Total outflow" value={formatQtyKg(balance.totalOutflowKg)} />
-        <MetricTile
-          label="Allowance remaining"
-          value={formatQtyKg(balance.allowanceRemainingKg)}
-          tone={warn ? "warning" : "success"}
-          highlight={warn}
-        />
-      </div>
+      {balance.errorMessage ? (
+        <Banner tone="warning" className="mt-3">
+          {balance.errorMessage}
+        </Banner>
+      ) : (
+        <p className="mt-2 text-sm text-ink-muted">
+          {includesPending
+            ? "Includes unsaved entries in the open form. Totals are in the snapshot panel on the right."
+            : "Committed batches only. Totals are in the snapshot panel on the right."}
+        </p>
+      )}
       {balance.freshInputKg > 0 && (
-        <div>
+        <div className="mt-4">
           <div className="mb-1 flex justify-between text-sm text-ink-muted">
-            <span>Outflow vs input</span>
+            <span>
+              {includesPending ? "Outflow vs fresh input (with this form)" : "Outflow vs fresh input"}
+            </span>
             <span className="v2-mono">{usedPct.toFixed(2)}%</span>
           </div>
           <div className="h-3 overflow-hidden rounded-full bg-surface-muted">
@@ -2421,37 +2513,216 @@ function MassBalancePanel({ balance }: { balance: ReturnType<typeof computeMassB
   );
 }
 
-function SummaryStrip({
+function SummaryMetricRow({
+  label,
+  value,
+  entryCount,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  entryCount?: number;
+  tone?: "neutral" | "primary" | "success" | "warning" | "muted";
+}) {
+  const toneClass = {
+    neutral: "border-line/70 bg-surface/70",
+    primary: "border-primary-200/60 bg-primary-50/50 dark:border-primary-800/35 dark:bg-primary-950/25",
+    success: "border-accent-200/60 bg-accent-50/50 dark:border-accent-800/35 dark:bg-accent-950/25",
+    warning: "border-warning-200/60 bg-warning-50/50 dark:border-warning-800/35 dark:bg-warning-950/25",
+    muted: "border-line/50 bg-surface-subtle/50",
+  }[tone];
+
+  return (
+    <div className={cn("flex flex-col gap-1 rounded-xl border px-3 py-2.5", toneClass)}>
+      <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
+      <span className="v2-mono break-words text-base font-bold leading-snug text-ink">
+        {value}
+        {entryCount != null && entryCount > 0 ? (
+          <span className="ml-1.5 text-sm font-semibold text-ink-muted">({entryCount})</span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+function SummarySidebarBody({
   summary,
-  massBalance,
+  batches,
 }: {
   summary: ProcessingJobSummary;
-  massBalance: ReturnType<typeof computeMassBalance>;
+  batches: ProcessingBatch[];
 }) {
   const outputKg = totalOutputKg(summary);
   const netBalance = Number(summary.net_balance_kg);
-  const warn = massBalance.allowanceRemainingKg < 0;
+  const counts = computeProcessingEntryCounts(batches);
+  const outputLinesByBrand = computeOutputLineCountsByBrand(batches);
+  const wasteKg = Number(summary.total_waste_kg ?? 0);
+  const powderKg = totalPowderKgFromBatches(batches);
+  const wasteDisplayKg = powderKg > 0 ? Math.max(wasteKg - powderKg, 0) : wasteKg;
+  const miscKg = Number(summary.total_misc_kg ?? 0);
+  const lossKg = Number(summary.total_loss_kg ?? 0);
+  const powderStorageLabels = powderStorageLabelsFromBatches(batches);
+
+  const freshValue =
+    summary.fresh_input_bags && summary.fresh_input_bags > 0
+      ? `${summary.fresh_input_bags} bags · ${formatQtyKg(summary.total_fresh_input_kg)}`
+      : formatQtyKg(summary.total_fresh_input_kg);
 
   return (
-    <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <MetricTile
-        label="Fresh in"
-        value={`${summary.fresh_input_bags > 0 ? `${summary.fresh_input_bags} bags · ` : ""}${formatQtyKg(summary.total_fresh_input_kg)}`}
-        tone="primary"
+    <div className="space-y-2.5">
+      <SummaryMetricRow label="Fresh in" value={freshValue} entryCount={counts.freshInputLines} tone="primary" />
+      <SummaryMetricRow
+        label="Output"
+        value={formatQtyKg(outputKg)}
+        entryCount={counts.outputLines}
+        tone="success"
       />
-      <MetricTile label="Output" value={formatQtyKg(outputKg)} tone="success" />
-      <MetricTile
+      <SummaryMetricRow
         label="Net unclean"
         value={formatQtyKg(netBalance)}
+        entryCount={counts.netBalanceLines}
         tone={netBalance > 0 ? "warning" : "neutral"}
-        highlight={netBalance > 0}
       />
-      <MetricTile
-        label="Batches"
-        value={String(summary.batch_count)}
-        tone={warn ? "warning" : "neutral"}
-      />
+
+      <div className="border-t border-line/50 pt-3">
+        <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">Output by brand</p>
+        {summary.output_by_brand.length > 0 ? (
+          <div className="space-y-2">
+            {summary.output_by_brand.map((row) => {
+              const lineCount = outputLinesByBrand.get(row.brand_id) ?? 0;
+              return (
+                <div
+                  key={row.brand_id}
+                  className="rounded-xl border border-accent-200/50 bg-accent-50/40 px-3 py-2.5 dark:border-accent-800/35 dark:bg-accent-950/20"
+                >
+                  <p className="text-sm font-semibold text-ink">{row.brand_name ?? `Brand #${row.brand_id}`}</p>
+                  <p className="v2-mono text-base font-bold text-accent-800 dark:text-accent-300">
+                    {formatQtyKg(row.quantity_kg)}
+                    {lineCount > 0 ? (
+                      <span className="ml-1.5 text-sm font-semibold text-ink-muted">({lineCount})</span>
+                    ) : null}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-ink-muted">No finished output yet.</p>
+        )}
+      </div>
+
+      {powderKg > 0 && powderStorageLabels.length > 0 && (
+        <div className="border-t border-line/50 pt-3">
+          <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">Powder locations</p>
+          <div className="space-y-1.5">
+            {powderStorageLabels.map((label) => (
+              <p key={label} className="text-sm font-medium leading-snug text-ink">
+                {label}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2.5 border-t border-line/50 pt-3">
+        {powderKg > 0 && (
+          <SummaryMetricRow
+            label="Powder stock"
+            value={formatQtyKg(powderKg)}
+            entryCount={counts.powderBatches}
+            tone="success"
+          />
+        )}
+        <SummaryMetricRow
+          label={powderKg > 0 ? "Waste (excl. powder)" : "Waste"}
+          value={formatQtyKg(wasteDisplayKg)}
+          entryCount={counts.wasteBatches}
+          tone="warning"
+        />
+        <SummaryMetricRow label="Misc" value={formatQtyKg(miscKg)} tone="muted" />
+        <SummaryMetricRow label="Total loss" value={formatQtyKg(lossKg)} tone="warning" />
+      </div>
     </div>
+  );
+}
+
+function SummarySidebar({
+  summary,
+  massBalance,
+  batches,
+  layout = "both",
+}: {
+  summary: ProcessingJobSummary;
+  massBalance: ReturnType<typeof computeMassBalance>;
+  batches: ProcessingBatch[];
+  layout?: "mobile" | "desktop" | "both";
+}) {
+  const warn = massBalance.allowanceRemainingKg < 0;
+  const powderKg = totalPowderKgFromBatches(batches);
+
+  const shellClass = cn(
+    "relative overflow-hidden rounded-2xl border v2-glass shadow-soft",
+    warn
+      ? "border-warning-300/60 bg-gradient-to-b from-warning-50/45 via-surface/95 to-surface dark:border-warning-700/50 dark:from-warning-950/25 dark:via-surface/95 dark:to-surface"
+      : "border-primary-200/60 bg-gradient-to-b from-primary-50/40 via-surface/95 to-violet-50/30 dark:border-primary-800/40 dark:from-primary-950/20 dark:via-surface/95 dark:to-violet-950/15"
+  );
+
+  const header = (
+    <div className="flex items-start justify-between gap-2 border-b border-line/50 px-4 py-3">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-md">
+          <Layers className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-base font-semibold text-ink">Job snapshot</p>
+          <p className="text-sm text-ink-muted">Fixed on the right while you scroll</p>
+        </div>
+      </div>
+      {warn ? (
+        <Badge tone="warning" size="sm">
+          Over allowance
+        </Badge>
+      ) : powderKg > 0 ? (
+        <Badge tone="success" size="sm">
+          Powder
+        </Badge>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <>
+      {(layout === "mobile" || layout === "both") && (
+      <details className={cn("group lg:hidden", shellClass)}>
+        <summary className="cursor-pointer list-none px-4 py-3 marker:content-none [&::-webkit-details-marker]:hidden">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-md">
+                <Layers className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span className="text-base font-semibold text-ink">Job snapshot</span>
+            </div>
+            <span className="text-sm text-ink-muted group-open:hidden">Tap to expand</span>
+            <span className="hidden text-sm text-ink-muted group-open:inline">Tap to collapse</span>
+          </div>
+        </summary>
+        <div className="border-t border-line/50 px-4 py-4">
+          <SummarySidebarBody summary={summary} batches={batches} />
+        </div>
+      </details>
+      )}
+
+      {(layout === "desktop" || layout === "both") && (
+      <aside className={layout === "both" ? "hidden lg:block" : undefined}>
+        <div className={shellClass}>
+          {header}
+          <div className="px-4 py-4">
+            <SummarySidebarBody summary={summary} batches={batches} />
+          </div>
+        </div>
+      </aside>
+      )}
+    </>
   );
 }
 
@@ -2485,10 +2756,6 @@ function aggregateWasteAllocations(batches: ProcessingBatch[]): ProcessingWasteA
   return [...map.values()];
 }
 
-function totalPowderKgFromBatches(batches: ProcessingBatch[]): number {
-  return activeProcessingBatches(batches).reduce((sum, batch) => sum + Number(batch.powder_kg ?? 0), 0);
-}
-
 const WASTE_AUDIT_CATEGORY_LABELS: { key: keyof ProcessingWasteAllocation; label: string }[] = [
   { key: "dust_kg", label: "Dust" },
   { key: "stone_kg", label: "Stone" },
@@ -2516,7 +2783,6 @@ function powderStorageLabelsFromBatches(batches: ProcessingBatch[]): string[] {
 }
 
 function SummaryCard({
-  summary,
   batches,
   allocationHint,
   inputRulesHint,
@@ -2528,22 +2794,16 @@ function SummaryCard({
   inputRulesHint?: string | null;
   customerNames: Map<number, string>;
 }) {
-  const wasteKg = Number(summary.total_waste_kg);
-  const powderKg = totalPowderKgFromBatches(batches);
-  const wasteExclPowderKg = Math.max(wasteKg - powderKg, 0);
-  const miscKg = Number(summary.total_misc_kg);
-  const lossKg = Number(summary.total_loss_kg);
   const wasteSplits = aggregateWasteAllocations(batches);
   const auditWasteSplits = wasteSplits
     .map((wa) => ({ wa, categories: wasteAuditCategories(wa) }))
     .filter((row) => row.categories.length > 0);
-  const powderStorageLabels = powderStorageLabelsFromBatches(batches);
 
   return (
     <Card className="overflow-hidden border-primary-200/60 bg-gradient-to-br from-primary-50/35 via-surface to-violet-50/25 dark:border-primary-800/40 dark:from-primary-950/20">
       <CardHeader
-        title="At a glance"
-        subtitle={`${summary.batch_count} batch${summary.batch_count === 1 ? "" : "es"} committed`}
+        title="Waste allocation"
+        subtitle="Owner split for dust, stone, sack, and misc — totals are in the snapshot panel on the right."
       />
       <CardBody className="space-y-5">
         {allocationHint ? (
@@ -2552,84 +2812,8 @@ function SummaryCard({
         {inputRulesHint && inputRulesHint !== allocationHint ? (
           <Banner tone="info">{inputRulesHint}</Banner>
         ) : null}
-        <div>
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Output by brand</p>
-          {summary.output_by_brand.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {summary.output_by_brand.map((row) => (
-                <span
-                  key={row.brand_id}
-                  className="inline-flex items-center gap-2 rounded-xl border border-accent-200/60 bg-accent-50/40 px-3 py-2.5 text-base dark:border-accent-800/40 dark:bg-accent-950/20"
-                >
-                  <span className="font-semibold text-ink">{row.brand_name ?? `Brand #${row.brand_id}`}</span>
-                  <span className="v2-mono font-bold text-accent-800 dark:text-accent-300">
-                    {formatQtyKg(row.quantity_kg)}
-                  </span>
-                  {row.bag_count > 0 && (
-                    <span className="text-sm text-ink-muted">· {row.bag_count} bags</span>
-                  )}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-base text-ink-muted">No finished output recorded yet.</p>
-          )}
-        </div>
 
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-3",
-            powderKg > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
-          )}
-        >
-          <MetricTile
-            label={powderKg > 0 ? "Waste (excl. powder)" : "Waste"}
-            value={formatQtyKg(powderKg > 0 ? wasteExclPowderKg : wasteKg)}
-            tone="warning"
-          />
-          {powderKg > 0 && (
-            <MetricTile label="Powder stock" value={formatQtyKg(powderKg)} tone="success" highlight />
-          )}
-          <MetricTile label="Misc" value={formatQtyKg(miscKg)} tone="muted" />
-          <MetricTile label="Total loss" value={formatQtyKg(lossKg)} tone="warning" highlight={lossKg > 0} />
-        </div>
-
-        {powderKg > 0 && (
-          <div>
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              Powder added to inventory
-            </p>
-            <div className="rounded-xl border border-accent-200/60 bg-accent-50/35 px-3 py-2.5 dark:border-accent-800/40 dark:bg-accent-950/20">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-medium text-ink">Consolidated powder pile</span>
-                <span className="v2-mono text-sm font-semibold text-accent-800 dark:text-accent-300">
-                  {formatQtyKg(powderKg)}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-ink-muted">
-                {powderStorageLabels.length > 0 ? (
-                  <>
-                    Stored at{" "}
-                    {powderStorageLabels.map((label, i) => (
-                      <span key={label}>
-                        {i > 0 ? "; " : ""}
-                        <span className="font-medium text-ink">{label}</span>
-                      </span>
-                    ))}
-                  </>
-                ) : (
-                  "Location recorded on each waste batch with powder."
-                )}
-              </p>
-              <p className="mt-1 text-xs text-ink-subtle">
-                Entered on the Waste tab for mass balance; unlike dust, stone, and sack weight, powder posts as
-                saleable stock at that location.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {auditWasteSplits.length > 0 && (
+        {auditWasteSplits.length > 0 ? (
           <div>
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-muted">Waste split by owner</p>
             <div className="space-y-2">
@@ -2660,6 +2844,8 @@ function SummaryCard({
               })}
             </div>
           </div>
+        ) : (
+          <p className="text-sm text-ink-muted">No owner-level waste split recorded yet.</p>
         )}
       </CardBody>
     </Card>

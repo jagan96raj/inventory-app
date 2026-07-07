@@ -1,9 +1,12 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapPin, RotateCcw, Truck } from "lucide-react";
-import { api, EXPECTED_BILL_VERSION_HEADER, idempotencyHeaders, newIdempotencyKey } from "../api/client";
+import { api, EXPECTED_BILL_VERSION_HEADER, idempotencyHeadersOptionalAuth, newIdempotencyKey } from "../api/client";
+import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
+import BackdateAuthDialog from "./ui/BackdateAuthDialog";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { calcPreviewTotalKg } from "../lib/bagType";
-import { formatQtyKg } from "../lib/format";
+import { formatQtyKg, localIsoDate, validateDateNotFuture } from "../lib/format";
+import BusinessDateField from "./ui/BusinessDateField";
 import {
   deliverExceedsRemainingMessage,
   returnExceedsMessage,
@@ -75,6 +78,7 @@ const emptyForm = () => ({
   bag_count: "",
   loose_kg: "",
   vehicle_no: "",
+  fulfilled_date: localIsoDate(),
 });
 
 export default function FulfillmentActionDialog({
@@ -92,6 +96,8 @@ export default function FulfillmentActionDialog({
   const idemKeyRef = useRef<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [pickedParentId, setPickedParentId] = useState<number | null>(null);
+  const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
+  const [backdateAuthError, setBackdateAuthError] = useState("");
 
   const parentEntryId = pickedParentId ?? parentEntryIdProp ?? null;
   const isDeliver = mode === "deliver";
@@ -207,6 +213,34 @@ export default function FulfillmentActionDialog({
       : "How much are you delivering?"
     : "How much are you returning?";
 
+  const postFulfillment = async (authorizationPassword?: string) => {
+    if (!line || !idemKeyRef.current) return;
+    await api.post(
+      "/api/fulfillment",
+      {
+        bill_line_id: line.line_id,
+        entry_type: isDeliver ? "deliver" : "return",
+        quantity_kg: qtyThisEvent,
+        bag_count: line.is_loose ? 0 : Number(form.bag_count),
+        loose_kg: line.is_loose ? qtyThisEvent : 0,
+        location_id:
+          isPurchase && isDeliver
+            ? Number(form.location_id)
+            : isSales && isReturn
+              ? Number(form.location_id)
+              : undefined,
+        parent_entry_id: isReturn && isPurchase ? Number(parentEntryId) : undefined,
+        vehicle_no: form.vehicle_no || null,
+        expected_version: line.bill_version,
+        fulfilled_date: form.fulfilled_date,
+      },
+      { headers: idempotencyHeadersOptionalAuth(idemKeyRef.current, authorizationPassword) }
+    );
+    idemKeyRef.current = null;
+    onSuccess();
+    onClose();
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!line || !showForm || blockSubmit) return;
@@ -241,34 +275,42 @@ export default function FulfillmentActionDialog({
     }
 
     if (!idemKeyRef.current) idemKeyRef.current = newIdempotencyKey();
+    const dateError = validateDateNotFuture(form.fulfilled_date);
+    if (dateError) {
+      setError(dateError);
+      idemKeyRef.current = null;
+      return;
+    }
+    if (isBackdatedDate(form.fulfilled_date)) {
+      setBackdateAuthError("");
+      setBackdateAuthOpen(true);
+      return;
+    }
     setError("");
     await guardedSubmit(async () => {
       try {
-        await api.post(
-          "/api/fulfillment",
-          {
-            bill_line_id: line.line_id,
-            entry_type: isDeliver ? "deliver" : "return",
-            quantity_kg: qtyThisEvent,
-            bag_count: line.is_loose ? 0 : Number(form.bag_count),
-            loose_kg: line.is_loose ? qtyThisEvent : 0,
-            location_id:
-              isPurchase && isDeliver
-                ? Number(form.location_id)
-                : isSales && isReturn
-                  ? Number(form.location_id)
-                  : undefined,
-            parent_entry_id: isReturn && isPurchase ? Number(parentEntryId) : undefined,
-            vehicle_no: form.vehicle_no || null,
-            expected_version: line.bill_version,
-          },
-          { headers: idempotencyHeaders(idemKeyRef.current!) }
-        );
-        idemKeyRef.current = null;
-        onSuccess();
-        onClose();
+        await postFulfillment();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error");
+      }
+    });
+  };
+
+  const confirmBackdateAuth = async (authorizationPassword: string) => {
+    setBackdateAuthError("");
+    await guardedSubmit(async () => {
+      try {
+        await postFulfillment(authorizationPassword);
+        setBackdateAuthOpen(false);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error";
+        if (isAuthPasswordError(msg)) {
+          setBackdateAuthError(msg);
+        } else {
+          setError(msg);
+          setBackdateAuthOpen(false);
+        }
+        throw err;
       }
     });
   };
@@ -290,6 +332,7 @@ export default function FulfillmentActionDialog({
       : "Loading line details…";
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -370,133 +413,150 @@ export default function FulfillmentActionDialog({
       )}
 
       {!loading && showForm && (
-        <>
-          <FulfillmentContextCard
-            line={line}
-            mode={isDeliver ? "deliver" : "return"}
-            salesLocationName={isReturn && isSales ? salesLocationName : undefined}
-            highlightBillLocation={isSales && isDeliver}
-            returnableKg={isReturn && isPurchase ? line.returnable_kg : undefined}
-            returnableBags={isReturn && isPurchase ? line.returnable_bags : undefined}
-          />
-
-          {isReturn && isPurchase && line.parent_entry && (
-            <FulfillmentParentEntryCard
-              locationName={line.location_name ?? "—"}
-              fulfilledAt={line.parent_entry.fulfilled_at}
-              receivedLabel={parentReceivedLabel}
-              returnableLabel={parentReturnableLabel}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)] xl:items-start">
+          <div className="space-y-4">
+            <FulfillmentContextCard
+              line={line}
+              mode={isDeliver ? "deliver" : "return"}
+              salesLocationName={isReturn && isSales ? salesLocationName : undefined}
+              highlightBillLocation={isSales && isDeliver}
+              returnableKg={isReturn && isPurchase ? line.returnable_kg : undefined}
+              returnableBags={isReturn && isPurchase ? line.returnable_bags : undefined}
             />
-          )}
 
-          {isReturn && isSales && line.bill_location_name && (
-            <div className="rounded-xl border border-primary-200/70 bg-primary-50/50 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/40 dark:bg-primary-950/30 dark:text-primary-100">
-              Originally billed from <strong>{line.bill_location_name}</strong>. Choose where returned
-              stock is stored — it can differ.
-            </div>
-          )}
-
-          <form id="fulfillment-action-form" onSubmit={submit} className="space-y-4 rounded-2xl border border-line/80 bg-surface-subtle/40 p-4 sm:p-5">
-            <p className="text-base font-semibold text-ink">
-              {isDeliver ? (isPurchase ? "Receive details" : "Delivery details") : "Return details"}
-            </p>
-
-            {isPurchase && isDeliver && (
-              <FormField label="Receive at location" required hint="Stock will be added here.">
-                {() => (
-                  <AsyncSearchCombobox
-                    value={form.location_id ? Number(form.location_id) : null}
-                    onChange={(id) =>
-                      setForm({ ...form, location_id: id != null ? String(id) : "" })
-                    }
-                    searchFn={searchLocations}
-                    placeholder="Search location…"
-                    emptyText="No matching location"
-                  />
-                )}
-              </FormField>
+            {isReturn && isPurchase && line.parent_entry && (
+              <FulfillmentParentEntryCard
+                locationName={line.location_name ?? "—"}
+                fulfilledAt={line.parent_entry.fulfilled_at}
+                receivedLabel={parentReceivedLabel}
+                returnableLabel={parentReturnableLabel}
+              />
             )}
+          </div>
 
-            {isReturn && isSales && (
-              <FormField label="Store return at" required>
-                {() => (
-                  <AsyncSearchCombobox
-                    value={form.location_id ? Number(form.location_id) : null}
-                    onChange={(id) =>
-                      setForm({ ...form, location_id: id != null ? String(id) : "" })
-                    }
-                    searchFn={searchLocations}
-                    placeholder="Search location…"
-                    emptyText="No matching location"
-                    initialLabel={
-                      form.location_id && line?.bill_location_id === Number(form.location_id)
-                        ? salesLocationName
-                        : undefined
-                    }
-                  />
-                )}
-              </FormField>
-            )}
-
-            {line.is_loose ? (
-              <FormField label={qtyFieldLabel} required hint={`Maximum ${formatQtyKg(maxKg)}.`}>
-                {({ id }) => (
-                  <NumberInput
-                    id={id}
-                    min={0}
-                    max={maxKg}
-                    step={0.001}
-                    suffix="kg"
-                    value={form.loose_kg}
-                    placeholder="e.g. 500"
-                    onChange={(e) => setForm({ ...form, loose_kg: e.target.value, bag_count: "" })}
-                    required
-                  />
-                )}
-              </FormField>
-            ) : (
-              <FormField
-                label={qtyFieldLabel}
-                required
-                hint={`Maximum ${maxBags} bags (${formatQtyKg(maxKg)}). Kg is calculated automatically.`}
-              >
-                {({ id }) => (
-                  <NumberInput
-                    id={id}
-                    min={0}
-                    max={maxBags}
-                    step={1}
-                    value={form.bag_count}
-                    placeholder="e.g. 10"
-                    onChange={(e) => setForm({ ...form, bag_count: e.target.value, loose_kg: "" })}
-                    required
-                  />
-                )}
-              </FormField>
-            )}
-
-            {!line.is_loose && qtyThisEvent > 0 && (
-              <div className="rounded-xl border border-line/80 bg-surface px-4 py-3 text-sm">
-                <span className="text-ink-muted">This entry: </span>
-                <span className="v2-mono font-bold text-ink">{formatQtyKg(String(qtyThisEvent))}</span>
+          <div className="space-y-4">
+            {isReturn && isSales && line.bill_location_name && (
+              <div className="rounded-xl border border-primary-200/70 bg-primary-50/50 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/40 dark:bg-primary-950/30 dark:text-primary-100">
+                Originally billed from <strong>{line.bill_location_name}</strong>. Choose where returned
+                stock is stored — it can differ.
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Vehicle number" hint="Optional">
-                {({ id }) => (
-                  <Input
-                    id={id}
-                    value={form.vehicle_no}
-                    placeholder="e.g. TN 09 AB 1234"
-                    onChange={(e) => setForm({ ...form, vehicle_no: e.target.value })}
-                  />
-                )}
-              </FormField>
-            </div>
-          </form>
-        </>
+            <form id="fulfillment-action-form" onSubmit={submit} className="space-y-4 rounded-2xl border border-line/80 bg-surface-subtle/40 p-4 sm:p-5">
+              <p className="text-base font-semibold text-ink">
+                {isDeliver ? (isPurchase ? "Receive details" : "Delivery details") : "Return details"}
+              </p>
+
+              <BusinessDateField
+                value={form.fulfilled_date}
+                onChange={(fulfilled_date) => setForm((f) => ({ ...f, fulfilled_date }))}
+              />
+
+              {isPurchase && isDeliver && (
+                <FormField label="Receive at location" required hint="Stock will be added here.">
+                  {() => (
+                    <AsyncSearchCombobox
+                      value={form.location_id ? Number(form.location_id) : null}
+                      onChange={(id) =>
+                        setForm({ ...form, location_id: id != null ? String(id) : "" })
+                      }
+                      searchFn={searchLocations}
+                      placeholder="Search location…"
+                      emptyText="No matching location"
+                    />
+                  )}
+                </FormField>
+              )}
+
+              {isReturn && isSales && (
+                <FormField label="Store return at" required>
+                  {() => (
+                    <AsyncSearchCombobox
+                      value={form.location_id ? Number(form.location_id) : null}
+                      onChange={(id) =>
+                        setForm({ ...form, location_id: id != null ? String(id) : "" })
+                      }
+                      searchFn={searchLocations}
+                      placeholder="Search location…"
+                      emptyText="No matching location"
+                      initialLabel={
+                        form.location_id && line?.bill_location_id === Number(form.location_id)
+                          ? salesLocationName
+                          : undefined
+                      }
+                    />
+                  )}
+                </FormField>
+              )}
+
+              {line.is_loose ? (
+                <FormField label={qtyFieldLabel} required hint={`Maximum ${formatQtyKg(maxKg)}.`}>
+                  {({ id }) => (
+                    <NumberInput
+                      id={id}
+                      min={0}
+                      max={maxKg}
+                      step={0.001}
+                      suffix="kg"
+                      value={form.loose_kg}
+                      placeholder="e.g. 500"
+                      onChange={(e) => setForm({ ...form, loose_kg: e.target.value, bag_count: "" })}
+                      required
+                    />
+                  )}
+                </FormField>
+              ) : (
+                <FormField
+                  label={qtyFieldLabel}
+                  required
+                  hint={`Maximum ${maxBags} bags (${formatQtyKg(maxKg)}). Kg is calculated automatically.`}
+                >
+                  {({ id }) => (
+                    <NumberInput
+                      id={id}
+                      min={0}
+                      max={maxBags}
+                      step={1}
+                      value={form.bag_count}
+                      placeholder="e.g. 10"
+                      onChange={(e) => setForm({ ...form, bag_count: e.target.value, loose_kg: "" })}
+                      required
+                    />
+                  )}
+                </FormField>
+              )}
+
+              {!line.is_loose && qtyThisEvent > 0 && (
+                <div className="rounded-xl border border-line/80 bg-surface px-4 py-3 text-sm">
+                  <span className="text-ink-muted">This entry: </span>
+                  <span className="v2-mono font-bold text-ink">{formatQtyKg(String(qtyThisEvent))}</span>
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Vehicle number" hint="Optional">
+                  {({ id }) => (
+                    <Input
+                      id={id}
+                      value={form.vehicle_no}
+                      placeholder="e.g. TN 09 AB 1234"
+                      onChange={(e) => setForm({ ...form, vehicle_no: e.target.value })}
+                    />
+                  )}
+                </FormField>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </Modal>
+    <BackdateAuthDialog
+      open={backdateAuthOpen}
+      onClose={() => setBackdateAuthOpen(false)}
+      onConfirm={confirmBackdateAuth}
+      dateLabel={form.fulfilled_date}
+      authError={backdateAuthError || undefined}
+    />
+  </>
   );
 }

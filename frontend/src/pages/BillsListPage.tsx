@@ -199,6 +199,8 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatusFilter>("all");
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<DeliveryStatusFilter>("all");
   const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
@@ -218,6 +220,8 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
     if (paymentStatusFilter !== "all") params.set("payment_status", paymentStatusFilter);
     if (deliveryStatusFilter !== "all") params.set("delivery_status", deliveryStatusFilter);
     if (search.trim()) params.set("search", search.trim());
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
     api
       .get<BillsPage>(`/api/bills?${params}`)
       .then((page) => {
@@ -227,7 +231,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [billType, limit, offset, paymentStatusFilter, deliveryStatusFilter, search]);
+  }, [billType, limit, offset, paymentStatusFilter, deliveryStatusFilter, search, dateFrom, dateTo]);
 
   useEffect(() => {
     load();
@@ -235,7 +239,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
 
   useEffect(() => {
     setOffset(0);
-  }, [billType, paymentStatusFilter, deliveryStatusFilter, search]);
+  }, [billType, paymentStatusFilter, deliveryStatusFilter, search, dateFrom, dateTo]);
 
   const finalPayable = (b: BillListItem) => b.final_payable ?? b.grand_total;
 
@@ -250,12 +254,18 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
   }, [summary]);
 
   const hasActiveFilters =
-    paymentStatusFilter !== "all" || deliveryStatusFilter !== "all" || search.trim() !== "";
+    paymentStatusFilter !== "all" ||
+    deliveryStatusFilter !== "all" ||
+    search.trim() !== "" ||
+    dateFrom !== "" ||
+    dateTo !== "";
 
   const clearFilters = () => {
     setPaymentStatusFilter("all");
     setDeliveryStatusFilter("all");
     setSearch("");
+    setDateFrom("");
+    setDateTo("");
   };
 
   const columns: Column<BillListItem>[] = [
@@ -510,6 +520,28 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                   </Button>
                 )}
               </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <FormField label="Date from" htmlFor="bills-date-from">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField label="Date to" htmlFor="bills-date-to">
+                {({ id }) => (
+                  <Input
+                    id={id}
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                  />
+                )}
+              </FormField>
             </div>
           </CardBody>
         </Card>

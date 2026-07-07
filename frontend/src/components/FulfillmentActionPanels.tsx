@@ -58,7 +58,14 @@ function QtyMiniStat({
   return (
     <div className={cn("rounded-xl border px-4 py-3", toneClass[tone])}>
       <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">{label}</p>
-      <p className={cn("mt-1 v2-mono text-xl font-bold tabular-nums", textClass[tone])}>{primary}</p>
+      <p
+        className={cn(
+          "mt-1 v2-mono text-lg font-bold tabular-nums whitespace-nowrap sm:text-xl",
+          textClass[tone]
+        )}
+      >
+        {primary}
+      </p>
       {secondary && <p className="mt-0.5 text-sm text-ink-muted">{secondary}</p>}
     </div>
   );

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Ban, PackagePlus, Truck } from "lucide-react";
+import { ArrowLeft, Ban, Truck } from "lucide-react";
 import { jobWorkApi, newIdempotencyKey, type JobWorkLine, type JobWorkOrder } from "../../api/client";
 import { formatDate, formatQtyKg } from "../../lib/format";
-import { jwCustodyQty, jwOrderedQty, jwRemainingReceiveQty, formatJwPrimaryQty } from "../../lib/jwQty";
+import { jwNetReceivedQty, jwOrderedQty, jwRemainingReceiveQty, formatJwPrimaryQty } from "../../lib/jwQty";
 import PageHeader from "../../components/ui/PageHeader";
 import JwQtyCell from "../../components/JwQtyCell";
 import JwActivityLog from "../../components/job-work/JwActivityLog";
@@ -69,9 +69,9 @@ export default function JobWorkDetailPage() {
     load();
   }, [load, orderId]);
 
-  const custodyKg = useMemo(() => {
+  const netReceivedKgTotal = useMemo(() => {
     if (!order) return 0;
-    return order.lines.reduce((s, ln) => s + Number(ln.custody_kg ?? 0), 0);
+    return order.lines.reduce((s, ln) => s + Number(ln.net_received_kg ?? ln.custody_kg ?? 0), 0);
   }, [order]);
 
   const orderedKg = useMemo(() => {
@@ -84,7 +84,7 @@ export default function JobWorkDetailPage() {
     return order.lines.reduce((s, ln) => s + Number(ln.remaining_receive_kg ?? 0), 0);
   }, [order]);
 
-  const canVoidOrder = order?.status === "open" && custodyKg === 0;
+  const canVoidOrder = order?.status === "open" && netReceivedKgTotal === 0;
 
   const voidOrder = async (password: string) => {
     if (!order) return;
@@ -126,11 +126,11 @@ export default function JobWorkDetailPage() {
       headerClassName: "text-right",
     },
     {
-      key: "custody",
-      header: "In custody",
+      key: "received",
+      header: "Received (net)",
       cell: (ln) => (
         <div className="text-right">
-          <JwQtyCell qty={jwCustodyQty({ ...ln, is_loose: lineIsLoose(ln) })} emphasize />
+          <JwQtyCell qty={jwNetReceivedQty({ ...ln, is_loose: lineIsLoose(ln) })} emphasize />
           {(ln.returned_bags > 0 || Number(ln.returned_quantity_kg) > 0) && (
             <p className="mt-1 text-xs text-ink-muted">
               Returned to customer:{" "}
@@ -209,8 +209,8 @@ export default function JobWorkDetailPage() {
               </Button>
             </Link>
             {order.status === "open" && (
-              <Link to="/job-work/fulfillment/receive">
-                <Button leftIcon={<Truck className="h-4 w-4" />}>Fulfillment</Button>
+              <Link to="/job-work/fulfillment">
+                <Button leftIcon={<Truck className="h-4 w-4" />}>Receive / Return</Button>
               </Link>
             )}
             {canVoidOrder && (
@@ -244,16 +244,17 @@ export default function JobWorkDetailPage() {
       {order.status === "open" && (
         <Banner tone="info" className="mb-5">
           Receive and return material on{" "}
-          <Link to="/job-work/fulfillment/receive" className="font-semibold text-primary-700 underline dark:text-primary-300">
+          <Link to="/job-work/fulfillment" className="font-semibold text-primary-700 underline dark:text-primary-300">
             Job work fulfillment
-          </Link>{" "}
-          — separate from bill fulfillment for access control.
+          </Link>
+          — like bill fulfillment without payment.
         </Banner>
       )}
 
-      {order.status === "open" && custodyKg > 0 && (
+      {order.status === "open" && netReceivedKgTotal > 0 && (
         <Banner tone="warning" className="mb-5">
-          Return all material to the customer before voiding this order ({formatQtyKg(custodyKg)} still in custody).
+          Return all material to the customer before voiding this order ({formatQtyKg(netReceivedKgTotal)} still
+          received).
         </Banner>
       )}
 
@@ -266,8 +267,8 @@ export default function JobWorkDetailPage() {
       <div
         className={`mb-5 grid gap-3 ${order.status === "open" && remainingKg > 0 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
       >
-        <Stat label="Ordered" value={formatQtyKg(orderedKg)} tone="neutral" />
-        <Stat label="In custody" value={formatQtyKg(custodyKg)} tone="primary" />
+        <Stat label="Ordered (kg)" value={formatQtyKg(orderedKg)} tone="neutral" />
+        <Stat label="Received (kg)" value={formatQtyKg(netReceivedKgTotal)} tone="primary" />
         {order.status === "open" && remainingKg > 0 ? (
           <Stat label="Remaining" value={formatQtyKg(remainingKg)} tone="info" />
         ) : null}
@@ -281,21 +282,16 @@ export default function JobWorkDetailPage() {
       </Card>
 
       <Card>
-        <CardHeader
-          title="Activity log"
-          subtitle="Receive and return events. Void receive entries from Job work fulfillment."
-          actions={
-            order.status === "open" ? (
-              <Link to="/job-work/fulfillment/receive">
-                <Button variant="secondary" size="sm" leftIcon={<PackagePlus className="h-4 w-4" />}>
-                  Open fulfillment
-                </Button>
-              </Link>
-            ) : undefined
-          }
-        />
+        <CardHeader title="Activity log" subtitle="Receive and return events. Void receive entries from fulfillment." />
         <CardBody>
-          <JwActivityLog items={activityItems} />
+          <details>
+            <summary className="cursor-pointer text-sm font-semibold text-ink-muted hover:text-ink">
+              Receipt history
+            </summary>
+            <div className="mt-3">
+              <JwActivityLog items={activityItems} />
+            </div>
+          </details>
         </CardBody>
       </Card>
 

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import get_current_user
 from app.core.permissions import Permission, require_permission, require_void_user
-from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
+from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.database import get_db
@@ -34,7 +34,7 @@ from app.services.fulfillment import (
     void_fulfillment_entry,
 )
 from app.services.bill_concurrency import EXPECTED_BILL_VERSION_HEADER, http_exception_for_value_error
-from app.utils.time import utc_now
+from app.utils.time import resolve_business_entry
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["fulfillment"])
@@ -198,18 +198,21 @@ def add_bill_fulfillment_event(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.fulfilled_date, void_password, user)
     route_key = "POST /api/fulfillment/bill-event"
     request_hash = hash_pydantic_body(body)
 
     def execute():
         line_items = [(ln.bill_line_id, ln.bag_count, ln.loose_kg) for ln in body.lines]
         try:
+            _, fulfilled_at = resolve_business_entry(body.fulfilled_date)
             result = create_bill_fulfillment_event(
                 db,
                 body.bill_id,
                 body.entry_type,
-                utc_now(),
+                fulfilled_at,
                 body.vehicle_no,
                 line_items,
                 location_id=body.location_id,
@@ -231,7 +234,9 @@ def add_fulfillment(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    verify_backdate_authorization(body.fulfilled_date, void_password, user)
     route_key = "POST /api/fulfillment"
     request_hash = hash_pydantic_body(body)
 
@@ -249,6 +254,7 @@ def add_fulfillment(
                 notes=body.notes,
                 vehicle_no=body.vehicle_no,
                 expected_version=body.expected_version,
+                fulfilled_date=body.fulfilled_date,
             )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e

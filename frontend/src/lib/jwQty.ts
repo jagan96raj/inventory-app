@@ -74,24 +74,6 @@ function bagRemainder(
   return explicit ?? 0;
 }
 
-function custodyBags(
-  explicit: number | undefined,
-  received: number,
-  returned: number,
-  custodyKg?: string | number,
-  weightPerBagKg?: string | number
-): number {
-  const computed = Math.max(received - returned, 0);
-  if (explicit != null && !(explicit === 0 && computed > 0)) {
-    return explicit;
-  }
-  if (computed > 0) return computed;
-  const kg = Number(custodyKg ?? 0);
-  const w = Number(weightPerBagKg ?? 0);
-  if (kg > 0 && w > 0) return Math.floor(kg / w);
-  return explicit ?? 0;
-}
-
 export function jwOrderedQty(line: JwLineQtyRow): JwQtyFields {
   if (line.is_loose) {
     return {
@@ -122,7 +104,7 @@ export function jwReceivedQty(line: JwLineQtyRow): JwQtyFields {
   };
 }
 
-/** Net received (after returns) — use on fulfillment receive tab. */
+/** User-facing "Received (net)" — material still with you after returns. */
 export function jwNetReceivedQty(line: JwLineQtyRow): JwQtyFields {
   if (line.is_loose) {
     const loose =
@@ -174,23 +156,7 @@ export function jwRemainingReceiveQty(line: JwLineQtyRow): JwQtyFields {
   };
 }
 
+/** @deprecated Legacy alias — use {@link jwNetReceivedQty} for UI "Received (net)". */
 export function jwCustodyQty(line: JwLineQtyRow): JwQtyFields {
-  if (line.is_loose) {
-    return {
-      is_loose: true,
-      loose_kg: line.custody_loose_kg ?? line.custody_kg,
-      kg: line.custody_kg,
-    };
-  }
-  return {
-    is_loose: false,
-    bags: custodyBags(
-      line.custody_bags,
-      line.received_bags ?? 0,
-      line.returned_bags ?? 0,
-      line.custody_kg,
-      line.weight_per_bag_kg
-    ),
-    kg: line.custody_kg,
-  };
+  return jwNetReceivedQty(line);
 }

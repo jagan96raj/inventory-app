@@ -5,6 +5,14 @@ from typing import Generic, Literal, TypeVar
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.utils.time import business_today
+
+
+def _business_date_not_future(v: date | None) -> date | None:
+    if v is None:
+        return None
+    if v > business_today():
+        raise ValueError("Date cannot be in the future")
+    return v
 from app.core.password_policy import validate_new_password_field
 from app.models.entities import (
     BillType,
@@ -369,6 +377,12 @@ class PaymentCreate(BaseModel):
     payment_mode: PaymentMode
     bank_account_id: int | None = None
     expected_version: int | None = None
+    paid_date: date | None = None
+
+    @field_validator("paid_date")
+    @classmethod
+    def paid_date_not_future(cls, v: date | None) -> date | None:
+        return _business_date_not_future(v)
 
     @field_validator("payment_mode")
     @classmethod
@@ -428,6 +442,12 @@ class FulfillmentBillEventCreate(BaseModel):
     location_id: int | None = None
     expected_version: int | None = None
     lines: list[FulfillmentBillEventLineIn] = Field(min_length=1)
+    fulfilled_date: date | None = None
+
+    @field_validator("fulfilled_date")
+    @classmethod
+    def fulfilled_date_not_future(cls, v: date | None) -> date | None:
+        return _business_date_not_future(v)
 
 
 class FulfillmentCreate(BaseModel):
@@ -441,6 +461,12 @@ class FulfillmentCreate(BaseModel):
     notes: str | None = None
     vehicle_no: str | None = None
     expected_version: int | None = None
+    fulfilled_date: date | None = None
+
+    @field_validator("fulfilled_date")
+    @classmethod
+    def fulfilled_date_not_future(cls, v: date | None) -> date | None:
+        return _business_date_not_future(v)
 
 
 class FulfillmentOut(BaseModel):
@@ -1415,6 +1441,12 @@ class CashBookEntryCreate(BaseModel):
     source_bank_account_id: int | None = None
     dest_payment_mode: CashBookSourceMode | None = None
     dest_bank_account_id: int | None = None
+    entry_date: date | None = None
+
+    @field_validator("entry_date")
+    @classmethod
+    def entry_date_not_future(cls, v: date | None) -> date | None:
+        return _business_date_not_future(v)
 
     @field_validator("description", "reference_no")
     @classmethod
@@ -1678,6 +1710,12 @@ class JobWorkReceiveIn(BaseModel):
     loose_kg: Decimal = Field(Decimal("0"), ge=0)
     vehicle_no: str | None = None
     notes: str | None = None
+    received_date: date | None = None
+
+    @field_validator("received_date")
+    @classmethod
+    def received_date_not_future(cls, v: date | None) -> date | None:
+        return _business_date_not_future(v)
 
 
 class JobWorkReturnIn(BaseModel):
@@ -1686,6 +1724,12 @@ class JobWorkReturnIn(BaseModel):
     bag_count: int = Field(0, ge=0)
     loose_kg: Decimal = Field(Decimal("0"), ge=0)
     notes: str | None = None
+    received_date: date | None = None
+
+    @field_validator("received_date")
+    @classmethod
+    def received_date_not_future(cls, v: date | None) -> date | None:
+        return _business_date_not_future(v)
 
 
 class JobWorkStatementOrderOut(BaseModel):
@@ -1762,9 +1806,9 @@ class JobWorkFulfillmentLineOut(BaseModel):
     remaining_receive_kg: Decimal
     remaining_receive_bags: int = 0
     remaining_receive_loose_kg: Decimal = Decimal("0")
-    custody_kg: Decimal
-    custody_bags: int = 0
-    custody_loose_kg: Decimal = Decimal("0")
+    custody_kg: Decimal  # Deprecated alias for net_received_kg; prefer net_received_kg in UI
+    custody_bags: int = 0  # Deprecated alias for net_received_bags
+    custody_loose_kg: Decimal = Decimal("0")  # Deprecated alias for net_received_loose_kg
     return_locations: list[JwReturnLocationOut] = []
     receipts: list[JobWorkFulfillmentReceiptOut] = []
 

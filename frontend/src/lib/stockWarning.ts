@@ -45,6 +45,26 @@ export function stockExceedsMessage(
   return `Exceeds available stock (${stockLine.bag_count} bags · ${formatQtyKg(stockLine.total_quantity_kg)}) — cannot submit`;
 }
 
+/** Sum qty reserved by lines **before** excludeIndex in the same stock bucket (for per-line remaining display). */
+export function reservedStockFromEarlierLines(
+  bagType: BagTypeLike | undefined,
+  lines: { bag_count: string; loose_kg: string }[],
+  excludeIndex: number,
+  sameBucket: (lineIndex: number) => boolean
+): { bagCount: number; looseKg: number } {
+  let bagCount = 0;
+  let looseKg = 0;
+  lines.forEach((ln, i) => {
+    if (i >= excludeIndex || !sameBucket(i)) return;
+    if (bagType && isLooseBagType(bagType)) {
+      looseKg += parseLooseKg(ln.loose_kg);
+    } else {
+      bagCount += parseBagCount(ln.bag_count);
+    }
+  });
+  return { bagCount, looseKg };
+}
+
 /** Sum qty reserved by other lines sharing the same stock bucket (e.g. location + bag type). */
 export function reservedStockFromSiblingLines(
   bagType: BagTypeLike | undefined,
@@ -63,6 +83,39 @@ export function reservedStockFromSiblingLines(
     }
   });
   return { bagCount, looseKg };
+}
+
+export function remainingStockRowAfterReserved(
+  bagType: BagTypeLike | undefined,
+  stockLine: StockAtLocation | undefined,
+  reservedBags: number,
+  reservedLooseKg: number
+): { bagCount: number; looseKg: number; totalKg: number } {
+  if (!bagType || !stockLine) {
+    return { bagCount: 0, looseKg: 0, totalKg: 0 };
+  }
+  const reservedKg = calcPreviewTotalKg(bagType, reservedBags, reservedLooseKg);
+  if (isLooseBagType(bagType)) {
+    const looseKg = Math.max(0, Number(stockLine.loose_kg) - reservedLooseKg);
+    return { bagCount: 0, looseKg, totalKg: looseKg };
+  }
+  const bagCount = Math.max(0, stockLine.bag_count - reservedBags);
+  const totalKg = Math.max(0, Number(stockLine.total_quantity_kg) - reservedKg);
+  return { bagCount, looseKg: 0, totalKg };
+}
+
+export function formatRemainingStockAfterReserved(
+  bagType: BagTypeLike | undefined,
+  stockLine: StockAtLocation | undefined,
+  reservedBags: number,
+  reservedLooseKg: number
+): string {
+  if (!bagType || !stockLine) return "";
+  const remaining = remainingStockRowAfterReserved(bagType, stockLine, reservedBags, reservedLooseKg);
+  if (isLooseBagType(bagType)) {
+    return formatQtyKg(remaining.looseKg);
+  }
+  return `${remaining.bagCount} bags (${formatQtyKg(remaining.totalKg)})`;
 }
 
 export function exceedsAvailableStockWithReserved(

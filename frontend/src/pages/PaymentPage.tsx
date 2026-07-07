@@ -1,9 +1,12 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, IndianRupee } from "lucide-react";
-import { api, bankAccountsApi, idempotencyHeaders, newIdempotencyKey, type BankAccount, type Bill, type SetoffPreview } from "../api/client";
+import { api, bankAccountsApi, idempotencyHeadersOptionalAuth, newIdempotencyKey, type BankAccount, type Bill, type SetoffPreview } from "../api/client";
+import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
+import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
-import { formatInr } from "../lib/format";
+import { formatInr, localIsoDate, validateDateNotFuture } from "../lib/format";
+import BusinessDateField from "../components/ui/BusinessDateField";
 import PageHeader from "../components/ui/PageHeader";
 import Button from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
@@ -54,8 +57,10 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   const [error, setError] = useState("");
   const { submitting, guardedSubmit, submitDisabled } = useSubmitGuard();
   const idemKeyRef = useRef<string | null>(null);
-  const [form, setForm] = useState({ amount: "", payment_mode: "cash", bank_account_id: "" as number | "" });
+  const [form, setForm] = useState({ amount: "", payment_mode: "cash", bank_account_id: "" as number | "", paid_date: localIsoDate() });
   const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
+  const [backdateAuthError, setBackdateAuthError] = useState("");
 
   const billType = billTypeProp ?? bill?.bill_type ?? "sales";
   const listPath = billType === "sales" ? "/sales-bills" : "/purchase-bills";
@@ -69,7 +74,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
       .get<Bill>(`/api/bills/${billId}`)
       .then((b) => {
         setBill(b);
-        setForm({ amount: "", payment_mode: "cash", bank_account_id: "" });
+        setForm({ amount: "", payment_mode: "cash", bank_account_id: "", paid_date: localIsoDate() });
       })
       .catch((e) => setError(e.message));
   }, [billId]);
@@ -152,6 +157,26 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
     }));
   };
 
+  const postPayment = async (authorizationPassword?: string) => {
+    if (!bill || !idemKeyRef.current) return;
+    const amt = Number(form.amount);
+    await api.post(
+      "/api/payments",
+      {
+        bill_id: bill.id,
+        amount: amt,
+        payment_mode: form.payment_mode,
+        bank_account_id: form.payment_mode === "bank" ? form.bank_account_id : null,
+        expected_version: bill.version,
+        paid_date: form.paid_date,
+      },
+      { headers: idempotencyHeadersOptionalAuth(idemKeyRef.current, authorizationPassword) }
+    );
+    idemKeyRef.current = null;
+    toast.success("Payment recorded");
+    navigate(listPath);
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!bill) return;
@@ -184,28 +209,46 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
       idemKeyRef.current = null;
       return;
     }
+    const dateError = validateDateNotFuture(form.paid_date);
+    if (dateError) {
+      setError(dateError);
+      idemKeyRef.current = null;
+      return;
+    }
     if (!idemKeyRef.current) idemKeyRef.current = newIdempotencyKey();
+    if (isBackdatedDate(form.paid_date)) {
+      setBackdateAuthError("");
+      setBackdateAuthOpen(true);
+      return;
+    }
     await guardedSubmit(async () => {
       setError("");
       try {
-        await api.post(
-          "/api/payments",
-          {
-            bill_id: bill.id,
-            amount: amt,
-            payment_mode: form.payment_mode,
-            bank_account_id: form.payment_mode === "bank" ? form.bank_account_id : null,
-            expected_version: bill.version,
-          },
-          { headers: idempotencyHeaders(idemKeyRef.current!) }
-        );
-        idemKeyRef.current = null;
-        toast.success("Payment recorded");
-        navigate(listPath);
+        await postPayment();
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Error";
         setError(msg);
         toast.error(msg);
+      }
+    });
+  };
+
+  const confirmBackdateAuth = async (authorizationPassword: string) => {
+    setBackdateAuthError("");
+    await guardedSubmit(async () => {
+      try {
+        await postPayment(authorizationPassword);
+        setBackdateAuthOpen(false);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error";
+        if (isAuthPasswordError(msg)) {
+          setBackdateAuthError(msg);
+        } else {
+          setError(msg);
+          toast.error(msg);
+          setBackdateAuthOpen(false);
+        }
+        throw err;
       }
     });
   };
@@ -284,6 +327,10 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
               <CardHeader title="New payment" subtitle="Backend validates set-off rules and limits." />
               <CardBody>
                 <form onSubmit={submit} className="space-y-4">
+                  <BusinessDateField
+                    value={form.paid_date}
+                    onChange={(paid_date) => setForm((f) => ({ ...f, paid_date }))}
+                  />
                   <FormField label="Payment mode" required>
                     {({ id }) => (
                       <Select
@@ -370,6 +417,14 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
           )}
         </div>
       )}
+
+      <BackdateAuthDialog
+        open={backdateAuthOpen}
+        onClose={() => setBackdateAuthOpen(false)}
+        onConfirm={confirmBackdateAuth}
+        dateLabel={form.paid_date}
+        authError={backdateAuthError || undefined}
+      />
     </>
   );
 }
