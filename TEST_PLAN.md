@@ -1,8 +1,22 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 07 Jul 2026 — covers Spec v5.4 through **v16.0.20**; backend v12.21 + v12.22  
+**Last updated:** 08 Jul 2026 — covers Spec v5.4 through **v16.0.22**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v16.0.22 — Hybrid master picker (browse + word search)
+
+1. **Typing filters results** — Type text in a master picker and pause; results load after debounce and match the query.
+2. **Empty input browse** — Open dropdown with empty input; it shows first page only (<= MASTER_SEARCH_LIMIT).
+3. **Hint text** — Dropdown shows `Showing first N — type to filter`.
+4. **Browse then type** — After browse list appears, typing narrows results to matching options.
+5. **No heavy dump** — Form open does not trigger bulk master payload spikes.
+
+## v16.0.21 — Default page size 25
+
+1. **Bills / inventory / payments** — With 26+ rows, page 1 shows 25; **Next** loads rows 26+.
+2. **API default** — Omit `limit` on a list endpoint → response `limit` is **25**.
+3. **Inventory product split** — If same product has many brand/bag rows that cross the 25-row boundary, first page ends mid-product and next page continues those remaining rows (by design).
 
 ## v16.0.20 — Fulfillment dialog layout + bill edit save fix
 

@@ -4,7 +4,7 @@ const API = import.meta.env.VITE_API_URL ?? "";
 export const EXPECTED_BILL_VERSION_HEADER = "X-Expected-Bill-Version";
 export const VOID_AUTH_HEADER = "X-Void-Authorization";
 export const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
-export const DEFAULT_PAGE_LIMIT = 50;
+export const DEFAULT_PAGE_LIMIT = 25;
 export const MASTER_SEARCH_LIMIT = 30;
 /** @deprecated Use async master search (MASTER_SEARCH_LIMIT) on forms instead of bulk mount loads. */
 export const BULK_FETCH_LIMIT = 500;

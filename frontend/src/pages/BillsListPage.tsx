@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
+  Calendar,
   Eye,
   FileText,
   Filter,
@@ -16,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { api, DEFAULT_PAGE_LIMIT, type BillListItem, type BillsPage } from "../api/client";
-import { formatInr } from "../lib/format";
+import { formatDate, formatInr } from "../lib/format";
 import {
   deliveryStatusLabel,
   normalizeDeliveryStatus,
@@ -43,6 +44,22 @@ import { cn } from "../lib/cn";
 
 function dueAmount(b: BillListItem): number {
   return Number(b.amount_due ?? b.due_amount ?? Number(b.grand_total) - Number(b.amount_paid));
+}
+
+function groupBillsByDate(bills: BillListItem[]): { date: string; bills: BillListItem[] }[] {
+  const map = new Map<string, BillListItem[]>();
+  for (const bill of bills) {
+    const key = bill.bill_date || "unknown";
+    const list = map.get(key);
+    if (list) list.push(bill);
+    else map.set(key, [bill]);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, grouped]) => ({
+      date,
+      bills: [...grouped].sort((x, y) => y.id - x.id),
+    }));
 }
 
 function fulfillmentLabel(status: string, isSales: boolean): string {
@@ -155,7 +172,6 @@ function BillMobileCard({
             >
               {bill.bill_number}
             </Link>
-            <p className="mt-0.5 text-sm text-ink-muted v2-mono">{bill.bill_date}</p>
           </div>
           <div className="text-right">
             <p className="text-lg font-bold v2-mono text-ink">{formatInr(final)}</p>
@@ -199,6 +215,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatusFilter>("all");
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<DeliveryStatusFilter>("all");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [error, setError] = useState("");
@@ -210,6 +227,11 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
   const theme = PAGE_THEME[billType];
   const EmptyIcon = theme.emptyIcon;
 
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
   const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams({
@@ -219,7 +241,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
     });
     if (paymentStatusFilter !== "all") params.set("payment_status", paymentStatusFilter);
     if (deliveryStatusFilter !== "all") params.set("delivery_status", deliveryStatusFilter);
-    if (search.trim()) params.set("search", search.trim());
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (dateFrom) params.set("date_from", dateFrom);
     if (dateTo) params.set("date_to", dateTo);
     api
@@ -231,7 +253,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [billType, limit, offset, paymentStatusFilter, deliveryStatusFilter, search, dateFrom, dateTo]);
+  }, [billType, limit, offset, paymentStatusFilter, deliveryStatusFilter, debouncedSearch, dateFrom, dateTo]);
 
   useEffect(() => {
     load();
@@ -239,7 +261,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
 
   useEffect(() => {
     setOffset(0);
-  }, [billType, paymentStatusFilter, deliveryStatusFilter, search, dateFrom, dateTo]);
+  }, [billType, paymentStatusFilter, deliveryStatusFilter, debouncedSearch, dateFrom, dateTo]);
 
   const finalPayable = (b: BillListItem) => b.final_payable ?? b.grand_total;
 
@@ -264,6 +286,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
     setPaymentStatusFilter("all");
     setDeliveryStatusFilter("all");
     setSearch("");
+    setDebouncedSearch("");
     setDateFrom("");
     setDateTo("");
   };
@@ -274,15 +297,12 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       header: "Bill",
       width: "11rem",
       cell: (b) => (
-        <div className="min-w-0">
-          <Link
-            to={`${base}/${b.id}`}
-            className={cn("font-semibold v2-mono hover:underline", theme.billLink)}
-          >
-            {b.bill_number}
-          </Link>
-          <p className="mt-0.5 text-sm text-ink-muted v2-mono">{b.bill_date}</p>
-        </div>
+        <Link
+          to={`${base}/${b.id}`}
+          className={cn("font-semibold v2-mono hover:underline", theme.billLink)}
+        >
+          {b.bill_number}
+        </Link>
       ),
     },
     {
@@ -351,6 +371,8 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       },
     },
   ];
+
+  const billsByDate = useMemo(() => groupBillsByDate(rows), [rows]);
 
   const showToolbar = !loading;
 
@@ -561,23 +583,51 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
           />
         ) : (
           <>
-            <div className="space-y-3 lg:hidden">
+            <div className="space-y-5 lg:hidden">
               {loading
                 ? Array.from({ length: 4 }).map((_, i) => (
                     <Card key={i} className="h-36 animate-pulse border-line/80 bg-surface-muted/50" />
                   ))
-                : rows.map((b) => (
-                    <BillMobileCard
-                      key={b.id}
-                      bill={b}
-                      base={base}
-                      theme={theme}
-                      isSales={isSales}
-                      onView={() => navigate(`${base}/${b.id}`)}
-                      onEdit={() => navigate(`${base}/${b.id}/edit`)}
-                      onPay={() => navigate(`${base}/${b.id}/payment`)}
-                    />
-                  ))}
+                : billsByDate.map(({ date, bills: dayBills }) => {
+                    const label = date === "unknown" ? "No bill date" : formatDate(date);
+                    return (
+                      <section key={date} className="space-y-3" aria-labelledby={`bills-date-m-${date}`}>
+                        <header
+                          id={`bills-date-m-${date}`}
+                          className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className={cn(
+                                "flex h-9 w-9 items-center justify-center rounded-lg",
+                                isSales
+                                  ? "bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200"
+                              )}
+                            >
+                              <Calendar className="h-4 w-4" aria-hidden="true" />
+                            </div>
+                            <h2 className="text-lg font-bold text-ink">{label}</h2>
+                          </div>
+                          <span className="text-sm font-medium text-ink-muted">
+                            {dayBills.length} bill{dayBills.length === 1 ? "" : "s"}
+                          </span>
+                        </header>
+                        {dayBills.map((b) => (
+                          <BillMobileCard
+                            key={b.id}
+                            bill={b}
+                            base={base}
+                            theme={theme}
+                            isSales={isSales}
+                            onView={() => navigate(`${base}/${b.id}`)}
+                            onEdit={() => navigate(`${base}/${b.id}/edit`)}
+                            onPay={() => navigate(`${base}/${b.id}/payment`)}
+                          />
+                        ))}
+                      </section>
+                    );
+                  })}
             </div>
             <PaginationBar
               className="px-1 lg:hidden"
@@ -593,21 +643,61 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                 subtitle={
                   loading
                     ? "Loading…"
-                    : `${rows.length} bill${rows.length === 1 ? "" : "s"} on this page`
+                    : `${rows.length} bill${rows.length === 1 ? "" : "s"} on this page · grouped by date`
                 }
               />
-              <CardBody className="p-0 pt-0">
-                <Table
-                  columns={columns}
-                  rows={rows}
-                  rowKey={(b) => b.id}
-                  loading={loading}
-                  zebra
-                  headerClassName={theme.tableHeader}
-                  className="rounded-none border-0 bg-transparent"
-                  caption={`${isSales ? "Sales" : "Purchase"} bills`}
-                />
-                <div className="border-t border-line/70 px-4">
+              <CardBody className="space-y-5 p-4 pt-0 sm:p-5">
+                {loading ? (
+                  <Table
+                    columns={columns}
+                    rows={[]}
+                    rowKey={(b) => b.id}
+                    loading
+                    zebra
+                    headerClassName={theme.tableHeader}
+                    className="rounded-2xl border-line/80"
+                    caption={`${isSales ? "Sales" : "Purchase"} bills`}
+                  />
+                ) : (
+                  billsByDate.map(({ date, bills: dayBills }) => {
+                    const label = date === "unknown" ? "No bill date" : formatDate(date);
+                    return (
+                      <section key={date} className="space-y-3" aria-labelledby={`bills-date-${date}`}>
+                        <header
+                          id={`bills-date-${date}`}
+                          className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm sm:px-5"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className={cn(
+                                "flex h-9 w-9 items-center justify-center rounded-lg",
+                                isSales
+                                  ? "bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200"
+                              )}
+                            >
+                              <Calendar className="h-4 w-4" aria-hidden="true" />
+                            </div>
+                            <h2 className="text-lg font-bold text-ink sm:text-xl">{label}</h2>
+                          </div>
+                          <span className="text-sm font-medium text-ink-muted">
+                            {dayBills.length} bill{dayBills.length === 1 ? "" : "s"}
+                          </span>
+                        </header>
+                        <Table
+                          columns={columns}
+                          rows={dayBills}
+                          rowKey={(b) => b.id}
+                          zebra
+                          headerClassName={theme.tableHeader}
+                          className="rounded-2xl border-line/80 bg-surface/60"
+                          caption={`${isSales ? "Sales" : "Purchase"} bills for ${label}`}
+                        />
+                      </section>
+                    );
+                  })
+                )}
+                <div className="border-t border-line/70 px-1">
                   <PaginationBar
                     total={total}
                     limit={limit}

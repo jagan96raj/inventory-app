@@ -391,7 +391,7 @@ Expect `044_spec_v1609_bill_print (head)`. Restart the backend after migrating.
 - Masters: `/api/products`, `/brands`, `/locations`, `/customers`, `/bag-types`, `/api/bank-accounts`, `/api/expense-categories` (auth required)
 - Inventory: `/api/inventory` (filters incl. `owner_type`, `customer_id`, `search`), `/api/inventory/stock-at-location`
 - Operations: `/api/operations/bag-change|product-transfer|stock-disposal` (optional `owner_type`, `customer_id`; default owned — v14.1); `/api/operations/processing` list is lightweight (v16.0 — no batch lines; detail `/{id}` full fidelity)
-- **Form dropdowns (v16.0.1):** Bill, processing, inventory, operations, and job-work forms use search-as-you-type master pickers (`MASTER_SEARCH_LIMIT=30`) instead of loading 500 rows on page open.
+- **Form dropdowns (v16.0.22):** Bill, processing, inventory, operations, and job-work forms use hybrid master pickers - async word search plus browse-on-open for first page only (`MASTER_SEARCH_LIMIT=30`) with hint "Showing first N - type to filter". No bulk full-list load on page open.
 - Job Work orders: `/api/job-work`, `/api/job-work/{id}`
 - Job Work fulfillment: `/api/job-work/fulfillment/orders`, `/api/job-work/receive`, `/api/job-work/return`, `/api/job-work/receipts/{id}/void` (v14.0)
 - Job Work statement: `/api/job-work/customers/{id}/statement`

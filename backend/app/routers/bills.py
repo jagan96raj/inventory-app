@@ -389,7 +389,7 @@ def list_bills(
         search=search,
         date_from=date_from,
         date_to=date_to,
-    ).order_by(Bill.id.desc())
+    ).order_by(Bill.bill_date.desc(), Bill.id.desc())
 
     bills, total = paginate_select(db, items_q, limit=limit, offset=offset)
     items = [bill_list_item_to_out(b) for b in bills]

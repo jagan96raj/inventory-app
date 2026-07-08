@@ -1,13 +1,15 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 07 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v16.0.20** (fulfillment dialog layout + bill edit idempotency fix); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 08 Jul 2026
+**Spec range:** v5 (bills / payments / edit) through **v16.0.22** (hybrid master picker); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v16.0.22** — Hybrid master picker: async word search retained; dropdown open with empty query shows first page only (MASTER_SEARCH_LIMIT), with hint "Showing first N — type to filter"; no bulk full-list load. See **Spec v16.0.22** below.
+- **v16.0.21** — App-wide list pagination default page size **25** (was 50): frontend `DEFAULT_PAGE_LIMIT` and backend `DEFAULT_LIMIT`. Inventory still paginates by **stock rows** (product/brand/bag/location/owner), not by product group — nearby rows for the same product can land on consecutive pages. See **Spec v16.0.21** below.
 - **v16.0.20** — Fulfillment deliver/receive dialog UX polish: keep billed location on top, show product context and delivery/receive form side-by-side on larger screens, and keep quantity values (e.g. `10 bags`) on one line in stat cards. Also fixed bill edit save crash by switching to `idempotencyHeadersOptionalAuth(...)` in `BillFormPage` update flow. See **Spec v16.0.20** below.
 - **v16.0.19** — Backdated transaction dates: optional date on **payments**, **bill fulfillment**, **cash book** (new entry), **job work receive/return**, **bill create**, and **job work order create** — defaults to today, past dates allowed with **authorization password** (same as void: admin void password or login password), future blocked (client + API). See **Spec v16.0.19** below.
 - **v16.0.18** — Processing input: remove optional **Job work order** picker (`JW-000001` etc.) from input lines — stock filters by `owner_type` + `customer_id` only; DB column `job_work_order_id` retained for API/legacy rows but UI no longer sets it. See **Spec v16.0.18** below.
@@ -822,7 +824,7 @@ Bill edit; payment create/void; fulfillment create/void (including bill-event).
 
 ### Behavior after fix
 
-- Standard paginated response `{ items, total, limit, offset }`; default limit 50, max 500 (forms may use `limit=500`).
+- Standard paginated response `{ items, total, limit, offset }`; default limit 25, max 500 (forms may use `limit=500`).
 - Paginated: bills, payments, inventory, fulfillment bills/entries, all operation history lists, processing job list, and master list pages (customers, locations, products, brands, bag-types).
 - Bills list uses slim `BillListItemOut` + server filters (`payment_status`, `delivery_status`, `search`) + `summary`; no `opposite_due` on list.
 - Bill detail unchanged (full bill + `opposite_due` for payments/set-off).
@@ -3297,6 +3299,33 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
 
+## Spec v16.0.22 — Hybrid master picker (browse + word search)
+
+**Problem:** Async master pickers required typing before showing options, so users could not quickly browse available items.
+
+**Solution behavior rules:**
+- Keep debounced async word search (typed query) as-is for performance.
+- On dropdown open with empty query, fetch only first page (`MASTER_SEARCH_LIMIT`) and show those options.
+- Show helper hint: **"Showing first N — type to filter"**.
+- If query has text, run normal typed search path.
+
+**Performance guardrails:**
+- No form-time full master dump.
+- No `BULK_FETCH_LIMIT` pattern reintroduced.
+- No infinite scroll in this version.
+
+**Files changed:** `frontend/src/components/ui/AsyncSearchCombobox.tsx`.
+
+**Explicit out-of-scope:** no infinite scroll, no full-list fetch, no migration.
+
+## Spec v16.0.21 — Default list page size 25
+
+**Change:** Paginated list endpoints and UI default to **25** rows per page (`DEFAULT_LIMIT` / `DEFAULT_PAGE_LIMIT`), down from 50. Explicit `limit=` query params and form bulk fetch (`limit=500`) unchanged.
+
+**Inventory note:** Pagination counts **inventory rows**, not product groups. Rows for the same product (different brand/bag/location/owner) can split across page boundaries (e.g. row 25 on page 1, row 26 on page 2) even though the UI groups by product when rendering a page.
+
+**Files:** `backend/app/core/pagination.py`, `frontend/src/api/client.ts`.
+
 ## Spec v16.0.20 — Fulfillment dialog layout polish + bill edit idempotency fix
 
 **Problem:** Deliver/receive dialog sections stacked vertically and required extra scrolling; quantity values in stat cards wrapped awkwardly (`10` / `bags`). Bill edit save path referenced `idempotencyHeaders` in a file that only imported `idempotencyHeadersOptionalAuth`, causing runtime error when editing discount/adjustment.
@@ -3361,3 +3390,5 @@ npm run build
 **Out of scope:** Deploy automation, production DB access, E2E browser tests.
 
 **Files changed:** `.github/workflows/ci.yml`, `README.md`.
+
+

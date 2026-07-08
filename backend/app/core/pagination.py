@@ -6,7 +6,7 @@ from typing import Any, Sequence, TypeVar
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-DEFAULT_LIMIT = 50
+DEFAULT_LIMIT = 25
 MAX_LIMIT = 200
 BULK_MAX_LIMIT = 500
 
