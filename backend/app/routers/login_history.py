@@ -1,6 +1,6 @@
 """Spec v16.0.6 — login history API (owner only)."""
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models.entities import LoginEvent, User
 from app.schemas import LoginEventOut, LoginEventPageOut
 from app.services.login_history import login_event_to_out
+from app.utils.time import business_tz
 
 router = APIRouter(prefix="/login-history", tags=["login-history"])
 
@@ -54,10 +55,10 @@ def list_login_events(
         elif normalized == "false":
             q = q.where(LoginEvent.success.is_(False))
     if date_from is not None:
-        start = datetime.combine(date_from, time.min)
+        start = datetime.combine(date_from, time.min, tzinfo=business_tz()).astimezone(timezone.utc)
         q = q.where(LoginEvent.created_at >= start)
     if date_to is not None:
-        end = datetime.combine(date_to, time.max)
+        end = datetime.combine(date_to, time.max, tzinfo=business_tz()).astimezone(timezone.utc)
         q = q.where(LoginEvent.created_at <= end)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
