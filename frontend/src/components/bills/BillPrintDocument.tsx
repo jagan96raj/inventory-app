@@ -2,7 +2,7 @@ import { forwardRef } from "react";
 import {
   billDocumentTitle,
   billLineQtyLabel,
-  billSettingsCompanyAddressLines,
+  bookSettingsCompanyAddressLines,
   billTotalsRows,
   formatCustomerAddress,
   type BillPrintDocumentProps,
