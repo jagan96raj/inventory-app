@@ -803,17 +803,15 @@ class ProcessingWasteAllocation(Base):
 
 
 class JWNumberCounter(Base):
-    """Spec v17.0.3 — monotonic JW number sequence per company (unique company_id)."""
+    """Spec v17.0.3 — monotonic JW number sequence per company."""
 
     __tablename__ = "jw_number_counters"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(
         ForeignKey("companies.id"),
+        primary_key=True,
         nullable=False,
-        unique=True,
         default=1,
-        index=True,
     )
     last_number: Mapped[int] = mapped_column(default=0, nullable=False)
 
