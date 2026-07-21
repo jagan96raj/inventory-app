@@ -1089,7 +1089,14 @@ class ExpenseCategory(Base):
 
     __table_args__ = (
         Index("ix_expense_categories_kind", "kind"),
-        Index("ix_expense_categories_active_name_lower", func.lower(func.trim(name))),
+        Index(
+            "ix_expense_categories_active_name_lower",
+            "company_id",
+            func.lower(func.trim(name)),
+            unique=True,
+            sqlite_where=text("is_active = 1"),
+            postgresql_where=text("is_active = TRUE"),
+        ),
     )
 
 
