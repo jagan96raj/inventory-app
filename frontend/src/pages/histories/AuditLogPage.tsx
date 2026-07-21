@@ -117,9 +117,14 @@ export default function AuditLogPage() {
   return (
     <div className="space-y-4">
       <PageHeader
+        eyebrow={
+          <span className="inline-flex items-center gap-1.5">
+            <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
+            History
+          </span>
+        }
         title="Audit log"
         subtitle="Central trail of sensitive voids, edits, master deletes, and user admin actions (owner only)."
-        icon={<ClipboardList className="h-6 w-6" />}
         actions={
           <Link to="/histories/logins" className="text-sm text-primary hover:underline">
             View login history
@@ -189,8 +194,15 @@ export default function AuditLogPage() {
         <EmptyState title="Could not load audit log" description={error} />
       ) : (
         <>
-          <Table columns={columns} rows={rows} loading={loading} emptyMessage="No audit events match your filters." />
-          <PaginationBar total={total} limit={limit} offset={offset} onOffsetChange={setOffset} />
+          <Table
+            columns={columns}
+            rows={rows}
+            rowKey={(row) => row.id}
+            caption="Audit log"
+            loading={loading}
+            empty={<span className="text-base text-ink-muted">No audit events match your filters.</span>}
+          />
+          <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} />
         </>
       )}
     </div>

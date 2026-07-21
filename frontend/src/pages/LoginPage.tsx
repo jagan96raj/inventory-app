@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { KeyRound, Lock, Mail } from "lucide-react";
 import AuthShell from "../components/AuthShell";
 import { useAuth } from "../context/AuthContext";
+import { api } from "../api/client";
 import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
 import Input from "../components/ui/Input";
@@ -30,6 +31,7 @@ export default function LoginPage() {
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [registrationAllowed, setRegistrationAllowed] = useState(false);
 
   const nextPath = searchParams.get("next") || "/";
 
@@ -38,6 +40,23 @@ export default function LoginPage() {
       navigate(nextPath.startsWith("/") ? nextPath : "/", { replace: true });
     }
   }, [loading, user, navigate, nextPath]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await api.get<{ allowed: boolean }>("/api/companies/registration-status", {
+          skipAuthRedirect: true,
+        });
+        if (!cancelled) setRegistrationAllowed(status.allowed);
+      } catch {
+        if (!cancelled) setRegistrationAllowed(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePasswordSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -83,9 +102,17 @@ export default function LoginPage() {
           : "Enter the 6-digit code from your owner. You can set a new password while signing in."
       }
       footer={
-        <p className="text-center text-sm text-muted">
-          Need access? Contact the owner to have your email added and an account created.
-        </p>
+        <div className="space-y-1 text-center text-sm text-muted">
+          <p>Need access to an existing company? Contact the owner to create your account.</p>
+          {registrationAllowed && (
+            <p>
+              Starting a new business?{" "}
+              <Link className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300" to="/register">
+                Register your company
+              </Link>
+            </p>
+          )}
+        </div>
       }
     >
       {error && (

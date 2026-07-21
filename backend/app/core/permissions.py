@@ -11,6 +11,7 @@ from app.models.entities import User, UserRole
 ROLE_NOT_ASSIGNED_MSG = "No role assigned. Contact the owner to get access."
 FORBIDDEN_MSG = "You do not have permission for this action."
 OWNER_ONLY_VOID_MSG = "Only the owner role may void records."
+OWNER_ONLY_COMPANY_MSG = "Only the owner can edit company details."
 
 
 class Permission(str, Enum):
@@ -131,6 +132,13 @@ def require_roles(*roles: UserRole) -> Callable:
 def require_owner_user(user: User = Depends(require_assigned_role)) -> User:
     if user.role != UserRole.owner:
         raise HTTPException(status_code=403, detail=OWNER_ONLY_VOID_MSG)
+    return user
+
+
+def require_company_owner(user: User = Depends(require_assigned_role)) -> User:
+    """Spec v17.0.5 — company profile edits are owner-only."""
+    if user.role != UserRole.owner:
+        raise HTTPException(status_code=403, detail=OWNER_ONLY_COMPANY_MSG)
     return user
 
 

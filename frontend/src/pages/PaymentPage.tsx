@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, IndianRupee } from "lucide-react";
-import { api, bankAccountsApi, idempotencyHeadersOptionalAuth, newIdempotencyKey, type BankAccount, type Bill, type SetoffPreview } from "../api/client";
+import { api, bankAccountsApi, idempotencyHeadersOptionalAuth, newIdempotencyKey, type BankAccount, type Bill, type Payment, type SetoffPreview } from "../api/client";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
@@ -160,7 +160,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   const postPayment = async (authorizationPassword?: string) => {
     if (!bill || !idemKeyRef.current) return;
     const amt = Number(form.amount);
-    await api.post(
+    await api.post<Payment>(
       "/api/payments",
       {
         bill_id: bill.id,

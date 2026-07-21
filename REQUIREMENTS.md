@@ -1,13 +1,20 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 08 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v16.0.22** (hybrid master picker); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 17 Jul 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.0.6** (Processing snapshot + fulfillment filters + bill form polish); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.0.6** — UI/data polish to match current app behavior: Processing job snapshot simplified (removed reprocess/output/allowance rows; replaced net unclean with latest balance return; powder hover aligned and powder location block removed), Fulfillment bills now support product + brand filters, and Bill form layout/line-item UX updates (customer row placement, no numbered field labels, quantity before rate, unified field sizing, and products-billed counter between line items and totals). See **Spec v17.0.6** below.
+- **v17.0.5** — Profile page at `/profile`: logged-in person (view) + company details; company editable by owner only via `PATCH /api/companies/me`; syncs `book_settings` company_* for bill print. Removed company header from Book Settings UI (cash opening + powder unchanged). Topbar Profile no longer goes to Home. See **Spec v17.0.5** below.
+- **v17.0.4** — Multi-tenant Phase 5: `POST /api/companies/register` creates company + owner (`role=owner`) atomically; seeds per-company book settings + bill/JW counters; feature flag `ALLOW_COMPANY_REGISTRATION` (default false); `/register` UI. Existing staff allowlist (`ALLOWED_EMAILS`) unchanged for Raj Agro lockdown. See **Spec v17.0.4** below.
+- **v17.0.3** — Multi-tenant Phase 4: per-company `book_settings`, `bill_number_counters`, and `jw_number_counters` (migration `047`); remove Phase 3 default-company-only book-settings guard; bill/JW numbers and cash opening isolated per company; Raj Agro sequences preserved. Registration still deferred (Phase 5). See **Spec v17.0.3** below.
+- **v17.0.2** — Multi-tenant Phase 3: all list/get/detail/report/audit APIs filter by `current_user.company_id`; cross-company access returns **404**; child rows via scoped parents. Book settings + number counters still single-tenant until Phase 4. No registration. See **Spec v17.0.2** below.
+- **v17.0.1** — Multi-tenant Phase 2: `company_id` on business tables (migration `046`); backfill to company 1; per-company unique indexes; create paths stamp user's `company_id`; cross-company FK validation on write. Child tables / list filters / registration deferred. See **Spec v17.0.1** below.
+- **v17.0.0** — Multi-tenant Phase 1: `Company` model + `users.company_id` (migration `045`); default company seeded from `book_settings`; `GET /api/companies/me`; `UserOut` / `AuthUser` include `company_id`; admin user create inherits company; signup assigns default company. Raj Agro unchanged — no tenant filters yet. See **Spec v17.0.0** below.
 - **v16.0.22** — Hybrid master picker: async word search retained; dropdown open with empty query shows first page only (MASTER_SEARCH_LIMIT), with hint "Showing first N — type to filter"; no bulk full-list load. See **Spec v16.0.22** below.
 - **v16.0.21** — App-wide list pagination default page size **25** (was 50): frontend `DEFAULT_PAGE_LIMIT` and backend `DEFAULT_LIMIT`. Inventory still paginates by **stock rows** (product/brand/bag/location/owner), not by product group — nearby rows for the same product can land on consecutive pages. See **Spec v16.0.21** below.
 - **v16.0.20** — Fulfillment deliver/receive dialog UX polish: keep billed location on top, show product context and delivery/receive form side-by-side on larger screens, and keep quantity values (e.g. `10 bags`) on one line in stat cards. Also fixed bill edit save crash by switching to `idempotencyHeadersOptionalAuth(...)` in `BillFormPage` update flow. See **Spec v16.0.20** below.
@@ -76,7 +83,8 @@
 
 | Area | Spec | Implementation |
 |------|------|----------------|
-| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6** | `routers/auth.py`, `/login`, `/signup`, JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy |
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0** | `routers/auth.py`, `/login`, `/signup`, JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; `company_id` on user |
+| Multi-tenant | **v17.0.0**–**v17.0.5** | Phase 1–5 multi-tenant + Profile company header ownership (owner edits on `/profile`; bill print via `companies` + synced `book_settings` company_*) |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2** | `services/reports.py`, `DashboardPage.tsx` — bill-date KPIs; `dashboard-bundle` single API call |
 | Processing | v9–v9.4, **v14.0**, **v14.4**, **v14.4.1**, **v14.4.2**, **v14.5**, **v14.6**, **v14.6.1**, **v14.7**, **v15.5.1**, **v16.0** | `services/processing.py`; list aggregate summary; detail full batches |
 | Payments | v5.1–v5.4, v12.12, v13.2 | `services/payments.py`, void + set-off cascade; `VoidConfirmDialog` + `X-Void-Authorization` |
@@ -242,6 +250,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 |---|---|---|---|
 | `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
+| `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). | — |
 | `/dashboard` | `DashboardPage` | 4 KPI cards with `Stat` + sparkline (sales/purchase bill amount, qty ordered), Recharts AreaChart for daily, donut for product mix, MoM compare strip, top-customer/location/product tables, CSV export. | **#9 v11.1** — only bill-date accrual metrics shown; no "Collected/Due" KPIs. |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
 | `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
@@ -1008,18 +1017,20 @@ Bills create/edit, payments create/void, fulfillment create/void/bill-event, inv
 
 ## Spec v9.3 — Processing mass-balance guard (100 kg tolerance)
 
-- **Tolerance:** `PROCESSING_OUTPUT_TOLERANCE_KG = 100` — fixed allowance on top of cumulative **fresh** input.
-- **Fresh input basis:** sum `quantity_kg` on committed `input_source == fresh` lines plus pending fresh input lines in the current request. **Excludes** `balance_reprocess`.
+- **Tolerance:** `PROCESSING_OUTPUT_TOLERANCE_KG = 100` — fixed allowance on top of cumulative **job input** (fresh + reprocess).
+- **Fresh input (reporting):** sum `quantity_kg` where `input_source == fresh` only. Snapshot **Fresh in** uses this. **Excludes** `balance_reprocess`.
+- **Mass-balance input (allowance basis):** sum **all** input lines — fresh **+** `balance_reprocess`. Same “in” side as residual misc. Reprocess must count here because balance return already counts as outflow.
 - **Total outflow:** sum across committed batches **and** pending batch body:
   - all `processing_output_lines.quantity_kg`
   - all `processing_balance_return_lines.quantity_kg`
-  - all waste fields: `dust_kg + stone_kg + sack_weight_waste_kg + miscellaneous_waste_kg`
+  - all waste fields: `dust_kg + stone_kg + sack_weight_waste_kg + powder_kg + miscellaneous_waste_kg`
+- **Allowance remaining:** `mass_balance_input_kg + 100 − total_outflow_kg` (= residual misc + 100 when waste bins align).
 - **Validation** (`validate_processing_mass_balance`) — before `POST .../batches` and `POST .../complete`:
   1. If cumulative output + balance return (committed + pending) **> 0** and cumulative fresh input **== 0** → reject (must record fresh input before output or balance return).
-  2. If `total_outflow_kg > total_fresh_input_kg + 100` → reject (exceeds tolerance).
-- **Input-only batches** are not blocked by this guard (they increase fresh input without adding outflow).
+  2. If `total_outflow_kg > mass_balance_input_kg + 100` → reject (exceeds tolerance).
+- **Input-only batches** are not blocked by this guard (they increase input without adding outflow).
 - **Complete (empty body):** re-validate committed batches only (no pending lines).
-- **UI:** live **Fresh input**, **Total outflow**, **Allowance remaining** (= fresh + 100 − outflow) on Output tab and summary strip; disable Output submit and Complete when validation would fail; warning text. Inventory timing unchanged (incremental per batch).
+- **UI:** live mass-balance basis (fresh + reprocess), **Total outflow**, **Allowance remaining** on Output tab and snapshot; disable Output submit and Complete when validation would fail. Inventory timing unchanged (incremental per batch).
 
 ## Spec v9.4 — Balance reprocess guards
 
@@ -1491,7 +1502,7 @@ POST   /api/bills/{id}/void                              # idempotent + X-Void-A
 | `/accounts/customers/:id` | `CustomerStatementPage` | Date-ranged chronological events with running balance |
 | `/accounts/bank-accounts` | `BankAccountsMasterPage` | CRUD + make-default; **Opening balance** + **Closing balance** columns (live `balance` from list API) |
 | `/accounts/expense-categories` | `ExpenseCategoriesMasterPage` | CRUD; system rows locked with lock icon |
-| `/accounts/setup` | `BookSettingsPage` | One-time cash opening balance |
+| `/accounts/setup` | `BookSettingsPage` | Cash opening balance + powder destination (company header on Profile — v17.0.5) |
 
 ### Cross-feature impact
 - **PaymentPage.tsx** — Bank Account dropdown appears only when `payment_mode='bank'`, defaults to the `is_default` bank and is required.
@@ -3148,7 +3159,7 @@ No Alembic migration. No backend Python changes.
 
 ### A. Company header (book settings, migration `044`)
 
-`book_settings`: `company_name`, `company_address_line`, `company_phone`. Owner edits on Book settings page (`BOOK_SETTINGS_EDIT`). Used on bill print/PDF.
+`book_settings`: `company_name`, `company_address_line`, `company_phone` (kept for print compatibility). **v17.0.5:** owner edits company on **Profile** (`companies` table); Book Settings UI no longer edits these fields. Bill print prefers `companies` (falls back to book_settings columns).
 
 ### B. Bill document
 
@@ -3298,6 +3309,137 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.0.5 — Profile & company header ownership
+
+**Problem:** Topbar “Profile” linked to Home (shortcuts); company name/address/phone were edited on Book Settings; unclear which role may change the bill-print header.
+
+**Solution:**
+- **Profile** (`/profile`): **Account** — name, email, role (view-only); **Company** — name, address, phone. Owner edits + Save; other roles read-only (“Only the owner can edit company details”).
+- **API:** `PATCH /api/companies/me` (auth, **owner only** → **403** otherwise); partial update; scopes to `current_user.company_id`. After update, sync same values into that company’s `book_settings.company_*` so existing bill-print paths keep working. `GET /api/companies/me` unchanged for load.
+- **Source of truth:** `companies` (`name`, `address_line`, `phone`). Keep `book_settings` company_* columns (no drop migration). Serialize/print prefers `companies` when available; fallback to book_settings columns. Legacy book-settings PATCH of company_* still accepted and syncs into `companies`.
+- **Book Settings UI:** remove company header card/fields; **keep** cash opening balance and consolidated powder destination unchanged (later discussion). Subtitle points owners to Profile for bill header.
+- **Topbar:** Profile → `/profile` (not `/home`); show `company_name` under email when available. Home remains a separate shortcuts page.
+- **Registration:** `/register` still collects company name/address/phone and seeds book_settings header (Phase 4/5).
+
+**Explicit out-of-scope:** cash opening / powder UX changes; dropping `book_settings` company_* columns; allowlist / registration flag changes.
+
+**Files changed:** `frontend/src/pages/ProfilePage.tsx`, `frontend/src/components/Topbar.tsx`, `frontend/src/pages/accounts/BookSettingsPage.tsx`, `frontend/src/App.tsx`, `frontend/src/api/client.ts`, `backend/app/routers/companies.py`, `backend/app/services/companies.py`, `backend/app/services/accounts.py`, `backend/app/schemas.py`, `backend/app/core/permissions.py`, `backend/tests/test_profile_company_v1705.py`.
+
+## Spec v17.0.4 — Multi-tenant Phase 5 (company registration)
+
+**Problem:** No way for a new business to onboard — Phases 1–4 isolated data and settings per company, but creating a second company still required manual SQL/admin work.
+
+**Solution (Phase 5 — no new migration):**
+- **`POST /api/companies/register`** (public, no auth) — request: `company_name` (required), optional address/phone/owner name, `email`, `password`. Response **201** + same JWT httpOnly cookie as signup; `UserOut` includes `company_id` / `company_name`.
+- **Atomic service** (`register_company_with_owner`): create `Company` → owner `User` (`role=owner`, `is_active=true`) → seed `book_settings` (cash opening 0, header from company) → seed `bill_number_counters` (sales + purchase, `last_number=0`) → seed `jw_number_counters` (`last_number=0`). Any failure rolls back all. Record successful login event; optional audit `company_registered`.
+- **`GET /api/companies/registration-status`** → `{ "allowed": bool }` for UI.
+- **Feature flag:** `ALLOW_COMPANY_REGISTRATION` (default **false**). When false → register returns **403** `"Company registration is closed"`; Login UI hides “Register your company”. When true → rate-limited + password policy (v15.6); **does not** apply `ALLOWED_EMAILS` (new tenants are not on the Raj Agro allowlist).
+- **Frontend:** `/register` (`CompanyRegisterPage`); `/signup` redirects to `/register`; link from Login when status allows; success → `/dashboard`.
+
+**Distinction (keep all three):**
+1. **Company register** (`/api/companies/register`) — new company + first owner; gated by `ALLOW_COMPANY_REGISTRATION`.
+2. **Staff invite** — owner creates users on **Administration → Users** (same company); production staff path.
+3. **Legacy `/api/auth/signup`** — still allowlisted via `ALLOWED_EMAILS`; attaches to **default company** (Raj Agro). Left for internal tests; UI registration uses company register only.
+
+**Email:** still globally unique on `users.email` (Phase 6 may revisit per-company uniqueness). Duplicate → **409**.
+
+**Raj Agro safety:** keep `ALLOW_COMPANY_REGISTRATION=false` in production; keep `ALLOWED_EMAILS` / `REQUIRE_ALLOWED_EMAILS` for staff lockdown.
+
+**Explicit out-of-scope:** subscriptions/billing/plans; per-company email uniqueness; invite links / company slugs; Google OAuth company register; heavy master seeding (empty books OK).
+
+**Files changed:** `backend/app/config.py`, `.env.example`, `backend/app/schemas.py`, `backend/app/services/companies.py`, `backend/app/routers/companies.py`, `backend/app/routers/__init__.py`, audit constants, `frontend/src/pages/CompanyRegisterPage.tsx`, `frontend/src/context/AuthContext.tsx`, `frontend/src/App.tsx`, `frontend/src/pages/LoginPage.tsx`, `frontend/src/api/client.ts`, `backend/tests/test_companies_v1704.py`, README.
+
+## Spec v17.0.3 — Multi-tenant Phase 4 (per-company settings & counters)
+
+**Problem:** After Phase 3, book settings and bill/JW number series were still global — only company 1 could use book settings (403 for others), and counters were shared.
+
+**Solution (Phase 4 — migration `047_spec_v1703_per_company_settings_counters`):**
+- **`book_settings`:** add `company_id` NOT NULL FK → `companies` + unique index; existing row → `company_id = 1`; keep `id` PK. Cash opening / company header / powder fields for Raj Agro unchanged.
+- **`bill_number_counters`:** add `company_id`; composite PK `(company_id, bill_type)`; preserve `last_number` for company 1.
+- **`jw_number_counters`:** add unique `company_id`; preserve `last_number` for company 1.
+- **Behavior:** `get_book_settings` / `update_book_settings` by `user.company_id` (auto-create defaults for new companies from `companies.name`); remove Phase 3 `_require_default_company` / 403 guard; `preview_bill_number` / `next_bill_number` / `preview_job_number` / `next_job_number` take `company_id`; cash balance uses that company's opening; powder destination from that company's settings.
+- Format stays `SB-…` / `PB-…` / `JW-…` per company (uniqueness already scoped by Phase 2).
+
+**Preserve company 1:** do not reset `last_number` or wipe book settings.
+
+**Auto-create:** missing settings/counters for a company start at opening `0` / sequences `1`.
+
+**Deferred Phase 5:** public company registration (**done in v17.0.4**); optional per-company email uniqueness (still deferred).
+
+**Explicit out-of-scope (at Phase 4):** no registration UI/API; no weakening `ALLOWED_EMAILS`; global unique email on users unchanged.
+
+**Files changed:** `backend/alembic/versions/047_spec_v1703_per_company_settings_counters.py`, `backend/app/models/entities.py`, `backend/app/services/accounts.py`, `backend/app/routers/book_settings.py`, `backend/app/services/bills.py`, `backend/app/routers/bills.py`, `backend/app/services/job_work.py`, `backend/app/routers/job_work.py`, powder helpers, `scripts/clear_transactional_data.py`, `backend/tests/test_companies_v1703.py`.
+
+## Spec v17.0.2 — Multi-tenant Phase 3: tenant-scoped API queries
+
+**Problem:** Phase 2 stamped `company_id` on writes, but list/get/report queries remained global — Company A could see Company B data once a second tenant exists.
+
+**Solution (Phase 3 only — no new migration):**
+- Extend `backend/app/core/tenant.py`: `company_filter`, `scope_query`, `get_for_company`, `require_for_company` / `require_entity_company` (HTTP **404** if missing or wrong company — prefer 404 over 403 to avoid leaking existence).
+- Scope **all** authenticated list / get / detail / report / audit / accounts reads by `company_id_for_user(current_user)`.
+- **Routes / areas affected:** masters (products, brands, locations, bag_types, customers — list/search/get/update/delete); inventory; bills (list, picker, get, linked-entries, void-precheck, edit/void); payments (via parent bill); fulfillment (via parent bill); job work; processing jobs; bag change / transfer / disposal histories; cash book; bank accounts; expense categories; accounts summary / customer balances / statements; all `/api/reports/*` including dashboard-bundle; audit events; login history (join `User.company_id`; exclude null `user_id`); users admin list/update/disable (same company only).
+- **Child tables** without `company_id` (bill lines, payments, fulfillment entries, processing batches/lines, JW lines/receipts, etc.): always load via parent that has `company_id`; never return a child of a foreign parent.
+- **Writes:** keep Phase 2 stamp + `assert_entity_company`; mutates/voids load entity with company scope first (**404** if wrong company).
+- **Book settings:** still singleton (id=1). Company `1` unchanged; if `company_id != 1` → **403** `"Book settings not yet multi-tenant"` on GET/PATCH. Do not split `book_settings` in Phase 3.
+- **Bill / JW number counters:** still global until Phase 4 (documented limitation for multi-company test DBs).
+
+**Raj Agro unchanged:** Only company 1 in production today; filtered reads return the same rows as before.
+
+**Known deferrals (at Phase 3):**
+- **Phase 4:** per-company `book_settings` + bill_number / jw_number counters (**done in v17.0.3**)
+- **Phase 5:** registration page + `POST /api/companies/register` (**done in v17.0.4**)
+
+**Explicit out-of-scope (at Phase 3):** no registration; no per-company settings/counters redesign; no change to global unique email / `ALLOWED_EMAILS`; no new migration (preferred).
+
+**Files changed:** `backend/app/core/tenant.py`; routers/services for masters, inventory, bills, payments, fulfillment, operations/processing, job_work, cash_book, bank_accounts, expense_categories, accounts, reports, audit, login_history, users, book_settings; `backend/tests/test_companies_v1702.py`.
+
+## Spec v17.0.1 — Multi-tenant Phase 2: company_id on business data
+
+**Problem:** Phase 1 attached users to a company, but all business rows remained global — no schema for eventual tenant isolation.
+
+**Solution (Phase 2 only):**
+- Migration `046_spec_v1701_company_id_business`: add `company_id` NOT NULL FK → `companies` + index on masters (`products`, `brands`, `locations`, `bag_types`, `customers`), top-level ops (`inventory`, `bills`, `processing_jobs`, `job_work_orders`, `bag_changes`, `product_transfers`, `stock_disposals`, `cash_book_entries`, `bank_accounts`, `expense_categories`), and denormalized `audit_events` (backfill from `users.company_id` where possible; else `1`).
+- Backfill all existing rows to `company_id = 1` (Raj Agro).
+- Per-company unique indexes: master names `(company_id, lower(trim(...)))`; bills `(company_id, bill_number)`; job work `(company_id, job_number)`; inventory partial unique tuples include `company_id`.
+- Create / mutation paths stamp `company_id` from logged-in user; `assert_entity_company` rejects cross-company FKs (400).
+- Helper module: `backend/app/core/tenant.py`.
+
+**Child tables deferred** (filter via parent in Phase 3): `bill_lines`, `payments`, fulfillment / processing / job-work line & receipt children, etc.
+
+**Deferred (later phases):** Phase 3 tenant list/get filters (**done in v17.0.2**); Phase 4 per-company `book_settings` / counters (**done in v17.0.3**); Phase 5 registration (**done in v17.0.4**).
+
+**Raj Agro unchanged:** Only company 1 exists today; unfiltered reads still correct until Phase 3.
+
+**Explicit out-of-scope (at Phase 2):** no registration page; no tenant-scoped list/get filters; no per-company `book_settings` / bill or JW counters; no change to global unique email / `ALLOWED_EMAILS`.
+
+**Files changed:** `backend/alembic/versions/046_spec_v1701_company_id_business.py`, `backend/app/models/entities.py`, `backend/app/core/tenant.py`, create paths in masters / bills / inventory / operations / job_work / processing / cash_book / bank_accounts / expense_categories / audit_log, `backend/scripts/seed_bag_types.py`, `backend/tests/test_companies_v1701.py`.
+
+## Spec v17.0.0 — Multi-tenant Phase 1: Company model + users belong to a company
+
+**Problem:** Single-tenant deployment with no foundation for multiple businesses sharing one app instance.
+
+**Solution (Phase 1 only):**
+- `companies` table (migration `045`): `id`, `name`, `address_line`, `phone`, `is_active`, `created_at`.
+- Default company inserted from `book_settings` id=1 (`company_name` or `'Raj Agro'`, address, phone).
+- `users.company_id` NOT NULL FK → `companies`; all existing users backfilled to default company.
+- `CompanyOut` schema; `UserOut` adds `company_id`, optional `company_name`.
+- `GET /api/companies/me` (authenticated).
+- `/api/auth/me` includes `company_id`.
+- Admin user create: `company_id` = admin's `company_id`.
+- Signup / Google new users: assign default company — no registration endpoint.
+
+**Raj Agro unchanged:** All business data remains global; no tenant query filters; app behaviour as today.
+
+**Roadmap (not in v17.0.0):**
+- **Phase 2:** `company_id` on business tables (bills, inventory, customers, etc.)
+- **Phase 3:** Tenant query filters on reads/writes
+- **Phase 4:** Per-company `book_settings`
+- **Phase 5:** Registration page + `POST /api/companies/register` (**done in v17.0.4**)
+
+**Explicit out-of-scope:** no registration page; no `company_id` on business tables; no tenant filters; no change to global unique email; no weakening `ALLOWED_EMAILS`; no per-company `book_settings`.
+
+**Files changed:** `backend/app/models/entities.py`, `backend/alembic/versions/045_spec_v1700_companies.py`, `backend/app/schemas.py`, `backend/app/services/companies.py`, `backend/app/services/users.py`, `backend/app/routers/companies.py`, `backend/app/routers/auth.py`, `backend/app/routers/users.py`, `backend/app/routers/__init__.py`, `frontend/src/api/client.ts`, `backend/tests/test_companies_v1700.py`.
 
 ## Spec v16.0.22 — Hybrid master picker (browse + word search)
 

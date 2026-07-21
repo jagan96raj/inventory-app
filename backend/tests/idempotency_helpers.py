@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.void_auth import VOID_AUTH_HEADER
-from app.models.entities import User, UserRole
+from app.models.entities import Company, User, UserRole
 
-TEST_USER = User(id=1, email="test@example.com", name="Test", role=UserRole.owner)
+TEST_USER = User(id=1, email="test@example.com", name="Test", role=UserRole.owner, company_id=1)
 TEST_VOID_AUTH_PASSWORD = "test-void-auth"
 
 
@@ -23,6 +23,9 @@ def new_test_idempotency_key() -> str:
 
 
 def ensure_test_user(db: Session) -> User:
+    if db.get(Company, 1) is None:
+        db.add(Company(id=1, name="Raj Agro", is_active=True))
+        db.flush()
     if db.get(User, TEST_USER.id) is None:
         db.add(
             User(
@@ -31,6 +34,7 @@ def ensure_test_user(db: Session) -> User:
                 name=TEST_USER.name,
                 password_hash="x",
                 role=UserRole.owner,
+                company_id=1,
             )
         )
         db.flush()

@@ -30,6 +30,7 @@ class AuditAction:
     USER_UPDATED = "user_updated"
     USER_DISABLED = "user_disabled"
     USER_ENABLED = "user_enabled"
+    COMPANY_REGISTERED = "company_registered"
 
 
 class AuditEntityType:
@@ -50,6 +51,7 @@ class AuditEntityType:
     JOB_WORK_ORDER = "job_work_order"
     JOB_WORK_RECEIPT = "job_work_receipt"
     USER = "user"
+    COMPANY = "company"
 
 
 def _sanitize_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -72,6 +74,7 @@ def record_audit_event(
     """Append an audit row. Never raises — failures are logged only."""
     try:
         row = AuditEvent(
+            company_id=user.company_id if user else 1,
             user_id=user.id if user else None,
             user_email=user.email if user else None,
             action=action,

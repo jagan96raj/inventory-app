@@ -136,9 +136,21 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
       setError("Enter a quantity greater than zero");
       return;
     }
-    if (!isReceive && selectedReturnLocation) {
-      const bags = isLooseBagType(bagType) ? 0 : parseBagCount(form.bag_count);
-      const loose = isLooseBagType(bagType) ? parseLooseKg(form.loose_kg) : 0;
+    const bags = isLooseBagType(bagType) ? 0 : parseBagCount(form.bag_count);
+    const loose = isLooseBagType(bagType) ? parseLooseKg(form.loose_kg) : 0;
+    if (isReceive) {
+      const remaining = jwRemainingReceiveQty(line);
+      if (isLooseBagType(bagType)) {
+        const maxLoose = Number(remaining.loose_kg ?? remaining.kg ?? 0);
+        if (loose > maxLoose) {
+          setError(`Cannot receive more than ${formatQtyKg(maxLoose)} remaining`);
+          return;
+        }
+      } else if (bags > (remaining.bags ?? 0)) {
+        setError(`Cannot receive more than ${remaining.bags ?? 0} bag(s) remaining`);
+        return;
+      }
+    } else if (selectedReturnLocation) {
       if (isLooseBagType(bagType)) {
         if (loose > Number(selectedReturnLocation.returnable_loose_kg)) {
           setError(`Cannot return more than ${formatQtyKg(selectedReturnLocation.returnable_loose_kg)} at this location`);
@@ -296,7 +308,15 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
           </p>
         )}
         {bagType && !isLooseBagType(bagType) && (
-          <FormField label="Bags" required>
+          <FormField
+            label="Bags"
+            required
+            hint={
+              isReceive && line
+                ? `Max ${jwRemainingReceiveQty(line).bags ?? 0} remaining`
+                : undefined
+            }
+          >
             {({ id }) => (
               <NumberInput
                 id={id}
@@ -310,7 +330,15 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
           </FormField>
         )}
         {bagType && isLooseBagType(bagType) && (
-          <FormField label="Loose kg" required>
+          <FormField
+            label="Loose kg"
+            required
+            hint={
+              isReceive && line
+                ? `Max ${formatQtyKg(jwRemainingReceiveQty(line).loose_kg ?? jwRemainingReceiveQty(line).kg ?? 0)} remaining`
+                : undefined
+            }
+          >
             {({ id }) => (
               <NumberInput
                 id={id}

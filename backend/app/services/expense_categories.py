@@ -18,8 +18,9 @@ def _normalize_name(name: str) -> str:
     return (name or "").strip()
 
 
-def _name_exists_active(db: Session, name: str, exclude_id: int | None = None) -> bool:
+def _name_exists_active(db: Session, name: str, company_id: int, exclude_id: int | None = None) -> bool:
     q = select(ExpenseCategory.id).where(
+        ExpenseCategory.company_id == company_id,
         func.lower(func.trim(ExpenseCategory.name)) == name.lower(),
         ExpenseCategory.is_active.is_(True),
     )
@@ -29,11 +30,17 @@ def _name_exists_active(db: Session, name: str, exclude_id: int | None = None) -
 
 
 def list_categories(
-    db: Session, *, active: str = "true", kind: ExpenseCategoryKind | None = None
+    db: Session,
+    *,
+    company_id: int | None = None,
+    active: str = "true",
+    kind: ExpenseCategoryKind | None = None,
 ) -> list[ExpenseCategory]:
     q = select(ExpenseCategory).order_by(
         ExpenseCategory.kind, ExpenseCategory.is_system.desc(), ExpenseCategory.name
     )
+    if company_id is not None:
+        q = q.where(ExpenseCategory.company_id == company_id)
     if active == "true":
         q = q.where(ExpenseCategory.is_active.is_(True))
     elif active == "false":
@@ -44,16 +51,16 @@ def list_categories(
 
 
 def create_category(
-    db: Session, *, name: str, kind: ExpenseCategoryKind
+    db: Session, *, company_id: int = 1, name: str, kind: ExpenseCategoryKind
 ) -> ExpenseCategory:
     if kind == ExpenseCategoryKind.transfer:
         raise ValueError(CATEGORY_TRANSFER_KIND_FORBIDDEN_MSG)
     clean = _normalize_name(name)
     if not clean:
         raise ValueError(CATEGORY_NAME_REQUIRED_MSG)
-    if _name_exists_active(db, clean):
+    if _name_exists_active(db, clean, company_id):
         raise ValueError(CATEGORY_DUPLICATE_MSG)
-    record = ExpenseCategory(name=clean, kind=kind, is_system=False, is_active=True)
+    record = ExpenseCategory(name=clean, kind=kind, is_system=False, is_active=True, company_id=company_id)
     db.add(record)
     db.commit()
     db.refresh(record)
@@ -64,11 +71,14 @@ def edit_category(
     db: Session,
     category_id: int,
     *,
+    company_id: int | None = None,
     name: str | None,
     is_active: bool | None,
 ) -> ExpenseCategory:
     record = db.get(ExpenseCategory, category_id)
     if not record:
+        raise ValueError(CATEGORY_NOT_FOUND_MSG)
+    if company_id is not None and int(record.company_id) != int(company_id):
         raise ValueError(CATEGORY_NOT_FOUND_MSG)
     if record.is_system:
         raise ValueError(CATEGORY_SYSTEM_LOCKED_MSG)
@@ -76,7 +86,7 @@ def edit_category(
         clean = _normalize_name(name)
         if not clean:
             raise ValueError(CATEGORY_NAME_REQUIRED_MSG)
-        if _name_exists_active(db, clean, exclude_id=category_id):
+        if _name_exists_active(db, clean, record.company_id, exclude_id=category_id):
             raise ValueError(CATEGORY_DUPLICATE_MSG)
         record.name = clean
     if is_active is not None:
@@ -99,9 +109,11 @@ def assert_category_deletable(db: Session, category_id: int) -> None:
         raise ValueError(f"Category in use by {in_use} cash book entry(ies)")
 
 
-def delete_category(db: Session, category_id: int) -> None:
+def delete_category(db: Session, category_id: int, *, company_id: int | None = None) -> None:
     record = db.get(ExpenseCategory, category_id)
     if not record:
+        raise ValueError(CATEGORY_NOT_FOUND_MSG)
+    if company_id is not None and int(record.company_id) != int(company_id):
         raise ValueError(CATEGORY_NOT_FOUND_MSG)
     assert_category_deletable(db, category_id)
     record.is_active = False

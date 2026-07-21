@@ -165,7 +165,7 @@ class ProcessingV92Tests(unittest.TestCase):
         qty_by_loose = {Decimal("0"): Decimal("2000"), Decimal("15"): Decimal("15")}
         inv = SimpleNamespace(bag_count=40, loose_kg=Decimal("15"), total_quantity_kg=Decimal("2015"))
 
-        def _sub(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None):
+        def _sub(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None, company_id=1):
             subtract_calls.append((bags, loose, lid))
             return qty_by_loose.get(loose, Decimal("0"))
 
@@ -210,7 +210,7 @@ class ProcessingV92Tests(unittest.TestCase):
         mock_db_bag_types(db, {99: bag_type_loose(99)})
         subtract_calls: list[tuple] = []
 
-        def _sub(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None):
+        def _sub(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None, company_id=1):
             subtract_calls.append((pid, bid, lid, btid, bags, loose))
             return Decimal("15")
 
@@ -247,7 +247,7 @@ class ProcessingV92Tests(unittest.TestCase):
         mock_db_stored_input_lines(db, job=job)
         add_calls: list[tuple] = []
 
-        def _add(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None):
+        def _add(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None, company_id=1):
             add_calls.append((pid, bid, lid, btid, bags, loose))
             return Decimal("15")
 

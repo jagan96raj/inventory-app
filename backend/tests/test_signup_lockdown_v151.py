@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.core.auth import COOKIE_NAME, EMAIL_NOT_AUTHORIZED, hash_password, validate_auth_email_policy
 from app.database import get_db
 from app.main import app
-from app.models.entities import User
+from app.models.entities import Company, User
 from tests.processing_test_helpers import mock_db_scalar_auth
 
 OWNER_EMAIL = "jaganraj@rajagro.com"
@@ -42,6 +42,7 @@ class SignupLockdownApiTests(unittest.TestCase):
     def _mock_db_no_user(self):
         db = MagicMock()
         mock_db_scalar_auth(db, user=None)
+        db.get.return_value = Company(id=1, name="Raj Agro", is_active=True)
 
         def override_db():
             yield db
@@ -51,12 +52,15 @@ class SignupLockdownApiTests(unittest.TestCase):
 
     def _mock_db_with_user(self, email: str):
         password_hash = hash_password(PASSWORD)
+        company = Company(id=1, name="Raj Agro", is_active=True)
         user = User(
             id=2,
             email=email,
             password_hash=password_hash,
             name="Staff",
             is_active=True,
+            company_id=1,
+            company=company,
         )
         db = MagicMock()
         mock_db_scalar_auth(db, user=user)

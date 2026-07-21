@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import get_current_user
 from app.core.permissions import Permission, require_permission, require_void_user
+from app.core.tenant import company_filter, company_id_for_user
 from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
@@ -48,8 +49,9 @@ def get_fulfillment_line(
     line_id: int,
     parent_entry_id: int | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    line = load_fulfillment_line(db, line_id)
+    line = load_fulfillment_line(db, line_id, company_id=company_id_for_user(user))
     if not line or not line.bill:
         raise HTTPException(404, "Bill line not found")
     if line.bill.status != BillStatus.finalized:
@@ -62,19 +64,23 @@ def list_fulfillment_bills(
     bill_type: str = Query("all", pattern="^(purchase|sales|all)$"),
     visibility: str = Query("actionable", pattern="^(actionable|all)$"),
     tab: str = Query("deliver", pattern="^(deliver|return)$"),
+    product_id: int | None = None,
+    brand_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     if date_from is not None and date_to is not None and date_from > date_to:
         raise HTTPException(400, "date_from must be on or before date_to")
+    company_id = company_id_for_user(user)
     q = (
         select(Bill)
-        .where(Bill.status == BillStatus.finalized)
+        .where(Bill.status == BillStatus.finalized, company_filter(Bill, company_id))
         .options(
             joinedload(Bill.lines).joinedload(BillLine.product),
             joinedload(Bill.lines).joinedload(BillLine.brand),
@@ -88,6 +94,14 @@ def list_fulfillment_bills(
         q = q.where(Bill.bill_type == BillType.purchase)
     elif bill_type == "sales":
         q = q.where(Bill.bill_type == BillType.sales)
+    line_match = select(BillLine.bill_id)
+    line_filters = []
+    if product_id is not None:
+        line_filters.append(BillLine.product_id == product_id)
+    if brand_id is not None:
+        line_filters.append(BillLine.brand_id == brand_id)
+    if line_filters:
+        q = q.where(Bill.id.in_(line_match.where(*line_filters)))
     if date_from is not None:
         q = q.where(Bill.bill_date >= date_from)
     if date_to is not None:
@@ -97,6 +111,16 @@ def list_fulfillment_bills(
     result = []
     for b in bills:
         data = serialize_fulfillment_bill(db, b)
+        if product_id is not None or brand_id is not None:
+            matching_ids = {
+                ln.id
+                for ln in b.lines
+                if (product_id is None or ln.product_id == product_id)
+                and (brand_id is None or ln.brand_id == brand_id)
+            }
+            data["lines"] = [ln for ln in data["lines"] if ln["line_id"] in matching_ids]
+            if not data["lines"]:
+                continue
         if visibility == "actionable" and not bill_is_actionable(data, tab):
             continue
         result.append(data)
@@ -111,11 +135,16 @@ def list_entries(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     q = (
         select(FulfillmentEntry)
+        .join(BillLine, FulfillmentEntry.bill_line_id == BillLine.id)
+        .join(Bill, BillLine.bill_id == Bill.id)
+        .where(company_filter(Bill, company_id))
         .options(joinedload(FulfillmentEntry.location))
         .order_by(FulfillmentEntry.fulfilled_at.desc(), FulfillmentEntry.id.desc())
     )
@@ -135,11 +164,13 @@ def list_fulfillment_audit(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     q = fulfillment_audit_query()
-    q = q.where(Bill.status == BillStatus.finalized)
+    q = q.where(Bill.status == BillStatus.finalized, company_filter(Bill, company_id))
     if bill_type == "purchase":
         q = q.where(Bill.bill_type == BillType.purchase)
     elif bill_type == "sales":
@@ -175,7 +206,11 @@ def void_fulfillment_endpoint(
     def execute():
         try:
             entry = void_fulfillment_entry(
-                db, entry_id, expected_version=expected_bill_version, actor=user
+                db,
+                entry_id,
+                expected_version=expected_bill_version,
+                actor=user,
+                company_id=company_id_for_user(user),
             )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e
@@ -217,6 +252,7 @@ def add_bill_fulfillment_event(
                 line_items,
                 location_id=body.location_id,
                 expected_version=body.expected_version,
+                company_id=company_id_for_user(user),
             )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e
@@ -255,6 +291,7 @@ def add_fulfillment(
                 vehicle_no=body.vehicle_no,
                 expected_version=body.expected_version,
                 fulfilled_date=body.fulfilled_date,
+                company_id=company_id_for_user(user),
             )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e

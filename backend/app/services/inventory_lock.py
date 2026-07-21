@@ -50,12 +50,14 @@ def get_inventory_row_for_update(
     bag_type_id: int,
     owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
     customer_id: int | None = None,
+    company_id: int = 1,
 ) -> Inventory | None:
     ot, cid = _normalize_owner(owner_type, customer_id)
     ot_enum = InventoryOwnerType(ot)
     q = (
         select(Inventory)
         .where(
+            Inventory.company_id == company_id,
             Inventory.product_id == product_id,
             Inventory.brand_id == brand_id,
             Inventory.location_id == location_id,
@@ -79,9 +81,10 @@ def get_or_create_inventory_row_for_update(
     bag_type_id: int,
     owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
     customer_id: int | None = None,
+    company_id: int = 1,
 ) -> Inventory:
     inv = get_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id
+        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
     )
     if inv:
         return inv
@@ -90,6 +93,7 @@ def get_or_create_inventory_row_for_update(
     try:
         with db.begin_nested():
             inv = Inventory(
+                company_id=company_id,
                 product_id=product_id,
                 brand_id=brand_id,
                 location_id=location_id,
@@ -105,7 +109,7 @@ def get_or_create_inventory_row_for_update(
     except IntegrityError:
         pass
     inv = get_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id
+        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
     )
     if not inv:
         raise ValueError("Could not lock or create inventory row")

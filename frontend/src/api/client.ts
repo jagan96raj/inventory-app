@@ -33,6 +33,7 @@ export type BillListItem = {
   payment_status: string;
   order_delivery_status: string;
   version: number;
+  notes?: string | null;
 };
 
 export type BillsPage = PageOut<BillListItem> & {
@@ -80,11 +81,18 @@ export type AuthUser = {
   picture_url?: string | null;
   role?: "owner" | "writer" | "stock_manager" | "factory_manager" | null;
   is_active?: boolean;
+  company_id: number;
+  company_name?: string | null;
 };
 
 type RequestOptions = RequestInit & { skipAuthRedirect?: boolean };
 
-const AUTH_CREDENTIAL_PATHS = ["/api/auth/login", "/api/auth/signup", "/api/auth/otp-login"];
+const AUTH_CREDENTIAL_PATHS = [
+  "/api/auth/login",
+  "/api/auth/signup",
+  "/api/auth/otp-login",
+  "/api/companies/register",
+];
 
 function isAuthCredentialRequest(path: string): boolean {
   return AUTH_CREDENTIAL_PATHS.some((p) => path === p || path.startsWith(`${p}?`));
@@ -258,6 +266,7 @@ export type Bill = {
   discount_percent: string;
   discount_amount: string;
   adjustment: string;
+  notes?: string | null;
   total_amount: string;
   final_payable: string;
   subtotal: string;
@@ -985,6 +994,11 @@ export type BookSettings = {
   powder_bag_type_name?: string | null;
   company_name?: string | null;
   company_address_line?: string | null;
+  company_address_line_2?: string | null;
+  company_district?: string | null;
+  company_state?: string | null;
+  company_pin_code?: string | null;
+  company_gstin?: string | null;
   company_phone?: string | null;
 };
 
@@ -1126,6 +1140,37 @@ export const bookSettingsApi = {
   get: () => api.get<BookSettings>("/api/book-settings"),
   update: (body: BookSettingsIn, key: string) =>
     api.patch<BookSettings>("/api/book-settings", body, { headers: idempotencyHeaders(key) }),
+};
+
+export type Company = {
+  id: number;
+  name: string;
+  address_line?: string | null;
+  address_line_2?: string | null;
+  district?: string | null;
+  state?: string | null;
+  pin_code?: string | null;
+  gstin?: string | null;
+  phone?: string | null;
+  is_active?: boolean;
+  created_at?: string | null;
+};
+
+export type CompanyUpdate = {
+  name?: string;
+  address_line?: string | null;
+  address_line_2?: string | null;
+  district?: string | null;
+  state?: string | null;
+  pin_code?: string | null;
+  gstin?: string | null;
+  phone?: string | null;
+};
+
+export const companiesApi = {
+  getMe: () => api.get<Company>("/api/companies/me"),
+  updateMe: (body: CompanyUpdate) => api.patch<Company>("/api/companies/me", body),
+  registrationStatus: () => api.get<{ allowed: boolean }>("/api/companies/registration-status", { skipAuthRedirect: true }),
 };
 
 // ---------------------------------------------------------------------------

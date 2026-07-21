@@ -39,6 +39,7 @@ import EmptyState from "../components/ui/EmptyState";
 import Banner from "../components/ui/Banner";
 import SegmentedControl from "../components/ui/SegmentedControl";
 import AddCustomerDialog from "../components/AddCustomerDialog";
+import BillNotesHover from "../components/bills/BillNotesHover";
 import PaginationBar from "../components/ui/PaginationBar";
 import { cn } from "../lib/cn";
 
@@ -166,12 +167,14 @@ function BillMobileCard({
       <CardBody className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <Link
-              to={`${base}/${bill.id}`}
-              className={cn("text-lg font-bold v2-mono hover:underline", theme.billLink)}
-            >
-              {bill.bill_number}
-            </Link>
+            <BillNotesHover notes={bill.notes}>
+              <Link
+                to={`${base}/${bill.id}`}
+                className={cn("text-lg font-bold v2-mono hover:underline", theme.billLink)}
+              >
+                {bill.bill_number}
+              </Link>
+            </BillNotesHover>
           </div>
           <div className="text-right">
             <p className="text-lg font-bold v2-mono text-ink">{formatInr(final)}</p>
@@ -297,12 +300,14 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       header: "Bill",
       width: "11rem",
       cell: (b) => (
-        <Link
-          to={`${base}/${b.id}`}
-          className={cn("font-semibold v2-mono hover:underline", theme.billLink)}
-        >
-          {b.bill_number}
-        </Link>
+        <BillNotesHover notes={b.notes}>
+          <Link
+            to={`${base}/${b.id}`}
+            className={cn("font-semibold v2-mono hover:underline", theme.billLink)}
+          >
+            {b.bill_number}
+          </Link>
+        </BillNotesHover>
       ),
     },
     {

@@ -62,11 +62,11 @@ export default function PageHeader({
               {eyebrow}
             </p>
           )}
-          <h1 className="truncate bg-gradient-to-r from-primary-900 via-indigo-800 to-violet-800 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-3xl dark:from-primary-100 dark:via-indigo-100 dark:to-violet-100">
+          <h1 className="truncate bg-gradient-to-r from-primary-900 via-indigo-800 to-violet-800 bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl dark:from-primary-100 dark:via-indigo-100 dark:to-violet-100">
             {title}
           </h1>
           {subtitle && (
-            <p className="mt-1 text-base text-indigo-700/85 sm:max-w-2xl dark:text-indigo-200/85">{subtitle}</p>
+            <p className="mt-1 text-sm text-indigo-700/85 sm:max-w-2xl dark:text-indigo-200/85">{subtitle}</p>
           )}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

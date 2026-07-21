@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.auth import get_current_user
 from app.core.permissions import Permission, require_permission, require_void_user
+from app.core.tenant import company_filter, company_id_for_user
 from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
@@ -58,12 +59,14 @@ def list_payments(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     q = (
         select(Payment)
-        .where(Payment.voided_at.is_(None))
+        .where(Payment.voided_at.is_(None), company_filter(Bill, company_id))
         .join(Payment.bill)
         .outerjoin(Bill.customer)
         .options(
@@ -91,11 +94,14 @@ def setoff_preview(
     amount: Decimal = Query(Decimal("0")),
     payment_mode: PaymentMode = Query(...),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     try:
-        data = preview_setoff_allocation(db, bill_id, amount, payment_mode)
+        data = preview_setoff_allocation(
+            db, bill_id, amount, payment_mode, company_id=company_id_for_user(user)
+        )
     except ValueError as e:
-        raise HTTPException(400, str(e)) from e
+        raise http_exception_for_value_error(e) from e
     return SetoffPreviewOut(**data)
 
 
@@ -112,6 +118,7 @@ def add_payment(
     request_hash = hash_pydantic_body(body)
 
     def execute():
+        company_id = company_id_for_user(user)
         try:
             p = create_payment(
                 db,
@@ -121,12 +128,13 @@ def add_payment(
                 expected_version=body.expected_version,
                 bank_account_id=body.bank_account_id,
                 paid_date=body.paid_date,
+                company_id=company_id,
             )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e
         bill = db.scalar(
             select(Bill)
-            .where(Bill.id == body.bill_id)
+            .where(Bill.id == body.bill_id, company_filter(Bill, company_id))
             .options(joinedload(Bill.customer), joinedload(Bill.payments))
         )
         payment = db.scalar(
@@ -158,13 +166,20 @@ def void_payment_endpoint(
     request_hash = hash_empty_body()
 
     def execute():
+        company_id = company_id_for_user(user)
         try:
-            p = void_payment(db, payment_id, expected_version=expected_bill_version, actor=user)
+            p = void_payment(
+                db,
+                payment_id,
+                expected_version=expected_bill_version,
+                actor=user,
+                company_id=company_id,
+            )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e
         bill = db.scalar(
             select(Bill)
-            .where(Bill.id == p.bill_id)
+            .where(Bill.id == p.bill_id, company_filter(Bill, company_id))
             .options(joinedload(Bill.customer), joinedload(Bill.payments))
         )
         payment = db.scalar(

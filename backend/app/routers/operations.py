@@ -32,6 +32,7 @@ from app.schemas import (
     StockDisposalOut,
     StockDisposalPageOut,
 )
+from app.core.tenant import company_id_for_user, require_for_company
 from app.services.idempotency import hash_empty_body, hash_pydantic_body
 from app.services.operations import (
     create_bag_change,
@@ -72,11 +73,14 @@ def list_bag_changes(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     q = (
         select(BagChange)
+        .where(BagChange.company_id == company_id)
         .options(
             joinedload(BagChange.location),
             joinedload(BagChange.product),
@@ -106,6 +110,7 @@ def post_bag_change(
         try:
             record = create_bag_change(
             db,
+            company_id=company_id_for_user(user),
             location_id=body.location_id,
             product_id=body.product_id,
             brand_id=body.brand_id,
@@ -139,6 +144,7 @@ def void_bag_change_endpoint(
     request_hash = hash_empty_body()
 
     def execute():
+        require_for_company(db, BagChange, record_id, company_id_for_user(user), label="Bag change")
         try:
             record = void_bag_change(db, record_id, actor=user)
         except ValueError as e:
@@ -154,11 +160,14 @@ def list_product_transfers(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     q = (
         select(ProductTransfer)
+        .where(ProductTransfer.company_id == company_id)
         .options(
             joinedload(ProductTransfer.product),
             joinedload(ProductTransfer.brand),
@@ -188,6 +197,7 @@ def post_product_transfer(
         try:
             record = create_product_transfer(
             db,
+            company_id=company_id_for_user(user),
             product_id=body.product_id,
             brand_id=body.brand_id,
             bag_type_id=body.bag_type_id,
@@ -220,6 +230,9 @@ def void_product_transfer_endpoint(
     request_hash = hash_empty_body()
 
     def execute():
+        require_for_company(
+            db, ProductTransfer, record_id, company_id_for_user(user), label="Product transfer"
+        )
         try:
             record = void_product_transfer(db, record_id, actor=user)
         except ValueError as e:
@@ -235,11 +248,14 @@ def list_stock_disposals(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     q = (
         select(StockDisposal)
+        .where(StockDisposal.company_id == company_id)
         .options(
             joinedload(StockDisposal.location),
             joinedload(StockDisposal.product),
@@ -268,6 +284,7 @@ def post_stock_disposal(
         try:
             record = create_stock_disposal(
             db,
+            company_id=company_id_for_user(user),
             location_id=body.location_id,
             product_id=body.product_id,
             brand_id=body.brand_id,
@@ -300,6 +317,9 @@ def void_stock_disposal_endpoint(
     request_hash = hash_empty_body()
 
     def execute():
+        require_for_company(
+            db, StockDisposal, record_id, company_id_for_user(user), label="Stock disposal"
+        )
         try:
             record = void_stock_disposal(db, record_id, actor=user)
         except ValueError as e:
@@ -333,11 +353,13 @@ def get_processing_jobs(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     if status is not None and status not in ("open", "completed"):
         raise HTTPException(status_code=400, detail="Invalid status")
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     order_by = (
         (ProcessingJob.completed_at.desc(), ProcessingJob.id.desc())
         if status == "completed"
@@ -345,6 +367,7 @@ def get_processing_jobs(
     )
     q = (
         select(ProcessingJob)
+        .where(ProcessingJob.company_id == company_id)
         .options(
             joinedload(ProcessingJob.input_product),
             joinedload(ProcessingJob.input_brand),
@@ -376,6 +399,7 @@ def post_processing_job(
         try:
             job = create_job(
             db,
+            company_id=company_id_for_user(user),
             input_product_id=body.input_product_id,
             input_brand_id=body.input_brand_id,
         )
@@ -388,9 +412,13 @@ def post_processing_job(
 
 
 @router.get("/processing/{job_id}", response_model=ProcessingJobOut, dependencies=PROCESSING_VIEW)
-def get_processing_job(job_id: int, db: Session = Depends(get_db)):
+def get_processing_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     try:
-        job = load_processing_job(db, job_id)
+        job = load_processing_job(db, job_id, company_id=company_id_for_user(user))
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
     return serialize_processing_job(job, db=db)
@@ -409,9 +437,12 @@ def post_processing_batch(
 
     def execute():
         try:
-            job = submit_batch(db, job_id, **_batch_payload(body))
+            job = submit_batch(
+                db, job_id, company_id=company_id_for_user(user), **_batch_payload(body)
+            )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         out = serialize_processing_job(job, db=db)
         return out, 200
 
@@ -433,9 +464,12 @@ def post_processing_complete(
 
     def execute():
         try:
-            job = complete_job(db, job_id, **_batch_payload(body))
+            job = complete_job(
+                db, job_id, company_id=company_id_for_user(user), **_batch_payload(body)
+            )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         out = serialize_processing_job(job, db=db)
         return out, 200
 
@@ -456,9 +490,12 @@ def void_processing_batch_endpoint(
 
     def execute():
         try:
-            job = void_processing_batch(db, batch_id, actor=user)
+            job = void_processing_batch(
+                db, batch_id, actor=user, company_id=company_id_for_user(user)
+            )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         out = serialize_processing_job(job, db=db)
         return out, 200
 

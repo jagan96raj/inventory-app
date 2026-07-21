@@ -93,13 +93,18 @@ def _batch_load_options():
         joinedload(ProcessingJob.batches).joinedload(ProcessingBatch.powder_bag_type),
     )
 
-def load_processing_job(db: Session, job_id: int) -> ProcessingJob:
-    row = db.scalars(
+def load_processing_job(
+    db: Session, job_id: int, *, company_id: int | None = None
+) -> ProcessingJob:
+    q = (
         select(ProcessingJob)
         .where(ProcessingJob.id == job_id)
         .options(*_batch_load_options())
         .execution_options(populate_existing=True)
-    ).unique().one_or_none()
+    )
+    if company_id is not None:
+        q = q.where(ProcessingJob.company_id == company_id)
+    row = db.scalars(q).unique().one_or_none()
     if not row:
         raise ValueError("Processing job not found")
     return row

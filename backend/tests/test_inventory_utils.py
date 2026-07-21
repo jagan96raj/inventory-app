@@ -29,6 +29,17 @@ class InventoryRowStateTests(unittest.TestCase):
             validate_bags_loose(bt, 0, Decimal("0"))
         self.assertIn("at least one bag", str(ctx.exception).lower())
 
+    def test_bill_line_allows_zero_when_flagged(self):
+        bagged = SimpleNamespace(is_loose=False, weight_per_bag_kg=Decimal("50"))
+        loose = SimpleNamespace(is_loose=True, weight_per_bag_kg=Decimal("0"))
+        validate_bags_loose(bagged, 0, Decimal("0"), allow_zero=True)
+        validate_bags_loose(loose, 0, Decimal("0"), allow_zero=True)
+
+    def test_zero_ordered_qty_is_delivered(self):
+        from app.utils import delivery_status_from_qty
+
+        self.assertEqual(delivery_status_from_qty(Decimal("0"), Decimal("0")), "delivered")
+
 
 if __name__ == "__main__":
     unittest.main()

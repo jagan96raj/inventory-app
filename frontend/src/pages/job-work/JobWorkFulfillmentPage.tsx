@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Briefcase, PackagePlus, Undo2 } from "lucide-react";
+import { Briefcase, Calendar, PackagePlus, Undo2 } from "lucide-react";
 import {
   DEFAULT_PAGE_LIMIT,
   jobWorkApi,
@@ -41,6 +41,21 @@ const REMAINING_HELP =
 const LINE_TH =
   "border-b border-line bg-surface-muted/70 px-5 py-3.5 text-sm font-semibold uppercase tracking-wide text-ink-muted";
 const LINE_TD = "border-b border-line/70 px-5 py-4 align-middle text-base text-ink";
+
+function groupOrdersByDate(
+  orders: JobWorkFulfillmentOrder[]
+): { date: string; orders: JobWorkFulfillmentOrder[] }[] {
+  const map = new Map<string, JobWorkFulfillmentOrder[]>();
+  for (const order of orders) {
+    const key = order.job_date || "unknown";
+    const list = map.get(key);
+    if (list) list.push(order);
+    else map.set(key, [order]);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, grouped]) => ({ date, orders: grouped }));
+}
 
 function canReceive(ln: JobWorkFulfillmentLine): boolean {
   const remaining = jwRemainingReceiveQty(ln);
@@ -88,6 +103,123 @@ function LineActions({
   );
 }
 
+function OrderCard({
+  order,
+  visibility,
+  onReceive,
+  onReturn,
+  onVoidReceive,
+}: {
+  order: JobWorkFulfillmentOrder;
+  visibility: Visibility;
+  onReceive: (ln: JobWorkFulfillmentLine) => void;
+  onReturn: (ln: JobWorkFulfillmentLine) => void;
+  onVoidReceive: (r: JobWorkFulfillmentReceipt) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-line/80 bg-gradient-to-br from-violet-50/80 to-surface dark:from-violet-950/30 dark:to-surface">
+      <header className="flex flex-col gap-2 border-b border-line/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="primary" size="md">
+              Job work
+            </Badge>
+            <Link
+              to={`/job-work/${order.order_id}`}
+              className="v2-mono text-xl font-bold text-violet-800 dark:text-violet-200"
+            >
+              {order.job_number}
+            </Link>
+          </div>
+          <p className="text-lg font-semibold text-ink">{order.customer_name}</p>
+        </div>
+      </header>
+
+      <div className="overflow-x-auto bg-surface/50">
+        <table className="v2-data-table min-w-[52rem] w-full text-base">
+          <thead>
+            <tr>
+              <th scope="col" className={cn(LINE_TH, "text-left")}>
+                Product
+              </th>
+              <th scope="col" className={cn(LINE_TH, "text-right")}>
+                Ordered
+              </th>
+              <th scope="col" className={cn(LINE_TH, "text-right")}>
+                Received
+              </th>
+              <th scope="col" className={cn(LINE_TH, "text-right")} title={REMAINING_HELP}>
+                Remaining
+              </th>
+              <th scope="col" className={cn(LINE_TH, "text-right")}>
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {(order.lines ?? []).map((ln) => {
+              const dimmed = visibility === "actionable" && !lineNeedsAction(ln);
+              return (
+                <tr
+                  key={ln.line_id}
+                  className={cn("bg-surface/80 even:bg-surface-subtle/40", dimmed && "opacity-60")}
+                >
+                  <td className={LINE_TD}>
+                    <div className="font-semibold text-ink">{ln.product_name}</div>
+                    <div className="mt-0.5 text-sm text-ink-muted">
+                      {ln.brand_name} · {ln.bag_type_name}
+                    </div>
+                  </td>
+                  <td className={cn(LINE_TD, "text-right")}>
+                    <JwQtyCell qty={jwOrderedQty(ln)} />
+                  </td>
+                  <td className={cn(LINE_TD, "text-right")}>
+                    <JwQtyCell qty={jwNetReceivedQty(ln)} />
+                  </td>
+                  <td className={cn(LINE_TD, "text-right")}>
+                    {remainingIsZero(ln) ? (
+                      <span className="text-sm text-ink-subtle">Complete</span>
+                    ) : (
+                      <JwQtyCell qty={jwRemainingReceiveQty(ln)} emphasize />
+                    )}
+                  </td>
+                  <td className={cn(LINE_TD, "text-right")}>
+                    <LineActions
+                      ln={ln}
+                      onReceive={() => onReceive(ln)}
+                      onReturn={() => onReturn(ln)}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {(order.lines ?? []).some((ln) => (ln.receipts ?? []).length > 0) && (
+        <details className="border-t border-line/70 bg-surface/40 px-5 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-ink-muted hover:text-ink">
+            Receipt history
+          </summary>
+          <div className="mt-3">
+            <JwActivityLog
+              items={(order.lines ?? []).flatMap((ln) =>
+                (ln.receipts ?? []).map((r) => ({
+                  ...r,
+                  lineLabel: `${ln.product_name} · ${ln.brand_name}`,
+                  is_loose: ln.is_loose,
+                }))
+              )}
+              onVoidReceive={onVoidReceive}
+            />
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
 export default function JobWorkFulfillmentPage() {
   const [visibility, setVisibility] = useState<Visibility>("actionable");
   const [orders, setOrders] = useState<JobWorkFulfillmentOrder[]>([]);
@@ -124,6 +256,8 @@ export default function JobWorkFulfillmentPage() {
     setPendingReceipt(null);
     setError("");
   }, [visibility]);
+
+  const ordersByDate = useMemo(() => groupOrdersByDate(orders), [orders]);
 
   const openAction = (mode: JobWorkFulfillmentMode, line: JobWorkFulfillmentLine) => {
     setDialogMode(mode);
@@ -184,7 +318,7 @@ export default function JobWorkFulfillmentPage() {
           }}
           options={[
             { value: "actionable", label: "Needs action" },
-            { value: "all", label: "All open" },
+            { value: "all", label: "All" },
           ]}
         />
       </div>
@@ -206,109 +340,35 @@ export default function JobWorkFulfillmentPage() {
           }
         />
       ) : (
-        <div className="space-y-5">
-          {orders.map((order) => (
-            <section
-              key={order.order_id}
-              className="overflow-hidden rounded-2xl border border-line/80 bg-gradient-to-br from-violet-50/80 to-surface dark:from-violet-950/30 dark:to-surface"
-            >
-              <header className="flex flex-col gap-2 border-b border-line/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="primary" size="md">
-                      Job work
-                    </Badge>
-                    <Link
-                      to={`/job-work/${order.order_id}`}
-                      className="v2-mono text-xl font-bold text-violet-800 dark:text-violet-200"
-                    >
-                      {order.job_number}
-                    </Link>
+        <div className="space-y-8">
+          {ordersByDate.map(({ date, orders: dayOrders }) => {
+            const label = date === "unknown" ? "No job date" : formatDate(date);
+            const lineCount = dayOrders.reduce((n, o) => n + (o.lines?.length ?? 0), 0);
+            return (
+              <section key={date} className="space-y-4" aria-labelledby={`jw-fulfill-date-${date}`}>
+                <header
+                  id={`jw-fulfill-date-${date}`}
+                  className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm sm:px-5"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200">
+                      <Calendar className="h-4 w-4" aria-hidden="true" />
+                    </div>
+                    <h2 className="text-lg font-bold text-ink sm:text-xl">{label}</h2>
                   </div>
-                  <p className="text-lg font-semibold text-ink">{order.customer_name}</p>
-                  <p className="text-sm text-ink-muted">{formatDate(order.job_date)}</p>
-                </div>
-              </header>
-
-              <div className="overflow-x-auto bg-surface/50">
-                <table className="v2-data-table min-w-[52rem] w-full text-base">
-                  <thead>
-                    <tr>
-                      <th scope="col" className={cn(LINE_TH, "text-left")}>
-                        Product
-                      </th>
-                      <th scope="col" className={cn(LINE_TH, "text-right")}>
-                        Ordered
-                      </th>
-                      <th scope="col" className={cn(LINE_TH, "text-right")}>
-                        Received
-                      </th>
-                      <th scope="col" className={cn(LINE_TH, "text-right")} title={REMAINING_HELP}>
-                        Remaining
-                      </th>
-                      <th scope="col" className={cn(LINE_TH, "text-right")}>
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(order.lines ?? []).map((ln) => {
-                      const dimmed = visibility === "actionable" && !lineNeedsAction(ln);
-                      return (
-                        <tr
-                          key={ln.line_id}
-                          className={cn(
-                            "bg-surface/80 even:bg-surface-subtle/40",
-                            dimmed && "opacity-60"
-                          )}
-                        >
-                          <td className={LINE_TD}>
-                            <div className="font-semibold text-ink">{ln.product_name}</div>
-                            <div className="mt-0.5 text-sm text-ink-muted">
-                              {ln.brand_name} · {ln.bag_type_name}
-                            </div>
-                          </td>
-                          <td className={cn(LINE_TD, "text-right")}>
-                            <JwQtyCell qty={jwOrderedQty(ln)} />
-                          </td>
-                          <td className={cn(LINE_TD, "text-right")}>
-                            <JwQtyCell qty={jwNetReceivedQty(ln)} />
-                          </td>
-                          <td className={cn(LINE_TD, "text-right")}>
-                            {remainingIsZero(ln) ? (
-                              <span className="text-sm text-ink-subtle">Complete</span>
-                            ) : (
-                              <JwQtyCell qty={jwRemainingReceiveQty(ln)} emphasize />
-                            )}
-                          </td>
-                          <td className={cn(LINE_TD, "text-right")}>
-                            <LineActions
-                              ln={ln}
-                              onReceive={() => openAction("receive", ln)}
-                              onReturn={() => openAction("return", ln)}
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {(order.lines ?? []).some((ln) => (ln.receipts ?? []).length > 0) && (
-                <details className="border-t border-line/70 bg-surface/40 px-5 py-3">
-                  <summary className="cursor-pointer text-sm font-semibold text-ink-muted hover:text-ink">
-                    Receipt history
-                  </summary>
-                  <div className="mt-3">
-                    <JwActivityLog
-                      items={(order.lines ?? []).flatMap((ln) =>
-                        (ln.receipts ?? []).map((r) => ({
-                          ...r,
-                          lineLabel: `${ln.product_name} · ${ln.brand_name}`,
-                          is_loose: ln.is_loose,
-                        }))
-                      )}
+                  <span className="text-sm font-medium text-ink-muted">
+                    {dayOrders.length} order{dayOrders.length === 1 ? "" : "s"} · {lineCount} line
+                    {lineCount === 1 ? "" : "s"}
+                  </span>
+                </header>
+                <div className="space-y-5">
+                  {dayOrders.map((order) => (
+                    <OrderCard
+                      key={order.order_id}
+                      order={order}
+                      visibility={visibility}
+                      onReceive={(ln) => openAction("receive", ln)}
+                      onReturn={(ln) => openAction("return", ln)}
                       onVoidReceive={(r) => {
                         voidIdemRef.current = null;
                         setVoidAuthError("");
@@ -319,11 +379,11 @@ export default function JobWorkFulfillmentPage() {
                         );
                       }}
                     />
-                  </div>
-                </details>
-              )}
-            </section>
-          ))}
+                  ))}
+                </div>
+              </section>
+            );
+          })}
           <PaginationBar total={total} limit={DEFAULT_PAGE_LIMIT} offset={offset} onPageChange={setOffset} />
         </div>
       )}

@@ -102,6 +102,187 @@ export function computeOutputLineCountsByBrand(batches: ProcessingBatch[]): Map<
   return counts;
 }
 
+function batchesNewestFirst(batches: ProcessingBatch[]): ProcessingBatch[] {
+  return [...activeProcessingBatches(batches)].sort((a, b) => {
+    const byTime = String(b.operation_at).localeCompare(String(a.operation_at));
+    if (byTime !== 0) return byTime;
+    return b.id - a.id;
+  });
+}
+
+export type RecentBrandOutputEntry = {
+  key: string;
+  batchId: number;
+  operationAt: string;
+  brandId: number;
+  brandName?: string;
+  locationId: number;
+  locationName?: string;
+  bagTypeId: number;
+  bagTypeName?: string;
+  bagCount: number;
+  looseKg: string;
+  quantityKg: string;
+};
+
+/** Newest-first output lines for a brand (for snapshot hover reuse). */
+export function lastBrandOutputEntries(
+  batches: ProcessingBatch[],
+  brandId: number,
+  limit = 5
+): RecentBrandOutputEntry[] {
+  const out: RecentBrandOutputEntry[] = [];
+  for (const batch of batchesNewestFirst(batches)) {
+    const lines = [...batch.output_lines]
+      .filter((ln) => ln.brand_id === brandId)
+      .sort((a, b) => b.line_index - a.line_index);
+    for (const ln of lines) {
+      out.push({
+        key: `${batch.id}-${ln.id}`,
+        batchId: batch.id,
+        operationAt: batch.operation_at,
+        brandId: ln.brand_id,
+        brandName: ln.brand_name,
+        locationId: ln.location_id,
+        locationName: ln.location_name,
+        bagTypeId: ln.bag_type_id,
+        bagTypeName: ln.bag_type_name,
+        bagCount: ln.bag_count,
+        looseKg: ln.loose_kg,
+        quantityKg: ln.quantity_kg,
+      });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
+export type RecentWasteEntry = {
+  key: string;
+  batchId: number;
+  operationAt: string;
+  dustKg: string;
+  stoneKg: string;
+  sackKg: string;
+  totalKg: number;
+};
+
+/** Newest-first audit waste batches (dust / stone / sack) for snapshot hover. */
+export function lastWasteEntries(batches: ProcessingBatch[], limit = 5): RecentWasteEntry[] {
+  const out: RecentWasteEntry[] = [];
+  for (const batch of batchesNewestFirst(batches)) {
+    const dust = Number(batch.dust_kg);
+    const stone = Number(batch.stone_kg);
+    const sack = Number(batch.sack_weight_waste_kg);
+    const total = dust + stone + sack;
+    if (total <= 0) continue;
+    out.push({
+      key: `waste-${batch.id}`,
+      batchId: batch.id,
+      operationAt: batch.operation_at,
+      dustKg: batch.dust_kg,
+      stoneKg: batch.stone_kg,
+      sackKg: batch.sack_weight_waste_kg,
+      totalKg: total,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export type RecentMiscEntry = {
+  key: string;
+  batchId: number;
+  operationAt: string;
+  miscKg: string;
+};
+
+/** Newest-first misc residual entries for snapshot hover. */
+export function lastMiscEntries(batches: ProcessingBatch[], limit = 5): RecentMiscEntry[] {
+  const out: RecentMiscEntry[] = [];
+  for (const batch of batchesNewestFirst(batches)) {
+    if (Number(batch.miscellaneous_waste_kg) <= 0) continue;
+    out.push({
+      key: `misc-${batch.id}`,
+      batchId: batch.id,
+      operationAt: batch.operation_at,
+      miscKg: batch.miscellaneous_waste_kg,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export type RecentPowderEntry = {
+  key: string;
+  batchId: number;
+  operationAt: string;
+  powderKg: string;
+  brandName?: string | null;
+  locationName?: string | null;
+  bagTypeName?: string | null;
+  bagCount?: number | null;
+  looseKg?: string | null;
+};
+
+/** Newest-first powder stock batches for snapshot hover. */
+export function lastPowderEntries(batches: ProcessingBatch[], limit = 5): RecentPowderEntry[] {
+  const out: RecentPowderEntry[] = [];
+  for (const batch of batchesNewestFirst(batches)) {
+    if (Number(batch.powder_kg ?? 0) <= 0) continue;
+    out.push({
+      key: `powder-${batch.id}`,
+      batchId: batch.id,
+      operationAt: batch.operation_at,
+      powderKg: batch.powder_kg ?? "0",
+      brandName: batch.powder_brand_name,
+      locationName: batch.powder_location_name,
+      bagTypeName: batch.powder_bag_type_name,
+      bagCount: batch.powder_bag_count,
+      looseKg: batch.powder_loose_kg,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export type RecentBalanceReturnEntry = {
+  key: string;
+  batchId: number;
+  operationAt: string;
+  locationName?: string;
+  bagTypeName?: string;
+  bagCount: number;
+  looseKg: string;
+  quantityKg: string;
+};
+
+/** Newest-first balance return lines for snapshot hover / latest metric. */
+export function lastBalanceReturnEntries(
+  batches: ProcessingBatch[],
+  limit = 5
+): RecentBalanceReturnEntry[] {
+  const out: RecentBalanceReturnEntry[] = [];
+  for (const batch of batchesNewestFirst(batches)) {
+    const lines = [...(batch.balance_return_lines ?? [])].sort((a, b) => b.line_index - a.line_index);
+    for (const ln of lines) {
+      if (Number(ln.quantity_kg) <= 0) continue;
+      out.push({
+        key: `return-${batch.id}-${ln.id}`,
+        batchId: batch.id,
+        operationAt: batch.operation_at,
+        locationName: ln.location_name,
+        bagTypeName: ln.bag_type_name,
+        bagCount: ln.bag_count,
+        looseKg: ln.loose_kg,
+        quantityKg: ln.quantity_kg,
+      });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 export function explicitWasteKg(batch: ProcessingBatch): number {
   return (
     Number(batch.dust_kg) +
@@ -240,7 +421,12 @@ export type PendingMassBalanceBatch = {
 };
 
 export type MassBalanceState = {
+  /** From-stock input only (snapshot Fresh in). */
   freshInputKg: number;
+  /** Balance-reprocess input only. */
+  reprocessInputKg: number;
+  /** fresh + reprocess — basis for allowance (same 'in' side as misc). */
+  massBalanceInputKg: number;
   totalOutflowKg: number;
   allowanceRemainingKg: number;
   isValid: boolean;
@@ -261,6 +447,7 @@ export function computeMassBalance(
   pending?: PendingMassBalanceBatch
 ): MassBalanceState {
   let freshInputKg = 0;
+  let reprocessInputKg = 0;
   let totalOutflowKg = 0;
   let outputBalanceKg = 0;
   const activeBatches = activeProcessingBatches(batches);
@@ -268,8 +455,11 @@ export function computeMassBalance(
   for (const batch of activeBatches) {
     totalOutflowKg += batchTotalWasteKg(batch);
     for (const ln of batch.input_lines) {
-      if ((ln.input_source ?? "fresh") !== "balance_reprocess") {
-        freshInputKg += Number(ln.quantity_kg);
+      const qty = Number(ln.quantity_kg);
+      if ((ln.input_source ?? "fresh") === "balance_reprocess") {
+        reprocessInputKg += qty;
+      } else {
+        freshInputKg += qty;
       }
     }
     for (const ln of batch.output_lines) {
@@ -285,8 +475,11 @@ export function computeMassBalance(
   }
 
   for (const ln of pending?.freshInputLines ?? []) {
-    if ((ln.input_source ?? "fresh") !== "balance_reprocess") {
-      freshInputKg += lineQuantityKg(bagTypes, ln);
+    const qty = lineQuantityKg(bagTypes, ln);
+    if ((ln.input_source ?? "fresh") === "balance_reprocess") {
+      reprocessInputKg += qty;
+    } else {
+      freshInputKg += qty;
     }
   }
 
@@ -308,19 +501,22 @@ export function computeMassBalance(
   totalOutflowKg += pending?.powderKg ?? 0;
   totalOutflowKg += pending?.miscellaneousWasteKg ?? 0;
 
+  const massBalanceInputKg = freshInputKg + reprocessInputKg;
   const allowanceRemainingKg =
-    freshInputKg + PROCESSING_OUTPUT_TOLERANCE_KG - totalOutflowKg;
+    massBalanceInputKg + PROCESSING_OUTPUT_TOLERANCE_KG - totalOutflowKg;
 
   let errorMessage: string | null = null;
   if (outputBalanceKg > 0 && freshInputKg === 0) {
     errorMessage =
       "Record fresh input from stock before submitting output or balance return.";
-  } else if (totalOutflowKg > freshInputKg + PROCESSING_OUTPUT_TOLERANCE_KG) {
-    errorMessage = `Total outflow (${totalOutflowKg.toFixed(2)} kg) exceeds fresh input (${freshInputKg.toFixed(2)} kg) plus the ${PROCESSING_OUTPUT_TOLERANCE_KG} kg allowance.`;
+  } else if (totalOutflowKg > massBalanceInputKg + PROCESSING_OUTPUT_TOLERANCE_KG) {
+    errorMessage = `Total outflow (${totalOutflowKg.toFixed(2)} kg) exceeds job input (${massBalanceInputKg.toFixed(2)} kg) (fresh + reprocess) plus the ${PROCESSING_OUTPUT_TOLERANCE_KG} kg allowance.`;
   }
 
   return {
     freshInputKg,
+    reprocessInputKg,
+    massBalanceInputKg,
     totalOutflowKg,
     allowanceRemainingKg,
     isValid: errorMessage === null,

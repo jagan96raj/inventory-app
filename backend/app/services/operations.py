@@ -16,9 +16,17 @@ from app.models.entities import (
 
     BagType,
 
+    Brand,
+
+    Customer,
+
     Inventory,
 
     InventoryOwnerType,
+
+    Location,
+
+    Product,
 
     ProductTransfer,
 
@@ -27,6 +35,8 @@ from app.models.entities import (
     User,
 
 )
+
+from app.core.tenant import assert_entity_company
 
 from app.services.inventory_lock import (
 
@@ -45,6 +55,29 @@ from app.utils import calc_quantity_kg, recalc_inventory_row, validate_bags_loos
 
 OPERATION_ALREADY_VOIDED_MSG = "Operation already voided"
 OPERATION_VOID_INSUFFICIENT_STOCK_MSG = "Cannot void — stock no longer available to reverse"
+
+
+def _assert_stock_masters(
+    db: Session,
+    company_id: int = 1,
+    *,
+    product_id: int,
+    brand_id: int,
+    location_ids: list[int],
+    bag_type_ids: list[int],
+    customer_id: int | None = None,
+) -> None:
+    for bt_id in bag_type_ids:
+        bt = db.get(BagType, bt_id)
+        if not bt:
+            raise ValueError("Invalid bag type")
+        assert_entity_company(bt, company_id, "Bag type")
+    assert_entity_company(db.get(Product, product_id), company_id, "Product")
+    assert_entity_company(db.get(Brand, brand_id), company_id, "Brand")
+    for loc_id in location_ids:
+        assert_entity_company(db.get(Location, loc_id), company_id, "Location")
+    if customer_id is not None:
+        assert_entity_company(db.get(Customer, customer_id), company_id, "Customer")
 
 
 def _get_bag_type(db: Session, bag_type_id: int) -> BagType:
@@ -98,6 +131,8 @@ def subtract_inventory(
 
     customer_id: int | None = None,
 
+    company_id: int = 1,
+
 ) -> Decimal:
 
     bt = _get_bag_type(db, bag_type_id)
@@ -107,7 +142,7 @@ def subtract_inventory(
     qty = calc_quantity_kg(bt, bag_count, loose_kg)
 
     inv = get_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id
+        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
     )
 
     if not inv:
@@ -167,6 +202,8 @@ def add_inventory(
 
     customer_id: int | None = None,
 
+    company_id: int = 1,
+
 ) -> Decimal:
 
     bt = _get_bag_type(db, bag_type_id)
@@ -176,7 +213,7 @@ def add_inventory(
     qty = calc_quantity_kg(bt, bag_count, loose_kg)
 
     inv = get_or_create_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id
+        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
     )
 
     try:
@@ -214,6 +251,7 @@ def _subtract_for_void(
     *,
     owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
     customer_id: int | None = None,
+    company_id: int = 1,
 ) -> Decimal:
     try:
         return subtract_inventory(
@@ -226,6 +264,7 @@ def _subtract_for_void(
             loose_kg,
             owner_type=owner_type,
             customer_id=customer_id,
+            company_id=company_id,
         )
     except ValueError as e:
         if str(e) == "Insufficient stock":
@@ -241,6 +280,8 @@ def create_bag_change(
     db: Session,
 
     *,
+
+    company_id: int = 1,
 
     location_id: int,
 
@@ -271,7 +312,16 @@ def create_bag_change(
 
         raise ValueError("At least one to-line is required")
 
-
+    bag_type_ids = [from_bag_type_id] + [line["to_bag_type_id"] for line in to_lines]
+    _assert_stock_masters(
+        db,
+        company_id,
+        product_id=product_id,
+        brand_id=brand_id,
+        location_ids=[location_id],
+        bag_type_ids=bag_type_ids,
+        customer_id=cid,
+    )
 
     from_bt = _get_bag_type(db, from_bag_type_id)
 
@@ -326,7 +376,7 @@ def create_bag_change(
     subtract_inventory(
 
         db, product_id, brand_id, location_id, from_bag_type_id, from_bag_count, from_loose_kg,
-        owner_type=ot, customer_id=cid,
+        owner_type=ot, customer_id=cid, company_id=company_id,
 
     )
 
@@ -334,6 +384,7 @@ def create_bag_change(
 
     record = BagChange(
 
+        company_id=company_id,
         location_id=location_id,
 
         product_id=product_id,
@@ -366,7 +417,7 @@ def create_bag_change(
 
     for idx, (to_bag_type_id, bags, loose, line_kg, _to_bt) in enumerate(to_line_rows):
 
-        add_inventory(db, product_id, brand_id, location_id, to_bag_type_id, bags, loose, owner_type=ot, customer_id=cid)
+        add_inventory(db, product_id, brand_id, location_id, to_bag_type_id, bags, loose, owner_type=ot, customer_id=cid, company_id=company_id)
 
         db.add(
 
@@ -404,6 +455,8 @@ def create_product_transfer(
 
     *,
 
+    company_id: int = 1,
+
     product_id: int,
 
     brand_id: int,
@@ -427,6 +480,16 @@ def create_product_transfer(
 
         raise ValueError("from_location_id and to_location_id must differ")
 
+    _assert_stock_masters(
+        db,
+        company_id,
+        product_id=product_id,
+        brand_id=brand_id,
+        location_ids=[from_location_id, to_location_id],
+        bag_type_ids=[bag_type_id],
+        customer_id=cid,
+    )
+
 
 
     lock_inventory_rows(
@@ -447,17 +510,18 @@ def create_product_transfer(
 
     qty = subtract_inventory(
         db, product_id, brand_id, from_location_id, bag_type_id, bag_count, loose_kg,
-        owner_type=ot, customer_id=cid,
+        owner_type=ot, customer_id=cid, company_id=company_id,
     )
     add_inventory(
         db, product_id, brand_id, to_location_id, bag_type_id, bag_count, loose_kg,
-        owner_type=ot, customer_id=cid,
+        owner_type=ot, customer_id=cid, company_id=company_id,
     )
 
 
 
     record = ProductTransfer(
 
+        company_id=company_id,
         product_id=product_id,
 
         brand_id=brand_id,
@@ -498,6 +562,8 @@ def create_stock_disposal(
 
     *,
 
+    company_id: int = 1,
+
     location_id: int,
 
     product_id: int,
@@ -518,15 +584,26 @@ def create_stock_disposal(
 ) -> StockDisposal:
     ot, cid = _resolve_stock_owner(owner_type, customer_id)
 
+    _assert_stock_masters(
+        db,
+        company_id,
+        product_id=product_id,
+        brand_id=brand_id,
+        location_ids=[location_id],
+        bag_type_ids=[bag_type_id],
+        customer_id=cid,
+    )
+
     qty = subtract_inventory(
         db, product_id, brand_id, location_id, bag_type_id, bag_count, loose_kg,
-        owner_type=ot, customer_id=cid,
+        owner_type=ot, customer_id=cid, company_id=company_id,
     )
 
 
 
     record = StockDisposal(
 
+        company_id=company_id,
         location_id=location_id,
 
         product_id=product_id,
@@ -874,6 +951,7 @@ def void_bag_change(db: Session, record_id: int, *, actor: User | None = None) -
             tl.loose_kg,
             owner_type=record.owner_type,
             customer_id=record.customer_id,
+            company_id=record.company_id,
         )
 
     add_inventory(
@@ -886,6 +964,7 @@ def void_bag_change(db: Session, record_id: int, *, actor: User | None = None) -
         record.from_loose_kg,
         owner_type=record.owner_type,
         customer_id=record.customer_id,
+        company_id=record.company_id,
     )
 
     record.voided_at = utc_now()
@@ -934,6 +1013,7 @@ def void_product_transfer(db: Session, record_id: int, *, actor: User | None = N
         record.loose_kg,
         owner_type=record.owner_type,
         customer_id=record.customer_id,
+        company_id=record.company_id,
     )
     add_inventory(
         db,
@@ -945,6 +1025,7 @@ def void_product_transfer(db: Session, record_id: int, *, actor: User | None = N
         record.loose_kg,
         owner_type=record.owner_type,
         customer_id=record.customer_id,
+        company_id=record.company_id,
     )
 
     record.voided_at = utc_now()
@@ -988,6 +1069,7 @@ def void_stock_disposal(db: Session, record_id: int, *, actor: User | None = Non
         record.loose_kg,
         owner_type=record.owner_type,
         customer_id=record.customer_id,
+        company_id=record.company_id,
     )
 
     record.voided_at = utc_now()

@@ -17,6 +17,7 @@ from app.models.entities import (
     ExpenseCategoryKind,
     User,
 )
+from app.core.tenant import assert_entity_company
 from app.utils.time import resolve_business_entry, utc_now
 
 
@@ -35,10 +36,11 @@ def _kind_for_entry_type(entry_type: CashBookEntryType) -> ExpenseCategoryKind:
     return ExpenseCategoryKind.transfer
 
 
-def _validate_category(db: Session, category_id: int, entry_type: CashBookEntryType) -> ExpenseCategory:
+def _validate_category(db: Session, category_id: int, entry_type: CashBookEntryType, company_id: int) -> ExpenseCategory:
     category = db.get(ExpenseCategory, category_id)
     if not category or not category.is_active:
         raise ValueError("Category not found or inactive")
+    assert_entity_company(category, company_id, "Category")
     expected = _kind_for_entry_type(entry_type)
     if category.kind != expected:
         raise ValueError(CASH_BOOK_CATEGORY_KIND_MISMATCH_MSG)
@@ -48,6 +50,7 @@ def _validate_category(db: Session, category_id: int, entry_type: CashBookEntryT
 def _validate_bank_refs(
     db: Session,
     *,
+    company_id: int,
     source_mode: CashBookSourceMode | None,
     source_bank_id: int | None,
     dest_mode: CashBookSourceMode | None,
@@ -59,6 +62,7 @@ def _validate_bank_refs(
         bank = db.get(BankAccount, bank_id)
         if not bank or not bank.is_active:
             raise ValueError(f"{side.capitalize()} bank account not found or inactive")
+        assert_entity_company(bank, company_id, f"{side.capitalize()} bank account")
     # consistency checks already performed in pydantic; recheck cheap rules
     if source_mode == CashBookSourceMode.cash and source_bank_id is not None:
         raise ValueError("source bank id must be null when source is cash")
@@ -66,12 +70,13 @@ def _validate_bank_refs(
         raise ValueError("destination bank id must be null when destination is cash")
 
 
-def _validate_bill(db: Session, bill_id: int | None) -> Bill | None:
+def _validate_bill(db: Session, bill_id: int | None, company_id: int) -> Bill | None:
     if bill_id is None:
         return None
     bill = db.get(Bill, bill_id)
     if not bill:
         raise ValueError("Linked bill not found")
+    assert_entity_company(bill, company_id, "Bill")
     return bill
 
 
@@ -91,6 +96,7 @@ def _normalize_payload(
 def create_cash_book_entry(
     db: Session,
     *,
+    company_id: int = 1,
     entry_type: CashBookEntryType,
     category_id: int,
     amount: Decimal,
@@ -103,7 +109,7 @@ def create_cash_book_entry(
     dest_bank_account_id: int | None,
     entry_date: date | None = None,
 ) -> CashBookEntry:
-    _validate_category(db, category_id, entry_type)
+    _validate_category(db, category_id, entry_type, company_id)
     src_mode, src_bank, dst_mode, dst_bank = _normalize_payload(
         entry_type,
         source_mode=source_payment_mode,
@@ -113,14 +119,16 @@ def create_cash_book_entry(
     )
     _validate_bank_refs(
         db,
+        company_id=company_id,
         source_mode=src_mode,
         source_bank_id=src_bank,
         dest_mode=dst_mode,
         dest_bank_id=dst_bank,
     )
-    _validate_bill(db, bill_id)
+    _validate_bill(db, bill_id, company_id)
     resolved_date, entry_at = resolve_business_entry(entry_date)
     entry = CashBookEntry(
+        company_id=company_id,
         entry_type=entry_type,
         category_id=category_id,
         amount=amount,
@@ -145,6 +153,7 @@ def edit_cash_book_entry(
     db: Session,
     entry_id: int,
     *,
+    company_id: int | None = None,
     expected_version: int | None,
     entry_type: CashBookEntryType,
     category_id: int,
@@ -160,13 +169,15 @@ def edit_cash_book_entry(
     entry = db.get(CashBookEntry, entry_id)
     if not entry:
         raise ValueError(CASH_BOOK_NOT_FOUND_MSG)
+    if company_id is not None and int(entry.company_id) != int(company_id):
+        raise ValueError(CASH_BOOK_NOT_FOUND_MSG)
     if entry.voided_at is not None:
         raise ValueError(CASH_BOOK_ALREADY_VOIDED_MSG)
     if expected_version is None:
         raise ValueError(CASH_BOOK_EXPECTED_VERSION_REQUIRED_MSG)
     if expected_version != entry.version:
         raise ValueError(CASH_BOOK_STALE_MSG)
-    _validate_category(db, category_id, entry_type)
+    _validate_category(db, category_id, entry_type, entry.company_id)
     src_mode, src_bank, dst_mode, dst_bank = _normalize_payload(
         entry_type,
         source_mode=source_payment_mode,
@@ -176,12 +187,13 @@ def edit_cash_book_entry(
     )
     _validate_bank_refs(
         db,
+        company_id=entry.company_id,
         source_mode=src_mode,
         source_bank_id=src_bank,
         dest_mode=dst_mode,
         dest_bank_id=dst_bank,
     )
-    _validate_bill(db, bill_id)
+    _validate_bill(db, bill_id, entry.company_id)
 
     entry.entry_type = entry_type
     entry.category_id = category_id
@@ -205,9 +217,12 @@ def void_cash_book_entry(
     *,
     expected_version: int | None,
     actor: User | None = None,
+    company_id: int | None = None,
 ) -> CashBookEntry:
     entry = db.get(CashBookEntry, entry_id)
     if not entry:
+        raise ValueError(CASH_BOOK_NOT_FOUND_MSG)
+    if company_id is not None and int(entry.company_id) != int(company_id):
         raise ValueError(CASH_BOOK_NOT_FOUND_MSG)
     if entry.voided_at is not None:
         raise ValueError(CASH_BOOK_ALREADY_VOIDED_MSG)
@@ -238,6 +253,7 @@ def void_cash_book_entry(
 def list_cash_book(
     db: Session,
     *,
+    company_id: int | None = None,
     entry_type: CashBookEntryType | None = None,
     category_id: int | None = None,
     source_payment_mode: CashBookSourceMode | None = None,
@@ -260,6 +276,8 @@ def list_cash_book(
         )
         .order_by(CashBookEntry.entry_date.desc(), CashBookEntry.id.desc())
     )
+    if company_id is not None:
+        q = q.where(CashBookEntry.company_id == company_id)
     if entry_type is not None:
         q = q.where(CashBookEntry.entry_type == entry_type)
     if category_id is not None:

@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.tenant import assert_entity_company
 from app.models.entities import (
     BagType,
     BookSettings,
@@ -86,9 +87,18 @@ def _get_open_job(db: Session, job_id: int) -> ProcessingJob:
         raise ValueError("Processing job is not open")
     return job
 
-def create_job(db: Session, *, input_product_id: int, input_brand_id: int) -> ProcessingJob:
+def create_job(
+    db: Session, *, company_id: int = 1, input_product_id: int, input_brand_id: int
+) -> ProcessingJob:
+    product = db.get(Product, input_product_id)
+    brand = db.get(Brand, input_brand_id)
+    if product is not None:
+        assert_entity_company(product, company_id, "Product")
+    if brand is not None:
+        assert_entity_company(brand, company_id, "Brand")
     existing = db.scalar(
         select(ProcessingJob).where(
+            ProcessingJob.company_id == company_id,
             ProcessingJob.input_product_id == input_product_id,
             ProcessingJob.input_brand_id == input_brand_id,
             ProcessingJob.status == ProcessingJobStatus.open,
@@ -98,6 +108,7 @@ def create_job(db: Session, *, input_product_id: int, input_brand_id: int) -> Pr
         raise ValueError("An open processing job already exists for this product and brand")
 
     job = ProcessingJob(
+        company_id=company_id,
         input_product_id=input_product_id,
         input_brand_id=input_brand_id,
         status=ProcessingJobStatus.open,
@@ -147,7 +158,7 @@ def _apply_batch(
         if value < 0:
             raise ValueError(f"{field_name} cannot be negative")
 
-    _validate_no_powder_output_lines(db, output_lines)
+    _validate_no_powder_output_lines(db, output_lines, company_id=getattr(job, "company_id", 1))
 
     op_at = utc_now()
     batch = ProcessingBatch(
@@ -221,6 +232,7 @@ def _apply_batch(
                 Decimal(line["loose_kg"]),
                 owner_type=owner_type,
                 customer_id=customer_id,
+                company_id=getattr(job, "company_id", 1),
             )
         except ValueError as exc:
             if _is_balance_reprocess(line.get("input_source")) and str(exc) == "Insufficient stock":
@@ -263,6 +275,7 @@ def _apply_batch(
                 loose,
                 owner_type=owner_type,
                 customer_id=customer_id,
+                company_id=getattr(job, "company_id", 1),
             )
             db.add(
                 ProcessingOutputLine(
@@ -310,6 +323,7 @@ def _apply_batch(
                 loose,
                 owner_type=owner_type,
                 customer_id=customer_id,
+                company_id=getattr(job, "company_id", 1),
             )
             db.add(
                 ProcessingBalanceReturnLine(
@@ -356,6 +370,7 @@ def submit_batch(
     db: Session,
     job_id: int,
     *,
+    company_id: int | None = None,
     input_lines: list[dict],
     output_lines: list[dict],
     balance_return_lines: list[dict],
@@ -369,11 +384,14 @@ def submit_batch(
     single_allocation_owner_type: str | None = None,
     single_allocation_customer_id: int | None = None,
 ) -> ProcessingJob:
-    job = _processing.load_processing_job(db, job_id)
+    job = _processing.load_processing_job(db, job_id, company_id=company_id)
     if job.status != ProcessingJobStatus.open:
         raise ValueError("Processing job is not open")
     resolved_powder_kg, powder_line_data = _resolve_powder_for_batch(
-        db, powder_line=powder_line, powder_kg_legacy=powder_kg
+        db,
+        powder_line=powder_line,
+        powder_kg_legacy=powder_kg,
+        company_id=getattr(job, "company_id", 1),
     )
     try:
         validate_balance_reprocess(job, input_lines, db)
@@ -417,6 +435,7 @@ def complete_job(
     db: Session,
     job_id: int,
     *,
+    company_id: int | None = None,
     input_lines: list[dict],
     output_lines: list[dict],
     balance_return_lines: list[dict],
@@ -430,11 +449,14 @@ def complete_job(
     single_allocation_owner_type: str | None = None,
     single_allocation_customer_id: int | None = None,
 ) -> ProcessingJob:
-    job = _processing.load_processing_job(db, job_id)
+    job = _processing.load_processing_job(db, job_id, company_id=company_id)
     if job.status != ProcessingJobStatus.open:
         raise ValueError("Processing job is not open")
     resolved_powder_kg, powder_line_data = _resolve_powder_for_batch(
-        db, powder_line=powder_line, powder_kg_legacy=powder_kg
+        db,
+        powder_line=powder_line,
+        powder_kg_legacy=powder_kg,
+        company_id=getattr(job, "company_id", 1),
     )
     has_body = batch_has_content(
         input_lines=input_lines,
@@ -528,6 +550,7 @@ def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch) -> Non
             loose_kg,
             owner_type=owner_type,
             customer_id=customer_id,
+            company_id=getattr(batch.job, "company_id", 1) if batch.job else 1,
         )
 
 def _reconcile_job_after_batch_void(db: Session, job: ProcessingJob) -> None:
@@ -539,7 +562,13 @@ def _reconcile_job_after_batch_void(db: Session, job: ProcessingJob) -> None:
         job.single_allocation_owner_type = None
         job.single_allocation_customer_id = None
 
-def void_processing_batch(db: Session, batch_id: int, *, actor: User | None = None) -> ProcessingJob:
+def void_processing_batch(
+    db: Session,
+    batch_id: int,
+    *,
+    actor: User | None = None,
+    company_id: int | None = None,
+) -> ProcessingJob:
     batch = db.scalar(
         select(ProcessingBatch)
         .where(ProcessingBatch.id == batch_id)
@@ -563,6 +592,8 @@ def void_processing_batch(db: Session, batch_id: int, *, actor: User | None = No
     )
     if not job:
         raise ValueError("Processing job not found")
+    if company_id is not None and int(job.company_id) != int(company_id):
+        raise ValueError("Processing batch not found")
 
     lock_keys: list[tuple] = []
     for line in batch.input_lines:
@@ -649,6 +680,7 @@ def void_processing_batch(db: Session, batch_id: int, *, actor: User | None = No
             line.loose_kg,
             owner_type=ot,
             customer_id=cid,
+            company_id=getattr(job, "company_id", 1),
         )
 
     for line in batch.balance_return_lines:
@@ -663,6 +695,7 @@ def void_processing_batch(db: Session, batch_id: int, *, actor: User | None = No
             line.loose_kg,
             owner_type=ot,
             customer_id=cid,
+            company_id=getattr(job, "company_id", 1),
         )
 
     for line in batch.input_lines:
@@ -677,6 +710,7 @@ def void_processing_batch(db: Session, batch_id: int, *, actor: User | None = No
             line.loose_kg,
             owner_type=ot,
             customer_id=cid,
+            company_id=getattr(job, "company_id", 1),
         )
 
     batch.voided_at = utc_now()

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.core.permissions import Permission, require_permission
+from app.core.tenant import company_id_for_user, require_for_company, scope_query
 from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
 from app.database import get_db
 from app.models.entities import BagType, Brand, Customer, Location, Product, User
@@ -93,10 +94,12 @@ def list_products(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    company_id = company_id_for_user(user)
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(Product).order_by(Product.product_name)
+    q = scope_query(select(Product).order_by(Product.product_name), Product, company_id)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         q = q.where(func.lower(Product.product_name).like(term))
@@ -105,24 +108,29 @@ def list_products(
 
 
 @router.get("/products/{pid}", response_model=ProductOut, dependencies=READ)
-def get_product(pid: int, db: Session = Depends(get_db)):
-    p = db.get(Product, pid)
-    if not p:
-        raise HTTPException(404, "Not found")
-    return p
+def get_product(pid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return require_for_company(db, Product, pid, company_id_for_user(user), label="Product")
 
 
 @router.post("/products", response_model=ProductOut, status_code=201, dependencies=MANAGE)
-def create_product(body: ProductCreate, db: Session = Depends(get_db)):
+def create_product(
+    body: ProductCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
     name = normalize_name(body.product_name)
     if not name:
         raise HTTPException(400, "Product name required")
     exists = db.scalar(
-        select(Product).where(func.lower(func.trim(Product.product_name)) == name.lower())
+        select(Product).where(
+            Product.company_id == company_id,
+            func.lower(func.trim(Product.product_name)) == name.lower(),
+        )
     )
     if exists:
         raise HTTPException(400, "Product name already exists")
-    p = Product(product_name=name)
+    p = Product(product_name=name, company_id=company_id)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -130,14 +138,20 @@ def create_product(body: ProductCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/products/{pid}", response_model=ProductOut, dependencies=MANAGE)
-def update_product(pid: int, body: ProductCreate, db: Session = Depends(get_db)):
-    p = db.get(Product, pid)
-    if not p:
-        raise HTTPException(404, "Not found")
+def update_product(
+    pid: int,
+    body: ProductCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
+    p = require_for_company(db, Product, pid, company_id, label="Product")
     name = normalize_name(body.product_name)
     dup = db.scalar(
         select(Product).where(
-            func.lower(func.trim(Product.product_name)) == name.lower(), Product.id != pid
+            Product.company_id == company_id,
+            func.lower(func.trim(Product.product_name)) == name.lower(),
+            Product.id != pid,
         )
     )
     if dup:
@@ -156,9 +170,7 @@ def delete_product(
     void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
     verify_void_authorization(void_password, user)
-    p = db.get(Product, pid)
-    if not p:
-        raise HTTPException(404, "Not found")
+    p = require_for_company(db, Product, pid, company_id_for_user(user), label="Product")
     return _delete_master(
         db,
         p,
@@ -175,10 +187,12 @@ def list_brands(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    company_id = company_id_for_user(user)
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(Brand).order_by(Brand.name)
+    q = scope_query(select(Brand).order_by(Brand.name), Brand, company_id)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         q = q.where(func.lower(Brand.name).like(term))
@@ -187,19 +201,26 @@ def list_brands(
 
 
 @router.get("/brands/{bid}", response_model=BrandOut, dependencies=READ)
-def get_brand(bid: int, db: Session = Depends(get_db)):
-    b = db.get(Brand, bid)
-    if not b:
-        raise HTTPException(404, "Not found")
-    return b
+def get_brand(bid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return require_for_company(db, Brand, bid, company_id_for_user(user), label="Brand")
 
 
 @router.post("/brands", response_model=BrandOut, status_code=201, dependencies=MANAGE)
-def create_brand(body: BrandCreate, db: Session = Depends(get_db)):
+def create_brand(
+    body: BrandCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
     name = normalize_name(body.name)
-    if db.scalar(select(Brand).where(func.lower(func.trim(Brand.name)) == name.lower())):
+    if db.scalar(
+        select(Brand).where(
+            Brand.company_id == company_id,
+            func.lower(func.trim(Brand.name)) == name.lower(),
+        )
+    ):
         raise HTTPException(400, "Brand already exists")
-    b = Brand(name=name)
+    b = Brand(name=name, company_id=company_id)
     db.add(b)
     db.commit()
     db.refresh(b)
@@ -207,12 +228,22 @@ def create_brand(body: BrandCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/brands/{bid}", response_model=BrandOut, dependencies=MANAGE)
-def update_brand(bid: int, body: BrandCreate, db: Session = Depends(get_db)):
-    b = db.get(Brand, bid)
-    if not b:
-        raise HTTPException(404, "Not found")
+def update_brand(
+    bid: int,
+    body: BrandCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
+    b = require_for_company(db, Brand, bid, company_id, label="Brand")
     name = normalize_name(body.name)
-    if db.scalar(select(Brand).where(func.lower(func.trim(Brand.name)) == name.lower(), Brand.id != bid)):
+    if db.scalar(
+        select(Brand).where(
+            Brand.company_id == company_id,
+            func.lower(func.trim(Brand.name)) == name.lower(),
+            Brand.id != bid,
+        )
+    ):
         raise HTTPException(400, "Brand already exists")
     b.name = name
     db.commit()
@@ -228,9 +259,7 @@ def delete_brand(
     void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
     verify_void_authorization(void_password, user)
-    b = db.get(Brand, bid)
-    if not b:
-        raise HTTPException(404, "Not found")
+    b = require_for_company(db, Brand, bid, company_id_for_user(user), label="Brand")
     return _delete_master(
         db,
         b,
@@ -247,10 +276,12 @@ def list_locations(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    company_id = company_id_for_user(user)
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(Location).order_by(Location.name)
+    q = scope_query(select(Location).order_by(Location.name), Location, company_id)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         q = q.where(func.lower(Location.name).like(term))
@@ -259,20 +290,28 @@ def list_locations(
 
 
 @router.get("/locations/{lid}", response_model=LocationOut, dependencies=READ)
-def get_location(lid: int, db: Session = Depends(get_db)):
-    loc = db.get(Location, lid)
-    if not loc:
-        raise HTTPException(404, "Not found")
-    return loc
+def get_location(lid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return require_for_company(db, Location, lid, company_id_for_user(user), label="Location")
 
 
 @router.post("/locations", response_model=LocationOut, status_code=201, dependencies=MANAGE)
-def create_location(body: LocationCreate, db: Session = Depends(get_db)):
+def create_location(
+    body: LocationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
     name = normalize_name(body.name)
-    if db.scalar(select(Location).where(func.lower(func.trim(Location.name)) == name.lower())):
+    if db.scalar(
+        select(Location).where(
+            Location.company_id == company_id,
+            func.lower(func.trim(Location.name)) == name.lower(),
+        )
+    ):
         raise HTTPException(400, "Location already exists")
     loc = Location(
         name=name,
+        company_id=company_id,
         address_line=body.address_line,
         district=body.district,
         state=body.state,
@@ -285,12 +324,22 @@ def create_location(body: LocationCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/locations/{lid}", response_model=LocationOut, dependencies=MANAGE)
-def update_location(lid: int, body: LocationCreate, db: Session = Depends(get_db)):
-    loc = db.get(Location, lid)
-    if not loc:
-        raise HTTPException(404, "Not found")
+def update_location(
+    lid: int,
+    body: LocationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
+    loc = require_for_company(db, Location, lid, company_id, label="Location")
     name = normalize_name(body.name)
-    if db.scalar(select(Location).where(func.lower(func.trim(Location.name)) == name.lower(), Location.id != lid)):
+    if db.scalar(
+        select(Location).where(
+            Location.company_id == company_id,
+            func.lower(func.trim(Location.name)) == name.lower(),
+            Location.id != lid,
+        )
+    ):
         raise HTTPException(400, "Location already exists")
     loc.name = name
     loc.address_line = body.address_line
@@ -310,9 +359,7 @@ def delete_location(
     void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
     verify_void_authorization(void_password, user)
-    loc = db.get(Location, lid)
-    if not loc:
-        raise HTTPException(404, "Not found")
+    loc = require_for_company(db, Location, lid, company_id_for_user(user), label="Location")
     return _delete_master(
         db,
         loc,
@@ -329,10 +376,12 @@ def list_bag_types(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    company_id = company_id_for_user(user)
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(BagType).order_by(BagType.name)
+    q = scope_query(select(BagType).order_by(BagType.name), BagType, company_id)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         q = q.where(func.lower(BagType.name).like(term))
@@ -341,23 +390,30 @@ def list_bag_types(
 
 
 @router.get("/bag-types/{btid}", response_model=BagTypeOut, dependencies=READ)
-def get_bag_type(btid: int, db: Session = Depends(get_db)):
-    bt = db.get(BagType, btid)
-    if not bt:
-        raise HTTPException(404, "Not found")
-    return bt
+def get_bag_type(btid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return require_for_company(db, BagType, btid, company_id_for_user(user), label="Bag type")
 
 
 @router.post("/bag-types", response_model=BagTypeOut, status_code=201, dependencies=MANAGE)
-def create_bag_type(body: BagTypeCreate, db: Session = Depends(get_db)):
+def create_bag_type(
+    body: BagTypeCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
     name, weight, is_loose = resolve_bag_type_input(body.name, body.weight_per_bag_kg, body.is_loose)
     try:
         validate_bag_type_fields(name, weight, is_loose)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    if db.scalar(select(BagType).where(func.lower(func.trim(BagType.name)) == name.lower())):
+    if db.scalar(
+        select(BagType).where(
+            BagType.company_id == company_id,
+            func.lower(func.trim(BagType.name)) == name.lower(),
+        )
+    ):
         raise HTTPException(400, "Bag type already exists")
-    bt = BagType(name=name, weight_per_bag_kg=weight, is_loose=is_loose)
+    bt = BagType(name=name, weight_per_bag_kg=weight, is_loose=is_loose, company_id=company_id)
     db.add(bt)
     db.commit()
     db.refresh(bt)
@@ -365,10 +421,14 @@ def create_bag_type(body: BagTypeCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/bag-types/{btid}", response_model=BagTypeOut, dependencies=MANAGE)
-def update_bag_type(btid: int, body: BagTypeCreate, db: Session = Depends(get_db)):
-    bt = db.get(BagType, btid)
-    if not bt:
-        raise HTTPException(404, "Not found")
+def update_bag_type(
+    btid: int,
+    body: BagTypeCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
+    bt = require_for_company(db, BagType, btid, company_id, label="Bag type")
     name, weight, is_loose = resolve_bag_type_input(body.name, body.weight_per_bag_kg, body.is_loose)
     if weight != bt.weight_per_bag_kg:
         raise HTTPException(400, BAG_TYPE_WEIGHT_IMMUTABLE_MSG)
@@ -379,7 +439,11 @@ def update_bag_type(btid: int, body: BagTypeCreate, db: Session = Depends(get_db
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     if db.scalar(
-        select(BagType).where(func.lower(func.trim(BagType.name)) == name.lower(), BagType.id != btid)
+        select(BagType).where(
+            BagType.company_id == company_id,
+            func.lower(func.trim(BagType.name)) == name.lower(),
+            BagType.id != btid,
+        )
     ):
         raise HTTPException(400, "Bag type already exists")
     bt.name = name
@@ -396,9 +460,7 @@ def delete_bag_type(
     void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
     verify_void_authorization(void_password, user)
-    bt = db.get(BagType, btid)
-    if not bt:
-        raise HTTPException(404, "Not found")
+    bt = require_for_company(db, BagType, btid, company_id_for_user(user), label="Bag type")
     return _delete_master(
         db,
         bt,
@@ -415,30 +477,40 @@ def list_customers(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
+    company_id = company_id_for_user(user)
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(Customer).order_by(Customer.name)
+    q = scope_query(select(Customer).order_by(Customer.name), Customer, company_id)
     q = apply_customer_search(q, search)
     rows, total = paginate_select(db, q, limit=limit, offset=offset)
     return CustomerPageOut(**page_dict(rows, total, limit, offset))
 
 
 @router.get("/customers/{cid}", response_model=CustomerOut, dependencies=READ)
-def get_customer(cid: int, db: Session = Depends(get_db)):
-    c = db.get(Customer, cid)
-    if not c:
-        raise HTTPException(404, "Not found")
-    return c
+def get_customer(cid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return require_for_company(db, Customer, cid, company_id_for_user(user), label="Customer")
 
 
 @router.post("/customers", response_model=CustomerOut, status_code=201, dependencies=MANAGE)
-def create_customer(body: CustomerCreate, db: Session = Depends(get_db)):
+def create_customer(
+    body: CustomerCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
     name = normalize_name(body.name)
-    if db.scalar(select(Customer).where(func.lower(func.trim(Customer.name)) == name.lower())):
+    if db.scalar(
+        select(Customer).where(
+            Customer.company_id == company_id,
+            func.lower(func.trim(Customer.name)) == name.lower(),
+        )
+    ):
         raise HTTPException(400, "Customer already exists")
     c = Customer(
         name=name,
+        company_id=company_id,
         address_line=body.address_line,
         district=body.district,
         state=body.state,
@@ -455,12 +527,22 @@ def create_customer(body: CustomerCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/customers/{cid}", response_model=CustomerOut, dependencies=MANAGE)
-def update_customer(cid: int, body: CustomerUpdate, db: Session = Depends(get_db)):
-    c = db.get(Customer, cid)
-    if not c:
-        raise HTTPException(404, "Not found")
+def update_customer(
+    cid: int,
+    body: CustomerUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
+    c = require_for_company(db, Customer, cid, company_id, label="Customer")
     name = normalize_name(body.name)
-    if db.scalar(select(Customer).where(func.lower(func.trim(Customer.name)) == name.lower(), Customer.id != cid)):
+    if db.scalar(
+        select(Customer).where(
+            Customer.company_id == company_id,
+            func.lower(func.trim(Customer.name)) == name.lower(),
+            Customer.id != cid,
+        )
+    ):
         raise HTTPException(400, "Customer already exists")
     c.name = name
     c.address_line = body.address_line
@@ -482,9 +564,7 @@ def delete_customer(
     void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
     verify_void_authorization(void_password, user)
-    c = db.get(Customer, cid)
-    if not c:
-        raise HTTPException(404, "Not found")
+    c = require_for_company(db, Customer, cid, company_id_for_user(user), label="Customer")
     return _delete_master(
         db,
         c,
@@ -496,7 +576,8 @@ def delete_customer(
 
 
 @router.post("/seed/bag-types", dependencies=MANAGE)
-def seed_bag_types(db: Session = Depends(get_db)):
+def seed_bag_types(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    company_id = company_id_for_user(user)
     seeds = [
         ("50kg", Decimal("50"), False),
         ("30kg", Decimal("30"), False),
@@ -505,8 +586,13 @@ def seed_bag_types(db: Session = Depends(get_db)):
     ]
     created = []
     for name, weight, loose in seeds:
-        if not db.scalar(select(BagType).where(func.lower(func.trim(BagType.name)) == name.lower())):
-            bt = BagType(name=name, weight_per_bag_kg=weight, is_loose=loose)
+        if not db.scalar(
+            select(BagType).where(
+                BagType.company_id == company_id,
+                func.lower(func.trim(BagType.name)) == name.lower(),
+            )
+        ):
+            bt = BagType(name=name, weight_per_bag_kg=weight, is_loose=loose, company_id=company_id)
             db.add(bt)
             created.append(name)
     db.commit()

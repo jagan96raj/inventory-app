@@ -20,24 +20,33 @@ def _normalize_name(name: str) -> str:
     return (name or "").strip()
 
 
-def _name_exists(db: Session, name: str, exclude_id: int | None = None) -> bool:
+def _name_exists(db: Session, name: str, company_id: int, exclude_id: int | None = None) -> bool:
     q = select(BankAccount.id).where(
-        func.lower(func.trim(BankAccount.name)) == name.lower()
+        BankAccount.company_id == company_id,
+        func.lower(func.trim(BankAccount.name)) == name.lower(),
     )
     if exclude_id is not None:
         q = q.where(BankAccount.id != exclude_id)
     return db.scalar(q) is not None
 
 
-def _clear_other_defaults(db: Session, keep_id: int | None) -> None:
-    stmt = update(BankAccount).where(BankAccount.is_default.is_(True)).values(is_default=False)
+def _clear_other_defaults(db: Session, keep_id: int | None, *, company_id: int) -> None:
+    stmt = (
+        update(BankAccount)
+        .where(BankAccount.is_default.is_(True), BankAccount.company_id == company_id)
+        .values(is_default=False)
+    )
     if keep_id is not None:
         stmt = stmt.where(BankAccount.id != keep_id)
     db.execute(stmt)
 
 
-def list_bank_accounts(db: Session, *, active: str = "true") -> list[BankAccount]:
+def list_bank_accounts(
+    db: Session, *, company_id: int | None = None, active: str = "true"
+) -> list[BankAccount]:
     q = select(BankAccount).order_by(BankAccount.is_default.desc(), BankAccount.name)
+    if company_id is not None:
+        q = q.where(BankAccount.company_id == company_id)
     if active == "true":
         q = q.where(BankAccount.is_active.is_(True))
     elif active == "false":
@@ -45,15 +54,18 @@ def list_bank_accounts(db: Session, *, active: str = "true") -> list[BankAccount
     return list(db.scalars(q).all())
 
 
-def get_default_bank_account(db: Session) -> BankAccount | None:
+def get_default_bank_account(db: Session, *, company_id: int) -> BankAccount | None:
     return db.scalar(
-        select(BankAccount).where(BankAccount.is_default.is_(True)).limit(1)
+        select(BankAccount)
+        .where(BankAccount.is_default.is_(True), BankAccount.company_id == company_id)
+        .limit(1)
     )
 
 
 def create_bank_account(
     db: Session,
     *,
+    company_id: int = 1,
     name: str,
     account_number_last4: str | None,
     ifsc: str | None,
@@ -63,15 +75,18 @@ def create_bank_account(
     name = _normalize_name(name)
     if not name:
         raise ValueError(BANK_NAME_REQUIRED_MSG)
-    if _name_exists(db, name):
+    if _name_exists(db, name, company_id):
         raise ValueError(BANK_NAME_DUPLICATE_MSG)
     # if there are no banks yet, make this the default automatically
-    any_active = db.scalar(select(func.count(BankAccount.id))) or 0
+    any_active = db.scalar(
+        select(func.count(BankAccount.id)).where(BankAccount.company_id == company_id)
+    ) or 0
     if any_active == 0:
         is_default = True
     if is_default:
-        _clear_other_defaults(db, keep_id=None)
+        _clear_other_defaults(db, keep_id=None, company_id=company_id)
     record = BankAccount(
+        company_id=company_id,
         name=name,
         account_number_last4=account_number_last4,
         ifsc=ifsc,
@@ -90,6 +105,7 @@ def edit_bank_account(
     db: Session,
     bank_id: int,
     *,
+    company_id: int | None = None,
     name: str | None,
     account_number_last4: str | None,
     ifsc: str | None,
@@ -98,11 +114,13 @@ def edit_bank_account(
     record = db.get(BankAccount, bank_id)
     if not record:
         raise ValueError(BANK_NOT_FOUND_MSG)
+    if company_id is not None and int(record.company_id) != int(company_id):
+        raise ValueError(BANK_NOT_FOUND_MSG)
     if name is not None:
         clean = _normalize_name(name)
         if not clean:
             raise ValueError(BANK_NAME_REQUIRED_MSG)
-        if _name_exists(db, clean, exclude_id=bank_id):
+        if _name_exists(db, clean, record.company_id, exclude_id=bank_id):
             raise ValueError(BANK_NAME_DUPLICATE_MSG)
         record.name = clean
     if account_number_last4 is not None:
@@ -118,13 +136,17 @@ def edit_bank_account(
     return record
 
 
-def make_default_bank_account(db: Session, bank_id: int) -> BankAccount:
+def make_default_bank_account(
+    db: Session, bank_id: int, *, company_id: int | None = None
+) -> BankAccount:
     record = db.get(BankAccount, bank_id)
     if not record:
         raise ValueError(BANK_NOT_FOUND_MSG)
+    if company_id is not None and int(record.company_id) != int(company_id):
+        raise ValueError(BANK_NOT_FOUND_MSG)
     if not record.is_active:
         raise ValueError("Cannot make an inactive bank account the default")
-    _clear_other_defaults(db, keep_id=bank_id)
+    _clear_other_defaults(db, keep_id=bank_id, company_id=record.company_id)
     record.is_default = True
     db.commit()
     db.refresh(record)
@@ -147,9 +169,11 @@ def assert_bank_account_deletable(db: Session, bank_id: int) -> None:
         )
 
 
-def delete_bank_account(db: Session, bank_id: int) -> None:
+def delete_bank_account(db: Session, bank_id: int, *, company_id: int | None = None) -> None:
     record = db.get(BankAccount, bank_id)
     if not record:
+        raise ValueError(BANK_NOT_FOUND_MSG)
+    if company_id is not None and int(record.company_id) != int(company_id):
         raise ValueError(BANK_NOT_FOUND_MSG)
     assert_bank_account_deletable(db, bank_id)
     if record.is_default:

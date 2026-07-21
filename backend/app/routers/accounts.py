@@ -4,9 +4,12 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.core.permissions import Permission, require_permission
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
+from app.core.tenant import company_id_for_user
 from app.database import get_db
+from app.models.entities import User
 from app.schemas import (
     AccountsSummaryOut,
     CustomerBalancePageOut,
@@ -28,8 +31,11 @@ router = APIRouter(
 
 
 @router.get("/summary", response_model=AccountsSummaryOut)
-def accounts_summary_endpoint(db: Session = Depends(get_db)):
-    return get_accounts_summary(db)
+def accounts_summary_endpoint(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return get_accounts_summary(db, company_id=company_id_for_user(user))
 
 
 @router.get("/customers", response_model=CustomerBalancePageOut)
@@ -39,12 +45,18 @@ def customer_balances_endpoint(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = list_customer_balances_query(db, has_balance=has_balance, search=search)
+    company_id = company_id_for_user(user)
+    q = list_customer_balances_query(
+        db, company_id=company_id, has_balance=has_balance, search=search
+    )
     rows, total = paginate_select(db, q, limit=limit, offset=offset)
-    items = [CustomerBalanceRowOut(**customer_to_row(db, c)) for c in rows]
+    items = [
+        CustomerBalanceRowOut(**customer_to_row(db, c, company_id=company_id)) for c in rows
+    ]
     return CustomerBalancePageOut(**page_dict(items, total, limit, offset))
 
 
@@ -56,6 +68,7 @@ def customer_statement_endpoint(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
@@ -63,6 +76,7 @@ def customer_statement_endpoint(
         data = get_customer_statement(
             db,
             customer_id,
+            company_id=company_id_for_user(user),
             date_from=date_from,
             date_to=date_to,
             limit=limit,

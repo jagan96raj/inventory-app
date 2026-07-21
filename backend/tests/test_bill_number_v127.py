@@ -22,6 +22,7 @@ from app.models.entities import (
 from app.routers.bills import preview_next_bill_number
 from app.schemas import BillFinalizeCreate, BillLineIn
 from app.services.bills import next_bill_number, preview_bill_number
+from tests.idempotency_helpers import TEST_USER, ensure_test_user
 
 
 def _make_session(bind=None) -> Session:
@@ -33,6 +34,7 @@ def _make_session(bind=None) -> Session:
 
 
 def _seed_masters(db: Session) -> dict:
+    ensure_test_user(db)
     product = Product(product_name="Wheat")
     brand = Brand(name="Brand A")
     customer = Customer(name="Bill Num Co")
@@ -116,13 +118,16 @@ class BillNumberV127Tests(unittest.TestCase):
         preview3 = preview_bill_number(self.db, BillType.sales)
         self.assertEqual(preview3, "S-000002")
 
-        endpoint_preview = preview_next_bill_number(BillType.sales, self.db)
+        endpoint_preview = preview_next_bill_number(BillType.sales, self.db, TEST_USER)
         self.assertEqual(endpoint_preview["bill_number"], "S-000002")
 
     def test_counter_row_lock_emits_for_update(self):
         stmt = (
             select(BillNumberCounter)
-            .where(BillNumberCounter.bill_type == BillType.sales)
+            .where(
+                BillNumberCounter.company_id == 1,
+                BillNumberCounter.bill_type == BillType.sales,
+            )
             .with_for_update()
         )
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))

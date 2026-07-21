@@ -102,9 +102,14 @@ export default function LoginHistoryPage() {
   return (
     <div className="space-y-4">
       <PageHeader
+        eyebrow={
+          <span className="inline-flex items-center gap-1.5">
+            <LogIn className="h-3.5 w-3.5" aria-hidden="true" />
+            History
+          </span>
+        }
         title="Login history"
         subtitle="Sign-in attempts including successes and failures (owner only)."
-        icon={<LogIn className="h-6 w-6" />}
         actions={
           <Link to="/histories/audit" className="text-sm text-primary hover:underline">
             View audit log
@@ -154,10 +159,12 @@ export default function LoginHistoryPage() {
           <Table
             columns={columns}
             rows={rows}
+            rowKey={(row) => row.id}
+            caption="Login history"
             loading={loading}
-            emptyMessage="No login events match your filters."
+            empty={<span className="text-base text-ink-muted">No login events match your filters.</span>}
           />
-          <PaginationBar total={total} limit={limit} offset={offset} onOffsetChange={setOffset} />
+          <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} />
         </>
       )}
     </div>

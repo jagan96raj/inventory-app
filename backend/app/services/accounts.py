@@ -33,31 +33,80 @@ from app.services.customer_search import apply_customer_search
 # ---------------------------------------------------------------------------
 
 
-def get_book_settings(db: Session) -> BookSettings:
+def get_book_settings(db: Session, company_id: int = 1) -> BookSettings:
+    """Fetch (or auto-create) book settings for a company. Spec v17.0.3."""
     settings = db.scalar(
         select(BookSettings)
-        .where(BookSettings.id == 1)
+        .where(BookSettings.company_id == company_id)
         .options(
             joinedload(BookSettings.powder_product),
             joinedload(BookSettings.powder_brand),
             joinedload(BookSettings.powder_location),
             joinedload(BookSettings.powder_bag_type),
+            joinedload(BookSettings.company),
         )
     )
     if settings is None:
-        # auto-seed if missing (defensive — migration seeds it)
+        from app.models.entities import Company
         from app.utils.time import business_today
 
+        company = db.get(Company, company_id)
+        company_name = company.name if company is not None else None
+        from app.services.companies import format_company_address
+
+        company_address = format_company_address(company) if company is not None else None
+        company_phone = company.phone if company is not None else None
         settings = BookSettings(
-            id=1, cash_opening_balance=Decimal("0"), cash_opening_balance_at=business_today()
+            company_id=company_id,
+            cash_opening_balance=Decimal("0"),
+            cash_opening_balance_at=business_today(),
+            company_name=company_name,
+            company_address_line=company_address,
+            company_phone=company_phone,
         )
         db.add(settings)
         db.commit()
-        db.refresh(settings)
+        settings = db.scalar(
+            select(BookSettings)
+            .where(BookSettings.company_id == company_id)
+            .options(
+                joinedload(BookSettings.powder_product),
+                joinedload(BookSettings.powder_brand),
+                joinedload(BookSettings.powder_location),
+                joinedload(BookSettings.powder_bag_type),
+                joinedload(BookSettings.company),
+            )
+        )
+        assert settings is not None
     return settings
 
 
 def serialize_book_settings(settings: BookSettings) -> dict:
+    # Spec v17.0.5/v17.0.6 — prefer companies table for bill-print header; fall back to book_settings columns.
+    from app.services.companies import format_company_address
+
+    company = getattr(settings, "company", None)
+    if company is not None:
+        company_name = company.name
+        company_address = format_company_address(company) or company.address_line
+        company_address_line_2 = company.address_line_2
+        company_district = company.district
+        company_state = company.state
+        company_pin_code = company.pin_code
+        company_gstin = company.gstin
+        company_phone = company.phone
+        # Also expose line 1 separately for structured print
+        company_address_line_1 = company.address_line
+    else:
+        company_name = settings.company_name
+        company_address = settings.company_address_line
+        company_address_line_1 = settings.company_address_line
+        company_address_line_2 = None
+        company_district = None
+        company_state = None
+        company_pin_code = None
+        company_gstin = None
+        company_phone = settings.company_phone
     return {
         "id": settings.id,
         "cash_opening_balance": settings.cash_opening_balance,
@@ -71,33 +120,40 @@ def serialize_book_settings(settings: BookSettings) -> dict:
         "powder_location_name": settings.powder_location.name if settings.powder_location else None,
         "powder_bag_type_id": settings.powder_bag_type_id,
         "powder_bag_type_name": settings.powder_bag_type.name if settings.powder_bag_type else None,
-        "company_name": settings.company_name,
-        "company_address_line": settings.company_address_line,
-        "company_phone": settings.company_phone,
+        "company_name": company_name,
+        "company_address_line": company_address_line_1 or company_address,
+        "company_address_line_2": company_address_line_2,
+        "company_district": company_district,
+        "company_state": company_state,
+        "company_pin_code": company_pin_code,
+        "company_gstin": company_gstin,
+        "company_phone": company_phone,
     }
 
 
-def update_book_settings(db: Session, updates: dict) -> BookSettings:
+def update_book_settings(db: Session, company_id: int, updates: dict) -> BookSettings:
+    from app.core.tenant import assert_entity_company
     from app.utils.time import business_today
 
-    settings = get_book_settings(db)
+    settings = get_book_settings(db, company_id)
     if "cash_opening_balance" in updates:
         cash_opening_balance = Decimal(updates["cash_opening_balance"])
         if cash_opening_balance < 0:
             raise ValueError("cash_opening_balance must be >= 0")
         settings.cash_opening_balance = cash_opening_balance
         settings.cash_opening_balance_at = business_today()
-    for field, model in (
-        ("powder_product_id", Product),
-        ("powder_brand_id", Brand),
-        ("powder_location_id", Location),
-        ("powder_bag_type_id", BagType),
+    for field, model, label in (
+        ("powder_product_id", Product, "Product"),
+        ("powder_brand_id", Brand, "Brand"),
+        ("powder_location_id", Location, "Location"),
+        ("powder_bag_type_id", BagType, "Bag type"),
     ):
         if field not in updates:
             continue
         value = updates[field]
-        if value is not None and db.get(model, value) is None:
-            raise ValueError(f"{field} not found")
+        if value is not None:
+            entity = db.get(model, value)
+            assert_entity_company(entity, company_id, label)
         setattr(settings, field, value)
     for field in ("company_name", "company_address_line", "company_phone"):
         if field not in updates:
@@ -108,8 +164,23 @@ def update_book_settings(db: Session, updates: dict) -> BookSettings:
             if value == "":
                 value = None
         setattr(settings, field, value)
+
+    # Spec v17.0.5 — keep companies table in sync when legacy book_settings header fields are patched.
+    header_keys = ("company_name", "company_address_line", "company_phone")
+    if any(k in updates for k in header_keys):
+        from app.models.entities import Company
+
+        company = db.get(Company, company_id)
+        if company is not None:
+            if "company_name" in updates and settings.company_name:
+                company.name = settings.company_name
+            if "company_address_line" in updates:
+                company.address_line = settings.company_address_line
+            if "company_phone" in updates:
+                company.phone = settings.company_phone
+
     db.commit()
-    return get_book_settings(db)
+    return get_book_settings(db, company_id)
 
 
 # ---------------------------------------------------------------------------
@@ -143,8 +214,8 @@ def _payment_cash_delta_expr() -> tuple:
     )
 
 
-def get_cash_balance(db: Session) -> Decimal:
-    settings = get_book_settings(db)
+def get_cash_balance(db: Session, *, company_id: int = 1) -> Decimal:
+    settings = get_book_settings(db, company_id)
     opening = Decimal(settings.cash_opening_balance)
 
     # bill payments (active only): sales cash adds, purchase cash subtracts
@@ -156,7 +227,7 @@ def get_cash_balance(db: Session) -> Decimal:
         )
         .select_from(Payment)
         .join(Bill, Bill.id == Payment.bill_id)
-        .where(Payment.voided_at.is_(None))
+        .where(Payment.voided_at.is_(None), Bill.company_id == company_id)
     ).one()
     sales_in = Decimal(str(row[0] or 0))
     purchase_out = Decimal(str(row[1] or 0))
@@ -208,7 +279,7 @@ def get_cash_balance(db: Session) -> Decimal:
             func.coalesce(func.sum(expense_out_expr), 0),
             func.coalesce(func.sum(transfer_in_expr), 0),
             func.coalesce(func.sum(transfer_out_expr), 0),
-        ).where(CashBookEntry.voided_at.is_(None))
+        ).where(CashBookEntry.voided_at.is_(None), CashBookEntry.company_id == company_id)
     ).one()
     income_in = Decimal(str(row2[0] or 0))
     expense_out = Decimal(str(row2[1] or 0))
@@ -232,11 +303,16 @@ def get_cash_balance(db: Session) -> Decimal:
 # ---------------------------------------------------------------------------
 
 
-def get_bank_account_balance(db: Session, bank_account_id: int) -> Decimal:
+def get_bank_account_balance(
+    db: Session, bank_account_id: int, *, company_id: int | None = None
+) -> Decimal:
     bank = db.get(BankAccount, bank_account_id)
     if bank is None:
         raise ValueError("Bank account not found")
+    if company_id is not None and int(bank.company_id) != int(company_id):
+        raise ValueError("Bank account not found")
     opening = Decimal(bank.opening_balance)
+    scoped_company_id = int(bank.company_id)
 
     sales_in_expr = case(
         (
@@ -267,7 +343,7 @@ def get_bank_account_balance(db: Session, bank_account_id: int) -> Decimal:
         )
         .select_from(Payment)
         .join(Bill, Bill.id == Payment.bill_id)
-        .where(Payment.voided_at.is_(None))
+        .where(Payment.voided_at.is_(None), Bill.company_id == scoped_company_id)
     ).one()
     sales_in = Decimal(str(row[0] or 0))
     purchase_out = Decimal(str(row[1] or 0))
@@ -322,7 +398,10 @@ def get_bank_account_balance(db: Session, bank_account_id: int) -> Decimal:
             func.coalesce(func.sum(expense_out_expr), 0),
             func.coalesce(func.sum(transfer_in_expr), 0),
             func.coalesce(func.sum(transfer_out_expr), 0),
-        ).where(CashBookEntry.voided_at.is_(None))
+        ).where(
+            CashBookEntry.voided_at.is_(None),
+            CashBookEntry.company_id == scoped_company_id,
+        )
     ).one()
     income_in = Decimal(str(row2[0] or 0))
     expense_out = Decimal(str(row2[1] or 0))
@@ -342,22 +421,26 @@ def get_bank_account_balance(db: Session, bank_account_id: int) -> Decimal:
 
 
 def list_bank_account_balances(
-    db: Session, *, include_inactive: bool = False
+    db: Session, *, company_id: int = 1, include_inactive: bool = False
 ) -> list[tuple[BankAccount, Decimal]]:
-    q = select(BankAccount).order_by(
-        BankAccount.is_default.desc(), BankAccount.is_active.desc(), BankAccount.name
+    q = (
+        select(BankAccount)
+        .where(BankAccount.company_id == company_id)
+        .order_by(
+            BankAccount.is_default.desc(), BankAccount.is_active.desc(), BankAccount.name
+        )
     )
     if not include_inactive:
         q = q.where(BankAccount.is_active.is_(True))
     banks = list(db.scalars(q).all())
     out: list[tuple[BankAccount, Decimal]] = []
     for bank in banks:
-        out.append((bank, get_bank_account_balance(db, bank.id)))
+        out.append((bank, get_bank_account_balance(db, bank.id, company_id=company_id)))
     return out
 
 
-def get_total_bank_balance(db: Session) -> Decimal:
-    rows = list_bank_account_balances(db, include_inactive=True)
+def get_total_bank_balance(db: Session, *, company_id: int = 1) -> Decimal:
+    rows = list_bank_account_balances(db, company_id=company_id, include_inactive=True)
     total = sum((bal for _, bal in rows), Decimal("0"))
     return total.quantize(Decimal("0.01"))
 
@@ -367,21 +450,29 @@ def get_total_bank_balance(db: Session) -> Decimal:
 # ---------------------------------------------------------------------------
 
 
-def total_customer_credit(db: Session) -> Decimal:
-    val = db.scalar(select(func.coalesce(func.sum(Customer.credit_balance), 0))) or 0
+def total_customer_credit(db: Session, *, company_id: int = 1) -> Decimal:
+    val = db.scalar(
+        select(func.coalesce(func.sum(Customer.credit_balance), 0)).where(
+            Customer.company_id == company_id
+        )
+    ) or 0
     return Decimal(str(val)).quantize(Decimal("0.01"))
 
 
-def total_customer_debit(db: Session) -> Decimal:
-    val = db.scalar(select(func.coalesce(func.sum(Customer.debit_balance), 0))) or 0
+def total_customer_debit(db: Session, *, company_id: int = 1) -> Decimal:
+    val = db.scalar(
+        select(func.coalesce(func.sum(Customer.debit_balance), 0)).where(
+            Customer.company_id == company_id
+        )
+    ) or 0
     return Decimal(str(val)).quantize(Decimal("0.01"))
 
 
-def get_accounts_summary(db: Session, *, recent_limit: int = 10) -> dict:
+def get_accounts_summary(db: Session, *, company_id: int = 1, recent_limit: int = 10) -> dict:
     from app.services.cash_book import serialize_entry
 
-    cash = get_cash_balance(db)
-    bank_rows = list_bank_account_balances(db, include_inactive=True)
+    cash = get_cash_balance(db, company_id=company_id)
+    bank_rows = list_bank_account_balances(db, company_id=company_id, include_inactive=True)
     total_bank = sum((b for _, b in bank_rows), Decimal("0")).quantize(Decimal("0.01"))
     total_money = (cash + total_bank).quantize(Decimal("0.01"))
 
@@ -393,7 +484,10 @@ def get_accounts_summary(db: Session, *, recent_limit: int = 10) -> dict:
             joinedload(CashBookEntry.source_bank_account),
             joinedload(CashBookEntry.dest_bank_account),
         )
-        .where(CashBookEntry.voided_at.is_(None))
+        .where(
+            CashBookEntry.voided_at.is_(None),
+            CashBookEntry.company_id == company_id,
+        )
         .order_by(CashBookEntry.entry_date.desc(), CashBookEntry.id.desc())
         .limit(recent_limit)
     ).unique().all()
@@ -402,8 +496,8 @@ def get_accounts_summary(db: Session, *, recent_limit: int = 10) -> dict:
         "cash_balance": cash,
         "total_bank_balance": total_bank,
         "total_money": total_money,
-        "total_customer_credit": total_customer_credit(db),
-        "total_customer_debit": total_customer_debit(db),
+        "total_customer_credit": total_customer_credit(db, company_id=company_id),
+        "total_customer_debit": total_customer_debit(db, company_id=company_id),
         "bank_accounts": [
             {
                 "id": bank.id,
@@ -428,8 +522,14 @@ def get_accounts_summary(db: Session, *, recent_limit: int = 10) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def list_customer_balances_query(db: Session, *, has_balance: str = "any", search: str | None = None):
-    q = select(Customer).order_by(Customer.name)
+def list_customer_balances_query(
+    db: Session,
+    *,
+    company_id: int = 1,
+    has_balance: str = "any",
+    search: str | None = None,
+):
+    q = select(Customer).where(Customer.company_id == company_id).order_by(Customer.name)
     if has_balance == "positive":
         q = q.where((Customer.credit_balance > 0) | (Customer.debit_balance > 0))
     elif has_balance == "zero":
@@ -439,15 +539,20 @@ def list_customer_balances_query(db: Session, *, has_balance: str = "any", searc
     return q
 
 
-def customer_last_activity_at(db: Session, customer_id: int) -> datetime | None:
-    bill_at = db.scalar(
-        select(func.max(Bill.created_at)).where(Bill.customer_id == customer_id)
-    )
+def customer_last_activity_at(
+    db: Session, customer_id: int, *, company_id: int | None = None
+) -> datetime | None:
+    bill_filters = [Bill.customer_id == customer_id]
+    payment_filters = [Bill.customer_id == customer_id, Payment.voided_at.is_(None)]
+    if company_id is not None:
+        bill_filters.append(Bill.company_id == company_id)
+        payment_filters.append(Bill.company_id == company_id)
+    bill_at = db.scalar(select(func.max(Bill.created_at)).where(*bill_filters))
     payment_at = db.scalar(
         select(func.max(Payment.paid_at))
         .select_from(Payment)
         .join(Bill, Bill.id == Payment.bill_id)
-        .where(Bill.customer_id == customer_id, Payment.voided_at.is_(None))
+        .where(*payment_filters)
     )
     candidates = [d for d in (bill_at, payment_at) if d is not None]
     if not candidates:
@@ -455,7 +560,9 @@ def customer_last_activity_at(db: Session, customer_id: int) -> datetime | None:
     return max(candidates)
 
 
-def customer_to_row(db: Session, customer: Customer) -> dict:
+def customer_to_row(
+    db: Session, customer: Customer, *, company_id: int | None = None
+) -> dict:
     credit = Decimal(customer.credit_balance)
     debit = Decimal(customer.debit_balance)
     return {
@@ -464,7 +571,9 @@ def customer_to_row(db: Session, customer: Customer) -> dict:
         "credit_balance": credit,
         "debit_balance": debit,
         "net_balance": (credit - debit).quantize(Decimal("0.01")),
-        "last_activity_at": customer_last_activity_at(db, customer.id),
+        "last_activity_at": customer_last_activity_at(
+            db, customer.id, company_id=company_id if company_id is not None else customer.company_id
+        ),
     }
 
 
@@ -472,25 +581,26 @@ def get_customer_statement(
     db: Session,
     customer_id: int,
     *,
+    company_id: int = 1,
     date_from: date | None,
     date_to: date | None,
     limit: int,
     offset: int,
 ) -> dict:
     customer = db.get(Customer, customer_id)
-    if customer is None:
+    if customer is None or int(customer.company_id) != int(company_id):
         raise ValueError("Customer not found")
 
     bills_q = (
         select(Bill)
-        .where(Bill.customer_id == customer_id)
+        .where(Bill.customer_id == customer_id, Bill.company_id == company_id)
         .order_by(Bill.created_at.asc(), Bill.id.asc())
     )
     bills = list(db.scalars(bills_q).unique().all())
     payments_q = (
         select(Payment)
         .join(Bill, Bill.id == Payment.bill_id)
-        .where(Bill.customer_id == customer_id)
+        .where(Bill.customer_id == customer_id, Bill.company_id == company_id)
         .order_by(Payment.paid_at.asc(), Payment.id.asc())
     )
     payments = list(db.scalars(payments_q).unique().all())

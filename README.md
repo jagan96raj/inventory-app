@@ -207,7 +207,17 @@ Example `.env`:
 ```env
 ALLOWED_EMAILS=jaganraj@rajagro.com
 REQUIRE_ALLOWED_EMAILS=true
+# Public multi-tenant signup (Spec v17.0.4). Keep false for Raj Agro production.
+ALLOW_COMPANY_REGISTRATION=false
 ```
+
+## Company registration (v17.0.4 — multi-tenant Phase 5)
+
+Creates a **new** company + owner account (`POST /api/companies/register`, UI `/register`). **Separate** from staff invites and from allowlisted `/api/auth/signup`.
+
+- **Raj Agro production:** leave `ALLOW_COMPANY_REGISTRATION=false` (default). Keep `ALLOWED_EMAILS` as above.
+- **Local / intentional open signup:** set `ALLOW_COMPANY_REGISTRATION=true`, restart the backend. Login shows “Register your company”; new tenants get empty books and their own settings/counters.
+- Do **not** weaken `ALLOWED_EMAILS` when enabling registration — staff at an existing company still join via **Users**.
 
 ## Destructive scripts (dev only)
 
@@ -288,11 +298,11 @@ See `scripts/restore_db.ps1` and [REQUIREMENTS.md](./REQUIREMENTS.md) Spec v16.0
 
 **Production cloud:** When you move to a managed database (RDS, Cloud SQL, etc.), use the provider's automated backups instead of these scripts.
 
-## Bill print & PDF (v16.0.9)
+## Bill print & PDF (v16.0.9 / v17.0.5)
 
 Commercial bill layout only — **no GST, HSN, or e-invoice**.
 
-1. Set **company name, address, phone** under **Accounts → Book settings** (`/accounts/setup`).
+1. Set **company name, address, phone** under **Profile** (`/profile`) as **owner** (synced for bill print). Book Settings keeps cash opening + powder only.
 2. Open any sales or purchase bill → **Print** (browser print) or **Download PDF** (`{bill_number}.pdf`).
 3. Print view hides sidebar and app chrome; voided bills show a **VOIDED** watermark but remain printable for records.
 
@@ -387,7 +397,8 @@ Expect `044_spec_v1609_bill_print (head)`. Restart the backend after migrating.
 
 ## API highlights
 
-- Auth: `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` (cookie session)
+- Auth: `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me` (cookie session; includes `company_id` — v17.0.0)
+- **Multi-tenant Phase 1–5 (v17.0.0–v17.0.4)** + **Profile (v17.0.5):** `companies` table; tenant isolation; per-company settings/counters; flag-gated `POST /api/companies/register`; `GET`/`PATCH /api/companies/me` (owner edits company header); Profile at `/profile`; bill print prefers `companies` (synced `book_settings` company_*).
 - Masters: `/api/products`, `/brands`, `/locations`, `/customers`, `/bag-types`, `/api/bank-accounts`, `/api/expense-categories` (auth required)
 - Inventory: `/api/inventory` (filters incl. `owner_type`, `customer_id`, `search`), `/api/inventory/stock-at-location`
 - Operations: `/api/operations/bag-change|product-transfer|stock-disposal` (optional `owner_type`, `customer_id`; default owned — v14.1); `/api/operations/processing` list is lightweight (v16.0 — no batch lines; detail `/{id}` full fidelity)
@@ -400,12 +411,12 @@ Expect `044_spec_v1609_bill_print (head)`. Restart the backend after migrating.
 - Payments: `/api/payments` (with `bank_account_id` when `payment_mode='bank'`)
 - Accounts: `/api/accounts/summary`, `/api/accounts/customers`, `/api/accounts/customers/{id}/statement`
 - Cash book: `/api/cashbook` (list / create / patch / void)
-- Book settings: `/api/book-settings`
+- Book settings: `/api/book-settings` (cash opening + powder; company header via Profile — v17.0.5)
 - Reports: `/api/reports/dashboard-bundle` (v16.0.2 — all dashboard KPI/chart data in one call); individual `/api/reports/business-*`, `by-*`, `bills-export` unchanged
 - Audit log (v16.0.5): `GET /api/audit/events` (owner only); UI `/histories/audit` — central trail for voids, edits, master deletes, user admin (not fulfillment deliver/receive)
 - Login history (v16.0.6): `GET /api/login-history/events` (owner only); UI `/histories/logins` — sign-in successes and failures (not logout)
 - User disable (v16.0.7): `users.is_active`; owner **Disable/Enable** on `/users` (soft ban — blocks login, keeps row for audit); **Delete** still permanent removal
-- Bill print & PDF (v16.0.9): **Print** / **Download PDF** on bill detail; company header in **Accounts → Book settings**; routes `/sales-bills/:id/print`, `/purchase-bills/:id/print` (no GST / e-invoice)
+- Bill print & PDF (v16.0.9 / v17.0.5): **Print** / **Download PDF** on bill detail; company header on **Profile** (owner); routes `/sales-bills/:id/print`, `/purchase-bills/:id/print` (no GST / e-invoice)
 
 ## Authentication (Spec v10 + v15.1 lockdown + v15.5 rate limit)
 

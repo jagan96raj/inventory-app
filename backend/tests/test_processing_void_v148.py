@@ -58,6 +58,7 @@ def _seed(db: Session) -> dict:
     db.add(
         BookSettings(
             id=1,
+            company_id=1,
             cash_opening_balance=Decimal("0"),
             cash_opening_balance_at=date.today(),
         )

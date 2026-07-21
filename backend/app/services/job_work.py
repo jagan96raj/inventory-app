@@ -8,12 +8,15 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.tenant import assert_entity_company
 from app.models.entities import (
     BagType,
     BillLine,
+    Brand,
     Customer,
     Inventory,
     InventoryOwnerType,
+    Location,
     JobWorkLine,
     JobWorkOrder,
     JobWorkOrderStatus,
@@ -21,6 +24,7 @@ from app.models.entities import (
     JobWorkReceiptEntryType,
     JWNumberCounter,
     ProcessingInputLine,
+    Product,
     User,
 )
 from app.services.operations import add_inventory, prune_zero_inventory, subtract_inventory
@@ -28,7 +32,7 @@ from app.utils import calc_quantity_kg, recalc_inventory_row, validate_bags_loos
 from app.utils.time import resolve_business_entry, utc_now
 
 JW_ALREADY_VOIDED_MSG = "Receipt already voided"
-JW_ORDER_NOT_OPEN_MSG = "Job work order is not open"
+JW_ORDER_NOT_OPEN_MSG = "Job work order is voided"
 JW_ORDER_ALREADY_CANCELLED_MSG = "Job work order already cancelled"
 JW_VOID_CUSTODY_MSG = (
     "Cannot void job work order while material is still received — return to customer first"
@@ -36,6 +40,7 @@ JW_VOID_CUSTODY_MSG = (
 JW_VOID_LINKED_MSG = "Cannot void job work order linked to bills or processing"
 JW_RETURN_LOCATION_MSG = "Return must be from a location where material was received"
 JW_VOID_RETURN_MSG = "Return events cannot be voided"
+JW_RECEIVE_EXCEEDS_MSG = "Cannot receive more than remaining on order"
 
 
 def _jw_line_progress(line: JobWorkLine, bt: BagType | None) -> dict:
@@ -162,31 +167,39 @@ def _format_job_number(seq: int) -> str:
     return f"JW-{seq:06d}"
 
 
-def _get_jw_counter_for_update(db: Session) -> JWNumberCounter:
-    row = db.scalar(select(JWNumberCounter).where(JWNumberCounter.id == 1).with_for_update())
+def _get_jw_counter_for_update(db: Session, company_id: int = 1) -> JWNumberCounter:
+    row = db.scalar(
+        select(JWNumberCounter)
+        .where(JWNumberCounter.company_id == company_id)
+        .with_for_update()
+    )
     if row:
         return row
     try:
         with db.begin_nested():
-            row = JWNumberCounter(id=1, last_number=0)
+            row = JWNumberCounter(company_id=company_id, last_number=0)
             db.add(row)
             db.flush()
     except IntegrityError:
         pass
-    row = db.scalar(select(JWNumberCounter).where(JWNumberCounter.id == 1).with_for_update())
+    row = db.scalar(
+        select(JWNumberCounter)
+        .where(JWNumberCounter.company_id == company_id)
+        .with_for_update()
+    )
     if not row:
         raise ValueError("Could not initialize JW number counter")
     return row
 
 
-def preview_job_number(db: Session) -> str:
-    row = db.scalar(select(JWNumberCounter).where(JWNumberCounter.id == 1))
+def preview_job_number(db: Session, company_id: int = 1) -> str:
+    row = db.scalar(select(JWNumberCounter).where(JWNumberCounter.company_id == company_id))
     next_seq = (row.last_number + 1) if row else 1
     return _format_job_number(next_seq)
 
 
-def next_job_number(db: Session) -> str:
-    counter = _get_jw_counter_for_update(db)
+def next_job_number(db: Session, company_id: int = 1) -> str:
+    counter = _get_jw_counter_for_update(db, company_id)
     counter.last_number += 1
     db.flush()
     return _format_job_number(counter.last_number)
@@ -204,10 +217,13 @@ def _load_order_options():
     )
 
 
-def load_job_work_order(db: Session, order_id: int) -> JobWorkOrder:
-    row = db.scalar(
-        select(JobWorkOrder).where(JobWorkOrder.id == order_id).options(*_load_order_options())
-    )
+def load_job_work_order(
+    db: Session, order_id: int, *, company_id: int | None = None
+) -> JobWorkOrder:
+    q = select(JobWorkOrder).where(JobWorkOrder.id == order_id).options(*_load_order_options())
+    if company_id is not None:
+        q = q.where(JobWorkOrder.company_id == company_id)
+    row = db.scalar(q)
     if not row:
         raise ValueError("Job work order not found")
     return row
@@ -216,6 +232,7 @@ def load_job_work_order(db: Session, order_id: int) -> JobWorkOrder:
 def create_job_work_order(
     db: Session,
     *,
+    company_id: int = 1,
     customer_id: int,
     job_date: date,
     notes: str | None,
@@ -224,11 +241,18 @@ def create_job_work_order(
     customer = db.get(Customer, customer_id)
     if not customer:
         raise ValueError("Customer not found")
+    assert_entity_company(customer, company_id, "Customer")
     if not lines:
         raise ValueError("At least one line is required")
 
+    for line_in in lines:
+        assert_entity_company(db.get(Product, line_in["product_id"]), company_id, "Product")
+        assert_entity_company(db.get(Brand, line_in["brand_id"]), company_id, "Brand")
+        assert_entity_company(db.get(BagType, line_in["bag_type_id"]), company_id, "Bag type")
+
     order = JobWorkOrder(
-        job_number=next_job_number(db),
+        company_id=company_id,
+        job_number=next_job_number(db, company_id),
         customer_id=customer_id,
         job_date=job_date,
         notes=notes,
@@ -318,6 +342,7 @@ def receive_job_work(
     vehicle_no: str | None = None,
     notes: str | None = None,
     received_date: date | None = None,
+    company_id: int | None = None,
 ) -> JobWorkReceipt:
     line = db.scalar(
         select(JobWorkLine)
@@ -331,7 +356,9 @@ def receive_job_work(
     )
     if not line or not line.order:
         raise ValueError("Job work line not found")
-    if line.order.status != JobWorkOrderStatus.open:
+    if company_id is not None and int(line.order.company_id) != int(company_id):
+        raise ValueError("Job work line not found")
+    if line.order.status == JobWorkOrderStatus.cancelled:
         raise ValueError(JW_ORDER_NOT_OPEN_MSG)
 
     bt = line.bag_type
@@ -341,6 +368,13 @@ def receive_job_work(
     qty = calc_quantity_kg(bt, bag_count, loose_kg)
     if qty <= 0:
         raise ValueError("Receive quantity must be positive")
+
+    progress = _jw_line_progress(line, bt)
+    if bt.is_loose:
+        if loose_kg > progress["remaining_receive_loose_kg"]:
+            raise ValueError(JW_RECEIVE_EXCEEDS_MSG)
+    elif bag_count > progress["remaining_receive_bags"]:
+        raise ValueError(JW_RECEIVE_EXCEEDS_MSG)
 
     add_inventory(
         db,
@@ -352,6 +386,7 @@ def receive_job_work(
         loose_kg,
         owner_type=InventoryOwnerType.job_work,
         customer_id=line.order.customer_id,
+        company_id=line.order.company_id,
     )
 
     _, received_at = resolve_business_entry(received_date)
@@ -378,7 +413,13 @@ def receive_job_work(
     return receipt
 
 
-def void_job_work_receipt(db: Session, receipt_id: int, *, actor: User | None = None) -> JobWorkReceipt:
+def void_job_work_receipt(
+    db: Session,
+    receipt_id: int,
+    *,
+    actor: User | None = None,
+    company_id: int | None = None,
+) -> JobWorkReceipt:
     receipt = db.scalar(
         select(JobWorkReceipt)
         .where(JobWorkReceipt.id == receipt_id)
@@ -399,6 +440,8 @@ def void_job_work_receipt(db: Session, receipt_id: int, *, actor: User | None = 
     line = receipt.line
     if not line or not line.order:
         raise ValueError("Job work line not found")
+    if company_id is not None and int(line.order.company_id) != int(company_id):
+        raise ValueError("Receipt not found")
 
     subtract_inventory(
         db,
@@ -410,6 +453,7 @@ def void_job_work_receipt(db: Session, receipt_id: int, *, actor: User | None = 
         receipt.loose_kg,
         owner_type=InventoryOwnerType.job_work,
         customer_id=line.order.customer_id,
+        company_id=line.order.company_id,
     )
 
     receipt.voided_at = utc_now()
@@ -450,19 +494,22 @@ def _order_has_activity_links(db: Session, order_id: int) -> bool:
     )
 
 
-def void_job_work_order(db: Session, order_id: int, *, actor: User | None = None) -> JobWorkOrder:
-    order = db.scalar(
+def void_job_work_order(
+    db: Session, order_id: int, *, actor: User | None = None, company_id: int | None = None
+) -> JobWorkOrder:
+    q = (
         select(JobWorkOrder)
         .where(JobWorkOrder.id == order_id)
         .options(*_load_order_options())
         .with_for_update(of=JobWorkOrder)
     )
+    if company_id is not None:
+        q = q.where(JobWorkOrder.company_id == company_id)
+    order = db.scalar(q)
     if not order:
         raise ValueError("Job work order not found")
     if order.status == JobWorkOrderStatus.cancelled:
         raise ValueError(JW_ORDER_ALREADY_CANCELLED_MSG)
-    if order.status != JobWorkOrderStatus.open:
-        raise ValueError(JW_ORDER_NOT_OPEN_MSG)
     if _order_has_custody(order):
         raise ValueError(JW_VOID_CUSTODY_MSG)
     if _order_has_activity_links(db, order.id):
@@ -471,7 +518,7 @@ def void_job_work_order(db: Session, order_id: int, *, actor: User | None = None
     order.status = JobWorkOrderStatus.cancelled
     order.version += 1
     db.commit()
-    result = load_job_work_order(db, order.id)
+    result = load_job_work_order(db, order.id, company_id=company_id)
     if actor is not None:
         from app.services.audit_log import AuditAction, AuditEntityType, record_audit_event
 
@@ -495,6 +542,7 @@ def return_job_work_to_customer(
     loose_kg: Decimal,
     notes: str | None = None,
     received_date: date | None = None,
+    company_id: int | None = None,
 ) -> JobWorkReceipt:
     line = db.scalar(
         select(JobWorkLine)
@@ -508,7 +556,9 @@ def return_job_work_to_customer(
     )
     if not line or not line.order:
         raise ValueError("Job work line not found")
-    if line.order.status != JobWorkOrderStatus.open:
+    if company_id is not None and int(line.order.company_id) != int(company_id):
+        raise ValueError("Job work line not found")
+    if line.order.status == JobWorkOrderStatus.cancelled:
         raise ValueError(JW_ORDER_NOT_OPEN_MSG)
 
     bt = line.bag_type
@@ -537,6 +587,7 @@ def return_job_work_to_customer(
         loose_kg,
         owner_type=InventoryOwnerType.job_work,
         customer_id=line.order.customer_id,
+        company_id=line.order.company_id,
     )
 
     _, received_at = resolve_business_entry(received_date)
@@ -566,6 +617,7 @@ def return_job_work_to_customer(
 def list_job_work_orders(
     db: Session,
     *,
+    company_id: int | None = None,
     customer_id: int | None = None,
     status: JobWorkOrderStatus | None = None,
     limit: int = 50,
@@ -575,10 +627,15 @@ def list_job_work_orders(
         joinedload(JobWorkOrder.customer),
         joinedload(JobWorkOrder.lines).joinedload(JobWorkLine.product),
     )
+    if company_id is not None:
+        q = q.where(JobWorkOrder.company_id == company_id)
     if customer_id is not None:
         q = q.where(JobWorkOrder.customer_id == customer_id)
     if status is not None:
         q = q.where(JobWorkOrder.status == status)
+    else:
+        # Default list hides voided orders (status=cancelled only via filter).
+        q = q.where(JobWorkOrder.status.in_((JobWorkOrderStatus.open, JobWorkOrderStatus.completed)))
     total = db.scalar(select(func.count()).select_from(q.subquery())) or 0
     rows = (
         db.scalars(q.order_by(JobWorkOrder.job_date.desc(), JobWorkOrder.id.desc()).limit(limit).offset(offset))
@@ -592,14 +649,19 @@ def get_customer_job_work_statement(
     db: Session,
     customer_id: int,
     *,
+    company_id: int | None = None,
     from_date: date | None = None,
     to_date: date | None = None,
 ) -> dict:
     customer = db.get(Customer, customer_id)
     if not customer:
         raise ValueError("Customer not found")
+    if company_id is not None and int(customer.company_id) != int(company_id):
+        raise ValueError("Customer not found")
 
     q = select(JobWorkOrder).where(JobWorkOrder.customer_id == customer_id)
+    if company_id is not None:
+        q = q.where(JobWorkOrder.company_id == company_id)
     if from_date:
         q = q.where(JobWorkOrder.job_date >= from_date)
     if to_date:
@@ -702,7 +764,7 @@ def serialize_jw_fulfillment_line(line: JobWorkLine, order: JobWorkOrder, db: Se
 
 
 def serialize_jw_fulfillment_order(order: JobWorkOrder, db: Session, *, tab: str) -> dict | None:
-    if order.status != JobWorkOrderStatus.open:
+    if order.status == JobWorkOrderStatus.cancelled:
         return None
     lines: list[dict] = []
     for line in sorted(order.lines or [], key=lambda x: x.line_index):
@@ -729,21 +791,21 @@ def serialize_jw_fulfillment_order(order: JobWorkOrder, db: Session, *, tab: str
 def list_jw_fulfillment_orders(
     db: Session,
     *,
+    company_id: int | None = None,
     tab: str = "all",
     visibility: str = "actionable",
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[dict], int]:
-    orders = (
-        db.scalars(
-            select(JobWorkOrder)
-            .where(JobWorkOrder.status == JobWorkOrderStatus.open)
-            .options(*_load_order_options())
-            .order_by(JobWorkOrder.job_date.desc(), JobWorkOrder.id.desc())
-        )
-        .unique()
-        .all()
+    q = (
+        select(JobWorkOrder)
+        .where(JobWorkOrder.status.in_((JobWorkOrderStatus.open, JobWorkOrderStatus.completed)))
+        .options(*_load_order_options())
+        .order_by(JobWorkOrder.job_date.desc(), JobWorkOrder.id.desc())
     )
+    if company_id is not None:
+        q = q.where(JobWorkOrder.company_id == company_id)
+    orders = db.scalars(q).unique().all()
     result: list[dict] = []
     for order in orders:
         data = serialize_jw_fulfillment_order(order, db, tab=tab)

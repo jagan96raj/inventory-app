@@ -1,0 +1,25 @@
+{
+  "name": "desktop-shell",
+  "version": "1.0.0",
+  "description": "Inventory App Desktop Shell",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "build": {
+    "appId": "com.inventoryapp.desktop",
+    "productName": "InventoryApp",
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

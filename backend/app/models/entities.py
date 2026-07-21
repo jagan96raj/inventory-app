@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
 )
@@ -121,26 +122,48 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     product_name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("ix_products_name_lower", func.lower(func.trim(product_name)), unique=True),)
+    __table_args__ = (
+        Index("ix_products_name_lower", "company_id", func.lower(func.trim(product_name)), unique=True),
+    )
 
 
 class Brand(Base):
     __tablename__ = "brands"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("ix_brands_name_lower", func.lower(func.trim(name)), unique=True),)
+    __table_args__ = (
+        Index("ix_brands_name_lower", "company_id", func.lower(func.trim(name)), unique=True),
+    )
 
 
 class Location(Base):
     __tablename__ = "locations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     address_line: Mapped[str | None] = mapped_column(String(500))
     district: Mapped[str | None] = mapped_column(String(120))
@@ -148,25 +171,41 @@ class Location(Base):
     pin_code: Mapped[str | None] = mapped_column(String(12))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("ix_locations_name_lower", func.lower(func.trim(name)), unique=True),)
+    __table_args__ = (
+        Index("ix_locations_name_lower", "company_id", func.lower(func.trim(name)), unique=True),
+    )
 
 
 class BagType(Base):
     __tablename__ = "bag_types"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     weight_per_bag_kg: Mapped[Decimal] = mapped_column(KG, nullable=False)
     is_loose: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("ix_bag_types_name_lower", func.lower(func.trim(name)), unique=True),)
+    __table_args__ = (
+        Index("ix_bag_types_name_lower", "company_id", func.lower(func.trim(name)), unique=True),
+    )
 
 
 class Customer(Base):
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     address_line: Mapped[str | None] = mapped_column(String(500))
     district: Mapped[str | None] = mapped_column(String(120))
@@ -187,13 +226,21 @@ class Customer(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (Index("ix_customers_name_lower", func.lower(func.trim(name)), unique=True),)
+    __table_args__ = (
+        Index("ix_customers_name_lower", "company_id", func.lower(func.trim(name)), unique=True),
+    )
 
 
 class Inventory(Base):
     __tablename__ = "inventory"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
@@ -224,6 +271,7 @@ class Inventory(Base):
     __table_args__ = (
         Index(
             "uq_inventory_owned_tuple",
+            "company_id",
             "product_id",
             "brand_id",
             "location_id",
@@ -234,6 +282,7 @@ class Inventory(Base):
         ),
         Index(
             "uq_inventory_job_work_tuple",
+            "company_id",
             "product_id",
             "brand_id",
             "location_id",
@@ -254,10 +303,16 @@ class Inventory(Base):
 
 
 class BillNumberCounter(Base):
-    """Spec v12.7 — monotonic bill number sequence per bill_type."""
+    """Spec v17.0.3 — monotonic bill number sequence per (company_id, bill_type)."""
 
     __tablename__ = "bill_number_counters"
 
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        primary_key=True,
+        nullable=False,
+        default=1,
+    )
     bill_type: Mapped[BillType] = mapped_column(
         Enum(BillType, name="bill_type_enum", values_callable=lambda obj: [e.value for e in obj]),
         primary_key=True,
@@ -269,7 +324,13 @@ class Bill(Base):
     __tablename__ = "bills"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    bill_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
+    bill_number: Mapped[str] = mapped_column(String(50), nullable=False)
     bill_type: Mapped[BillType] = mapped_column(Enum(BillType, name="bill_type_enum"), nullable=False)
     status: Mapped[BillStatus] = mapped_column(
         Enum(BillStatus, name="bill_status_enum"), default=BillStatus.finalized, nullable=False
@@ -280,6 +341,7 @@ class Bill(Base):
     discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0, nullable=False)
     discount_amount: Mapped[Decimal] = mapped_column(MONEY, default=0, nullable=False)
     adjustment: Mapped[Decimal] = mapped_column(MONEY, default=0, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     use_balance: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     subtotal: Mapped[Decimal] = mapped_column(MONEY, default=0, nullable=False)
     grand_total: Mapped[Decimal] = mapped_column(MONEY, default=0, nullable=False)
@@ -300,6 +362,10 @@ class Bill(Base):
     location: Mapped[Location | None] = relationship()
     lines: Mapped[list["BillLine"]] = relationship(back_populates="bill", cascade="all, delete-orphan")
     payments: Mapped[list["Payment"]] = relationship(back_populates="bill", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "bill_number", name="uq_bills_company_bill_number"),
+    )
 
 
 class BillLine(Base):
@@ -414,6 +480,12 @@ class BagChange(Base):
     __tablename__ = "bag_changes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
@@ -466,6 +538,12 @@ class ProductTransfer(Base):
     __tablename__ = "product_transfers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
     bag_type_id: Mapped[int] = mapped_column(ForeignKey("bag_types.id"), nullable=False)
@@ -516,6 +594,12 @@ class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     input_product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     input_brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
     status: Mapped[ProcessingJobStatus] = mapped_column(
@@ -719,11 +803,18 @@ class ProcessingWasteAllocation(Base):
 
 
 class JWNumberCounter(Base):
-    """Spec v14.0 — monotonic JW number sequence."""
+    """Spec v17.0.3 — monotonic JW number sequence per company (unique company_id)."""
 
     __tablename__ = "jw_number_counters"
 
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        unique=True,
+        default=1,
+        index=True,
+    )
     last_number: Mapped[int] = mapped_column(default=0, nullable=False)
 
 
@@ -731,7 +822,13 @@ class JobWorkOrder(Base):
     __tablename__ = "job_work_orders"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    job_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
+    job_number: Mapped[str] = mapped_column(String(50), nullable=False)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), nullable=False)
     job_date: Mapped[date] = mapped_column(Date, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
@@ -753,6 +850,10 @@ class JobWorkOrder(Base):
     customer: Mapped[Customer] = relationship()
     lines: Mapped[list["JobWorkLine"]] = relationship(
         back_populates="order", cascade="all, delete-orphan", order_by="JobWorkLine.line_index"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "job_number", name="uq_job_work_orders_company_job_number"),
     )
 
 
@@ -819,6 +920,12 @@ class StockDisposal(Base):
     __tablename__ = "stock_disposals"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), nullable=False)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=False)
@@ -882,6 +989,12 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     user_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -928,6 +1041,12 @@ class BankAccount(Base):
     __tablename__ = "bank_accounts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     account_number_last4: Mapped[str | None] = mapped_column(String(4))
     ifsc: Mapped[str | None] = mapped_column(String(32))
@@ -938,7 +1057,7 @@ class BankAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        Index("ix_bank_accounts_name_lower", func.lower(func.trim(name)), unique=True),
+        Index("ix_bank_accounts_name_lower", "company_id", func.lower(func.trim(name)), unique=True),
         CheckConstraint("opening_balance >= 0", name="ck_bank_accounts_opening_non_negative"),
     )
 
@@ -949,6 +1068,12 @@ class ExpenseCategory(Base):
     __tablename__ = "expense_categories"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     kind: Mapped[ExpenseCategoryKind] = mapped_column(
         Enum(
@@ -974,6 +1099,12 @@ class CashBookEntry(Base):
     __tablename__ = "cash_book_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     entry_type: Mapped[CashBookEntryType] = mapped_column(
         Enum(
             CashBookEntryType,
@@ -1028,12 +1159,50 @@ class CashBookEntry(Base):
     )
 
 
+class Company(Base):
+    """Spec v17.0.0+ — tenant company; v17.0.6 detailed address + GSTIN."""
+
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    address_line: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    address_line_2: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    district: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    pin_code: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    gstin: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    users: Mapped[list["User"]] = relationship(back_populates="company")
+
+
+@event.listens_for(Company.__table__, "after_create")
+def _seed_default_company(target, connection, **kw):
+    connection.execute(
+        target.insert().values(
+            id=1,
+            name="Raj Agro",
+            is_active=True,
+        )
+    )
+
+
 class BookSettings(Base):
-    """Spec v12.21 — singleton row (id=1) for book-wide settings (cash opening)."""
+    """Spec v17.0.3 — one book-settings row per company (cash opening, print header, powder)."""
 
     __tablename__ = "book_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        unique=True,
+        default=1,
+        index=True,
+    )
     cash_opening_balance: Mapped[Decimal] = mapped_column(MONEY, default=0, nullable=False)
     cash_opening_balance_at: Mapped[date] = mapped_column(Date, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -1044,9 +1213,10 @@ class BookSettings(Base):
     powder_location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     powder_bag_type_id: Mapped[int | None] = mapped_column(ForeignKey("bag_types.id"), nullable=True)
     company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    company_address_line: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    company_address_line: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     company_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    company: Mapped["Company | None"] = relationship(foreign_keys=[company_id])
     powder_product: Mapped["Product | None"] = relationship(foreign_keys=[powder_product_id])
     powder_brand: Mapped["Brand | None"] = relationship(foreign_keys=[powder_brand_id])
     powder_location: Mapped["Location | None"] = relationship(foreign_keys=[powder_location_id])
@@ -1061,6 +1231,12 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255))
@@ -1082,6 +1258,8 @@ class User(Base):
     login_otp_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     password_plain: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
+
+    company: Mapped["Company"] = relationship(back_populates="users", lazy="joined")
 
 
 class RevokedToken(Base):

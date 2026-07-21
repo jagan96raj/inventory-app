@@ -31,6 +31,7 @@ const TITLE_MAP: Record<string, string> = {
   "/": "Dashboard",
   "/dashboard": "Dashboard",
   "/home": "Welcome",
+  "/profile": "Profile",
   "/products": "Products",
   "/brands": "Brands",
   "/bag-types": "Bag types",
@@ -176,6 +177,9 @@ function UserMenu() {
           <div className="border-b border-line px-3 py-3">
             <p className="truncate text-sm font-semibold text-ink">{user?.name || "Signed in"}</p>
             <p className="truncate text-xs text-ink-muted">{user?.email}</p>
+            {user?.company_name && (
+              <p className="truncate text-xs text-ink-subtle">{user.company_name}</p>
+            )}
             {user?.role && (
               <p className="truncate text-xs text-primary-700 dark:text-primary-300">{ROLE_LABELS[user.role]}</p>
             )}
@@ -183,7 +187,7 @@ function UserMenu() {
           <Menu.Item>
             {({ active }) => (
               <Link
-                to="/home"
+                to="/profile"
                 className={cn(
                   "flex items-center gap-2 px-3 py-2 text-sm",
                   active && "bg-surface-muted"

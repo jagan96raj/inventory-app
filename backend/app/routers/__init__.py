@@ -10,6 +10,7 @@ from app.routers import (
     bills,
     book_settings,
     cash_book,
+    companies,
     expense_categories,
     fulfillment,
     inventory,
@@ -24,9 +25,12 @@ from app.routers import (
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth")
+# Spec v17.0.4 — public company registration (no auth; gated by ALLOW_COMPANY_REGISTRATION).
+api_router.include_router(companies.public_router)
 
 protected_router = APIRouter(dependencies=[Depends(get_current_user), Depends(require_assigned_role)])
 protected_router.include_router(users.router)
+protected_router.include_router(companies.router)
 protected_router.include_router(masters.router)
 protected_router.include_router(inventory.router)
 protected_router.include_router(job_work.router)

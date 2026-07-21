@@ -52,6 +52,7 @@ def compute_job_fresh_input_kg(
     pending_input_lines: list[dict] | None = None,
     db: Session | None = None,
 ) -> Decimal:
+    """Sum From-stock input only (excludes balance_reprocess). Used for Fresh-in reporting."""
     total = Decimal("0")
     for batch in _active_job_batches(job):
         for line in batch.input_lines:
@@ -62,6 +63,28 @@ def compute_job_fresh_input_kg(
             if not _is_balance_reprocess(line.get("input_source")):
                 total += _pending_line_quantity_kg(db, line)
     return total
+
+
+def compute_job_mass_balance_input_kg(
+    job: ProcessingJob,
+    *,
+    pending_input_lines: list[dict] | None = None,
+    db: Session | None = None,
+) -> Decimal:
+    """Fresh + balance_reprocess — same 'in' side as misc / allowance.
+
+    Balance return counts as outflow, so reprocess of that material must count as input
+    or allowance stays short by the reprocess weight.
+    """
+    total = Decimal("0")
+    for batch in _active_job_batches(job):
+        for line in batch.input_lines:
+            total += line.quantity_kg
+    if pending_input_lines and db:
+        for line in pending_input_lines:
+            total += _pending_line_quantity_kg(db, line)
+    return total
+
 
 def _sum_output_balance_kg_from_batches(job: ProcessingJob) -> Decimal:
     total = Decimal("0")
@@ -139,12 +162,15 @@ def validate_processing_mass_balance(
         "balance_return_lines": pending_balance_return_lines,
         **pending_waste_fields,
     }
+    input_kg = compute_job_mass_balance_input_kg(
+        job, pending_input_lines=pending_input_lines, db=db
+    )
     outflow_kg = compute_job_outflow_kg(job, pending_batch=pending_batch, db=db)
-    max_outflow = fresh_kg + PROCESSING_OUTPUT_TOLERANCE_KG
+    max_outflow = input_kg + PROCESSING_OUTPUT_TOLERANCE_KG
     if outflow_kg > max_outflow:
         raise ValueError(
-            f"Total outflow ({outflow_kg} kg) exceeds fresh input ({fresh_kg} kg) "
-            f"plus the {PROCESSING_OUTPUT_TOLERANCE_KG} kg allowance."
+            f"Total outflow ({outflow_kg} kg) exceeds job input ({input_kg} kg) "
+            f"(fresh + reprocess) plus the {PROCESSING_OUTPUT_TOLERANCE_KG} kg allowance."
         )
 
 def compute_job_committed_balance_return_kg(job: ProcessingJob) -> Decimal:

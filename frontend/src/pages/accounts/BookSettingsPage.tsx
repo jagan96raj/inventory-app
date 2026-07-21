@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Save, Settings2 } from "lucide-react";
 import { bookSettingsApi, newIdempotencyKey, type BookSettings } from "../../api/client";
 import { formatDate, formatInr } from "../../lib/format";
@@ -13,7 +14,6 @@ import Button from "../../components/ui/Button";
 import Banner from "../../components/ui/Banner";
 import { Card, CardBody, CardFooter, CardHeader } from "../../components/ui/Card";
 import FormField from "../../components/ui/FormField";
-import Input from "../../components/ui/Input";
 import NumberInput from "../../components/ui/NumberInput";
 import AsyncSearchCombobox from "../../components/ui/AsyncSearchCombobox";
 import { toast } from "../../components/ui/Toaster";
@@ -21,9 +21,6 @@ import { toast } from "../../components/ui/Toaster";
 export default function BookSettingsPage() {
   const [settings, setSettings] = useState<BookSettings | null>(null);
   const [opening, setOpening] = useState("0");
-  const [companyName, setCompanyName] = useState("");
-  const [companyAddress, setCompanyAddress] = useState("");
-  const [companyPhone, setCompanyPhone] = useState("");
   const [powderProductId, setPowderProductId] = useState<number | null>(null);
   const [powderBrandId, setPowderBrandId] = useState<number | null>(null);
   const [powderLocationId, setPowderLocationId] = useState<number | null>(null);
@@ -37,9 +34,6 @@ export default function BookSettingsPage() {
       .then((s) => {
         setSettings(s);
         setOpening(s.cash_opening_balance);
-        setCompanyName(s.company_name ?? "");
-        setCompanyAddress(s.company_address_line ?? "");
-        setCompanyPhone(s.company_phone ?? "");
         setPowderProductId(s.powder_product_id ?? null);
         setPowderBrandId(s.powder_brand_id ?? null);
         setPowderLocationId(s.powder_location_id ?? null);
@@ -56,9 +50,6 @@ export default function BookSettingsPage() {
       const next = await bookSettingsApi.update(
         {
           cash_opening_balance: opening,
-          company_name: companyName.trim() || null,
-          company_address_line: companyAddress.trim() || null,
-          company_phone: companyPhone.trim() || null,
           powder_product_id: powderProductId,
           powder_brand_id: powderBrandId,
           powder_location_id: powderLocationId,
@@ -68,9 +59,6 @@ export default function BookSettingsPage() {
       );
       setSettings(next);
       setOpening(next.cash_opening_balance);
-      setCompanyName(next.company_name ?? "");
-      setCompanyAddress(next.company_address_line ?? "");
-      setCompanyPhone(next.company_phone ?? "");
       setPowderProductId(next.powder_product_id ?? null);
       setPowderBrandId(next.powder_brand_id ?? null);
       setPowderLocationId(next.powder_location_id ?? null);
@@ -90,7 +78,16 @@ export default function BookSettingsPage() {
       <PageHeader
         eyebrow="Accounts"
         title="Book settings"
-        subtitle="Company header for printed bills, cash opening balance, and processing powder destination."
+        subtitle={
+          <>
+            Cash opening balance and processing powder destination. Company name, address, and phone for bill print are
+            managed on{" "}
+            <Link className="font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300" to="/profile">
+              Profile
+            </Link>
+            .
+          </>
+        }
       />
 
       {error && (
@@ -100,28 +97,6 @@ export default function BookSettingsPage() {
       )}
 
       <form onSubmit={submit} className="space-y-5">
-        <Card className="max-w-xl">
-          <CardHeader
-            title="Company header (bill print)"
-            subtitle="Shown at the top of printed and PDF bills. No GST or e-invoice fields."
-          />
-          <CardBody className="space-y-4">
-            <FormField label="Company name">
-              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Your business name" />
-            </FormField>
-            <FormField label="Address">
-              <Input
-                value={companyAddress}
-                onChange={(e) => setCompanyAddress(e.target.value)}
-                placeholder="Street, city, state"
-              />
-            </FormField>
-            <FormField label="Phone">
-              <Input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)} placeholder="Contact number" />
-            </FormField>
-          </CardBody>
-        </Card>
-
         <Card className="max-w-xl">
           <CardHeader title="Cash opening balance" subtitle="Starting cash balance used by the Accounts dashboard." />
           <CardBody className="space-y-4">

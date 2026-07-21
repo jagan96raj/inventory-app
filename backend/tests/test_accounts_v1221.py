@@ -80,7 +80,7 @@ def _seed_masters(db: Session) -> dict:
     db.flush()
     # cash book singleton
     if db.get(BookSettings, 1) is None:
-        db.add(BookSettings(id=1, cash_opening_balance=Decimal("0"), cash_opening_balance_at=date.today()))
+        db.add(BookSettings(id=1, company_id=1, cash_opening_balance=Decimal("0"), cash_opening_balance_at=date.today()))
     # categories
     cats = {
         ("Freight Charges", ExpenseCategoryKind.expense, False),
