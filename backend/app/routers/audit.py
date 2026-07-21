@@ -1,6 +1,6 @@
 """Spec v16.0.5 — central audit log API (owner only)."""
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
@@ -14,6 +14,7 @@ from app.database import get_db
 from app.models.entities import AuditEvent, User
 from app.schemas import AuditEventOut, AuditEventPageOut
 from app.services.audit_log import audit_event_to_out
+from app.utils.time import business_tz
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -48,10 +49,10 @@ def list_audit_events(
     if entity_type and entity_type.strip():
         q = q.where(AuditEvent.entity_type == entity_type.strip())
     if date_from is not None:
-        start = datetime.combine(date_from, time.min)
+        start = datetime.combine(date_from, time.min, tzinfo=business_tz()).astimezone(timezone.utc)
         q = q.where(AuditEvent.created_at >= start)
     if date_to is not None:
-        end = datetime.combine(date_to, time.max)
+        end = datetime.combine(date_to, time.max, tzinfo=business_tz()).astimezone(timezone.utc)
         q = q.where(AuditEvent.created_at <= end)
     if search and search.strip():
         term = f"%{search.strip().lower()}%"

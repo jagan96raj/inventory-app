@@ -204,6 +204,32 @@ class TestAuditLogV1605(unittest.TestCase):
         self.assertTrue(any(i["action"] == AuditAction.BILL_VOIDED for i in res2.json()["items"]))
         self.assertFalse(any(i["action"] == AuditAction.PAYMENT_VOIDED for i in res2.json()["items"]))
 
+    def test_date_filter_includes_2330_ist_same_business_day(self):
+        """23:30 IST on date X must be included when date_from = date_to = X."""
+        from app.utils.time import business_tz
+
+        business_day = date(2026, 3, 15)
+        local_2330 = datetime(2026, 3, 15, 23, 30, tzinfo=business_tz())
+        event = AuditEvent(
+            company_id=1,
+            user_id=OWNER.id,
+            user_email=OWNER.email,
+            action=AuditAction.BILL_VOIDED,
+            entity_type=AuditEntityType.BILL,
+            entity_id=self.bill.id,
+            entity_label="boundary-2330-ist",
+            created_at=local_2330.astimezone(timezone.utc),
+        )
+        self.db.add(event)
+        self.db.commit()
+        self._as(OWNER)
+
+        day = business_day.isoformat()
+        res = self.client.get(f"/api/audit/events?date_from={day}&date_to={day}")
+        self.assertEqual(res.status_code, 200)
+        labels = [i["entity_label"] for i in res.json()["items"]]
+        self.assertIn("boundary-2330-ist", labels)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -274,7 +274,6 @@ export default function BillFormPage({
 
   const handleCustomerChange = (customerId: string) => {
     if (
-      isSales &&
       header.customer_id &&
       customerId !== header.customer_id &&
       lines.some((l) => l.product_id || l.brand_id || l.bag_type_id)
@@ -301,8 +300,10 @@ export default function BillFormPage({
   );
 
   const handleLocationChange = (newLocationId: string) => {
+    // Purchase bills have no location field — only sales confirms location changes.
     const prev = header.location_id;
     if (
+      isSales &&
       prev &&
       newLocationId !== prev &&
       lines.some((l) => l.product_id || l.brand_id || l.bag_type_id)
