@@ -1,5 +1,8 @@
 import type { Bill, BillLine, BookSettings } from "../api/client";
+import { billDueAmount } from "./billAmounts";
 import { formatInr, formatQtyKg } from "./format";
+
+export { billDueAmount } from "./billAmounts";
 
 export function formatCustomerAddress(bill: Bill): string {
   const parts = [
@@ -28,10 +31,6 @@ export type BillPrintDocumentProps = {
   bookSettings: BookSettings | null;
   billType: "sales" | "purchase";
 };
-
-export function billDueAmount(bill: Bill): number {
-  return Number(bill.amount_due ?? bill.due_amount ?? Number(bill.grand_total) - Number(bill.amount_paid));
-}
 
 export function billTotalsRows(bill: Bill): Array<{ label: string; value: string; emphasis?: boolean }> {
   const rows = [
