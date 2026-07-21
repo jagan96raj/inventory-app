@@ -45,6 +45,7 @@ import Table, { type Column } from "../components/ui/Table";
 import Skeleton from "../components/ui/Skeleton";
 import EmptyState from "../components/ui/EmptyState";
 import VoidConfirmDialog from "../components/ui/VoidConfirmDialog";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 import Modal from "../components/ui/Modal";
 import { VoidPill } from "../components/ui/StatusPill";
 import SegmentedControl from "../components/ui/SegmentedControl";
@@ -466,6 +467,9 @@ export default function ProcessingJobPage() {
   const [completeAuthError, setCompleteAuthError] = useState("");
   const [voidBatchTarget, setVoidBatchTarget] = useState<ProcessingBatch | null>(null);
   const [voidBatchAuthError, setVoidBatchAuthError] = useState("");
+  const [inputMixConfirmOpen, setInputMixConfirmOpen] = useState(false);
+  const [completeFlowConfirmOpen, setCompleteFlowConfirmOpen] = useState(false);
+  const [completeBalanceConfirmOpen, setCompleteBalanceConfirmOpen] = useState(false);
   const [jobLoadDone, setJobLoadDone] = useState(false);
   const [outputAllocationMode, setOutputAllocationMode] = useState<OutputAllocationMode>("proportional");
   const [singleAllocationOwnerKey, setSingleAllocationOwnerKey] = useState("owned");
@@ -999,12 +1003,14 @@ export default function ProcessingJobPage() {
     if (!id || !canSubmitInput || !job) return;
 
     if (inputWillCreateMix && outputAllocationMode === "single_owner") {
-      const ownerLabel = ownerKeyLabel(singleAllocationOwnerKey, customerLabels);
-      const ok = window.confirm(
-        `All outputs will post to ${ownerLabel}. You may add more input from ${ownerLabel} only.`
-      );
-      if (!ok) return;
+      setInputMixConfirmOpen(true);
+      return;
     }
+    await submitInputBatchConfirmed();
+  };
+
+  const submitInputBatchConfirmed = async () => {
+    if (!id || !canSubmitInput || !job) return;
 
     if (!inputBatchIdemRef.current) inputBatchIdemRef.current = newIdempotencyKey();
     setError("");
@@ -1149,17 +1155,13 @@ export default function ProcessingJobPage() {
     const netBalance = Number(s.net_balance_kg);
 
     if (totalFresh > 0 && totalOutput === 0) {
-      const ok = window.confirm(
-        "Fresh input has been recorded but no finished output yet. Complete this job anyway?"
-      );
-      if (!ok) return;
+      setCompleteFlowConfirmOpen(true);
+      return;
     }
 
     if (netBalance > 0.001 && totalFresh > 0 && netBalance / totalFresh > 0.05) {
-      const ok = window.confirm(
-        `${formatQtyKg(netBalance)} net unclean balance remains vs ${formatQtyKg(totalFresh)} fresh input. Complete anyway?`
-      );
-      if (!ok) return;
+      setCompleteBalanceConfirmOpen(true);
+      return;
     }
 
     if ((s.batch_count ?? 0) === 0) {
@@ -1167,6 +1169,26 @@ export default function ProcessingJobPage() {
       return;
     }
 
+    setError("");
+    setSuccess("");
+    setCompleteAuthError("");
+    setCompleteAuthOpen(true);
+  };
+
+  const continueCompleteProcess = () => {
+    if (!job || completed) return;
+    const s = jobSummary(job);
+    const totalFresh = Number(s.total_fresh_input_kg);
+    const totalOutput = totalOutputKg(s);
+    const netBalance = Number(s.net_balance_kg);
+    if (totalFresh > 0 && totalOutput === 0) {
+      setCompleteFlowConfirmOpen(true);
+      return;
+    }
+    if (netBalance > 0.001 && totalFresh > 0 && netBalance / totalFresh > 0.05) {
+      setCompleteBalanceConfirmOpen(true);
+      return;
+    }
     setError("");
     setSuccess("");
     setCompleteAuthError("");
@@ -2425,6 +2447,49 @@ export default function ProcessingJobPage() {
           </div>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={inputMixConfirmOpen}
+        onClose={() => setInputMixConfirmOpen(false)}
+        onConfirm={async () => {
+          setInputMixConfirmOpen(false);
+          await submitInputBatchConfirmed();
+        }}
+        title="Lock output ownership?"
+        description={`All outputs will post to ${ownerKeyLabel(singleAllocationOwnerKey, customerLabels)}. You may add more input from this same owner only.`}
+        confirmLabel="Continue"
+      />
+
+      <ConfirmDialog
+        open={completeFlowConfirmOpen}
+        onClose={() => setCompleteFlowConfirmOpen(false)}
+        onConfirm={() => {
+          setCompleteFlowConfirmOpen(false);
+          continueCompleteProcess();
+        }}
+        title="Complete without finished output?"
+        description="Fresh input has been recorded but no finished output yet. Complete this job anyway?"
+        confirmLabel="Complete anyway"
+      />
+
+      <ConfirmDialog
+        open={completeBalanceConfirmOpen}
+        onClose={() => setCompleteBalanceConfirmOpen(false)}
+        onConfirm={() => {
+          setCompleteBalanceConfirmOpen(false);
+          setError("");
+          setSuccess("");
+          setCompleteAuthError("");
+          setCompleteAuthOpen(true);
+        }}
+        title="Complete with high balance return?"
+        description={
+          summary
+            ? `${formatQtyKg(Number(summary.net_balance_kg ?? 0))} balance return remains vs ${formatQtyKg(Number(summary.total_fresh_input_kg ?? 0))} fresh input. Complete anyway?`
+            : "Balance return remains. Complete anyway?"
+        }
+        confirmLabel="Complete anyway"
+      />
 
       <VoidConfirmDialog
         open={completeAuthOpen}

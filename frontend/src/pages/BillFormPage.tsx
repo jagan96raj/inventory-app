@@ -41,6 +41,7 @@ import FormField from "../components/ui/FormField";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import AddCustomerDialog from "../components/AddCustomerDialog";
 import Textarea from "../components/ui/Textarea";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 
 type LineForm = {
   line_id?: number;
@@ -154,6 +155,8 @@ export default function BillFormPage({
   const { submitting, guardedSubmit, submitDisabled } = useSubmitGuard();
   const idemKeyRef = useRef<string | null>(null);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
+  const [pendingCustomerChange, setPendingCustomerChange] = useState<string | null>(null);
+  const [pendingLocationChange, setPendingLocationChange] = useState<string | null>(null);
   const maxBillDate = useMemo(() => localIsoDate(), []);
   const [billDate, setBillDate] = useState(() => localIsoDate());
 
@@ -276,8 +279,8 @@ export default function BillFormPage({
       customerId !== header.customer_id &&
       lines.some((l) => l.product_id || l.brand_id || l.bag_type_id)
     ) {
-      if (!window.confirm("Changing customer clears all line rows. Continue?")) return;
-      setLines([emptyLine()]);
+      setPendingCustomerChange(customerId);
+      return;
     }
     setHeader((h) => ({ ...h, customer_id: customerId }));
   };
@@ -304,14 +307,8 @@ export default function BillFormPage({
       newLocationId !== prev &&
       lines.some((l) => l.product_id || l.brand_id || l.bag_type_id)
     ) {
-      if (
-        !window.confirm(
-          "Changing location clears all line rows (each bill is tied to one location). Continue?"
-        )
-      ) {
-        return;
-      }
-      setLines([emptyLine()]);
+      setPendingLocationChange(newLocationId);
+      return;
     }
     setHeader({ ...header, location_id: newLocationId });
   };
@@ -1242,6 +1239,32 @@ export default function BillFormPage({
         onConfirm={confirmBackdateAuth}
         dateLabel={billDate}
         authError={backdateAuthError || undefined}
+      />
+      <ConfirmDialog
+        open={pendingCustomerChange != null}
+        onClose={() => setPendingCustomerChange(null)}
+        onConfirm={() => {
+          if (pendingCustomerChange == null) return;
+          setLines([emptyLine()]);
+          setHeader((h) => ({ ...h, customer_id: pendingCustomerChange }));
+          setPendingCustomerChange(null);
+        }}
+        title="Change customer?"
+        description="Changing customer clears all line rows. Continue?"
+        confirmLabel="Change customer"
+      />
+      <ConfirmDialog
+        open={pendingLocationChange != null}
+        onClose={() => setPendingLocationChange(null)}
+        onConfirm={() => {
+          if (pendingLocationChange == null) return;
+          setLines([emptyLine()]);
+          setHeader((h) => ({ ...h, location_id: pendingLocationChange }));
+          setPendingLocationChange(null);
+        }}
+        title="Change location?"
+        description="Changing location clears all line rows (each bill is tied to one location). Continue?"
+        confirmLabel="Change location"
       />
     </>
   );

@@ -17,7 +17,9 @@ export function setQtyUnit(u: QtyUnit) {
 }
 
 export function formatInr(value: string | number): string {
+  // Smoke case: invalid numeric values should never render "₹NaN".
   const n = Number(value);
+  if (!Number.isFinite(n)) return "₹0.00";
   return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 

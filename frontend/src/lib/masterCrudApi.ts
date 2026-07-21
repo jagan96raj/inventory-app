@@ -1,4 +1,4 @@
-import { api, voidAuthHeaders, type PageOut } from "../api/client";
+import { api, idempotencyHeaders, voidAuthHeaders, type PageOut } from "../api/client";
 
 export type MasterFieldLike = {
   key: string;
@@ -47,11 +47,13 @@ export function buildMasterFormBody(
 export async function saveMasterRecord(
   path: string,
   body: Record<string, unknown>,
-  editId: number | null
+  editId: number | null,
+  idempotencyKey?: string | null
 ): Promise<void> {
   const base = masterApiPath(path);
-  if (editId) await api.put(`${base}/${editId}`, body);
-  else await api.post(base, body);
+  const headers = idempotencyKey ? idempotencyHeaders(idempotencyKey) : undefined;
+  if (editId) await api.put(`${base}/${editId}`, body, headers ? { headers } : undefined);
+  else await api.post(base, body, headers ? { headers } : undefined);
 }
 
 export async function deleteMasterRecord(

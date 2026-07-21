@@ -1,6 +1,13 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Package, Plus, Scale, Sparkles, Trash2 } from "lucide-react";
-import { api, DEFAULT_PAGE_LIMIT, voidAuthHeaders, type PageOut } from "../api/client";
+import {
+  api,
+  DEFAULT_PAGE_LIMIT,
+  idempotencyHeaders,
+  newIdempotencyKey,
+  voidAuthHeaders,
+  type PageOut,
+} from "../api/client";
 import { formatBagTypeWeight } from "../lib/bagType";
 import { cn } from "../lib/cn";
 import PageHeader from "../components/ui/PageHeader";
@@ -17,6 +24,7 @@ import Modal from "../components/ui/Modal";
 import Skeleton from "../components/ui/Skeleton";
 import PaginationBar from "../components/ui/PaginationBar";
 import { toast } from "../components/ui/Toaster";
+import { useSubmitGuard } from "../hooks/useSubmitGuard";
 
 type BagType = { id: number; name: string; weight_per_bag_kg: string; is_loose: boolean };
 
@@ -36,6 +44,8 @@ export default function BagTypesPage() {
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<BagType | null>(null);
   const [voidAuthError, setVoidAuthError] = useState("");
+  const createIdemRef = useRef<string | null>(null);
+  const { guardedSubmit, submitDisabled } = useSubmitGuard();
   const limit = DEFAULT_PAGE_LIMIT;
 
   const load = () => {
@@ -94,20 +104,28 @@ export default function BagTypesPage() {
 
   const createBagType = async () => {
     setError("");
-    setSaving(true);
-    try {
-      const { isLoose, weight, name } = validateForm();
-      await api.post("/api/bag-types", { name, weight_per_bag_kg: weight, is_loose: isLoose });
-      toast.success("Bag type added");
-      closeAdd();
-      load();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
+    if (!createIdemRef.current) createIdemRef.current = newIdempotencyKey();
+    await guardedSubmit(async () => {
+      setSaving(true);
+      try {
+        const { isLoose, weight, name } = validateForm();
+        await api.post(
+          "/api/bag-types",
+          { name, weight_per_bag_kg: weight, is_loose: isLoose },
+          { headers: idempotencyHeaders(createIdemRef.current!) }
+        );
+        createIdemRef.current = null;
+        toast.success("Bag type added");
+        closeAdd();
+        load();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const onLooseChange = (checked: boolean) => {
@@ -380,7 +398,7 @@ export default function BagTypesPage() {
             <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button loading={saving} onClick={() => void createBagType()}>
+            <Button loading={saving} disabled={saving || submitDisabled} onClick={() => void createBagType()}>
               Confirm & create
             </Button>
           </div>

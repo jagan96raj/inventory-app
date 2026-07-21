@@ -1,6 +1,6 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { DEFAULT_PAGE_LIMIT } from "../api/client";
+import { DEFAULT_PAGE_LIMIT, newIdempotencyKey } from "../api/client";
 import {
   buildMasterFormBody,
   deleteMasterRecord,
@@ -20,6 +20,7 @@ import VoidConfirmDialog from "./ui/VoidConfirmDialog";
 import Modal from "./ui/Modal";
 import PaginationBar from "./ui/PaginationBar";
 import { toast } from "./ui/Toaster";
+import { useSubmitGuard } from "../hooks/useSubmitGuard";
 
 type Field = {
   key: string;
@@ -66,6 +67,8 @@ export default function MasterCrud<T extends { id: number }>({
   const [error, setError] = useState("");
   const [pendingDelete, setPendingDelete] = useState<T | null>(null);
   const [voidAuthError, setVoidAuthError] = useState("");
+  const idemKeyRef = useRef<string | null>(null);
+  const { guardedSubmit, submitDisabled } = useSubmitGuard();
   const limit = DEFAULT_PAGE_LIMIT;
 
   const load = useCallback(() => {
@@ -104,19 +107,23 @@ export default function MasterCrud<T extends { id: number }>({
     const body = buildMasterFormBody(fields, form, {
       editId,
     });
-    setSaving(true);
-    try {
-      await saveMasterRecord(path, body, editId);
-      toast.success(editId ? `${title} updated` : `${title} added`);
-      closeForm();
-      load();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setSaving(false);
-    }
+    if (!idemKeyRef.current) idemKeyRef.current = newIdempotencyKey();
+    await guardedSubmit(async () => {
+      setSaving(true);
+      try {
+        await saveMasterRecord(path, body, editId, idemKeyRef.current);
+        idemKeyRef.current = null;
+        toast.success(editId ? `${title} updated` : `${title} added`);
+        closeForm();
+        load();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setSaving(false);
+      }
+    });
   };
 
   const startEdit = (row: T) => {
@@ -254,7 +261,7 @@ export default function MasterCrud<T extends { id: number }>({
             <Button variant="ghost" onClick={closeForm} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" form="master-crud-form" loading={saving}>
+            <Button type="submit" form="master-crud-form" loading={saving} disabled={saving || submitDisabled}>
               {editId ? "Save changes" : addLabel}
             </Button>
           </div>

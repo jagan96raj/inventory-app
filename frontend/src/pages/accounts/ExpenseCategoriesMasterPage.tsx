@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   expenseCategoriesApi,
@@ -22,6 +22,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import PaginationBar from "../../components/ui/PaginationBar";
 import Select from "../../components/ui/Select";
 import { toast } from "../../components/ui/Toaster";
+import { useSubmitGuard } from "../../hooks/useSubmitGuard";
 
 type FormState = { name: string; kind: ExpenseCategoryKind; is_active: boolean };
 const empty: FormState = { name: "", kind: "expense", is_active: true };
@@ -38,6 +39,8 @@ export default function ExpenseCategoriesMasterPage() {
   const [form, setForm] = useState<FormState>(empty);
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ExpenseCategory | null>(null);
+  const saveIdemRef = useRef<string | null>(null);
+  const { guardedSubmit, submitDisabled } = useSubmitGuard();
   const limit = DEFAULT_PAGE_LIMIT;
 
   const load = useCallback(() => {
@@ -81,27 +84,31 @@ export default function ExpenseCategoriesMasterPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    setBusy(true);
     setError("");
-    try {
-      if (editing) {
-        const body: ExpenseCategoryUpdateIn = { name: form.name.trim(), is_active: form.is_active };
-        await expenseCategoriesApi.update(editing.id, body, newIdempotencyKey());
-        toast.success("Category updated");
-      } else {
-        const body: ExpenseCategoryIn = { name: form.name.trim(), kind: form.kind };
-        await expenseCategoriesApi.create(body, newIdempotencyKey());
-        toast.success("Category added");
+    if (!saveIdemRef.current) saveIdemRef.current = newIdempotencyKey();
+    await guardedSubmit(async () => {
+      setBusy(true);
+      try {
+        if (editing) {
+          const body: ExpenseCategoryUpdateIn = { name: form.name.trim(), is_active: form.is_active };
+          await expenseCategoriesApi.update(editing.id, body, saveIdemRef.current!);
+          toast.success("Category updated");
+        } else {
+          const body: ExpenseCategoryIn = { name: form.name.trim(), kind: form.kind };
+          await expenseCategoriesApi.create(body, saveIdemRef.current!);
+          toast.success("Category added");
+        }
+        saveIdemRef.current = null;
+        close();
+        load();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not save";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setBusy(false);
       }
-      close();
-      load();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const remove = async () => {
@@ -250,7 +257,13 @@ export default function ExpenseCategoriesMasterPage() {
             <Button variant="ghost" onClick={close} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" form="cat-form" loading={busy} leftIcon={<CheckCircle2 className="h-4 w-4" />}>
+            <Button
+              type="submit"
+              form="cat-form"
+              loading={busy}
+              disabled={busy || submitDisabled}
+              leftIcon={<CheckCircle2 className="h-4 w-4" />}
+            >
               {editing ? "Save changes" : "Add"}
             </Button>
           </div>

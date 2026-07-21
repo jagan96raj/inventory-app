@@ -58,6 +58,10 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   const [banks, setBanks] = useState<BankAccount[]>([]);
   const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
   const [backdateAuthError, setBackdateAuthError] = useState("");
+  const [billLoading, setBillLoading] = useState(false);
+  const [billLoadError, setBillLoadError] = useState("");
+  const billRequestIdRef = useRef(0);
+  const previewRequestIdRef = useRef(0);
 
   const billType = billTypeProp ?? bill?.bill_type ?? "sales";
   const listPath = billType === "sales" ? "/sales-bills" : "/purchase-bills";
@@ -65,15 +69,28 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   useEffect(() => {
     if (!billId) {
       setError("Missing bill id");
+      setBill(null);
       return;
     }
+    const requestId = ++billRequestIdRef.current;
+    setBillLoading(true);
+    setBillLoadError("");
+    setBill(null);
     api
       .get<Bill>(`/api/bills/${billId}`)
       .then((b) => {
+        if (billRequestIdRef.current !== requestId) return;
         setBill(b);
         setForm({ amount: "", payment_mode: "cash", bank_account_id: "", paid_date: localIsoDate() });
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (billRequestIdRef.current !== requestId) return;
+        setBill(null);
+        setBillLoadError(e.message);
+      })
+      .finally(() => {
+        if (billRequestIdRef.current === requestId) setBillLoading(false);
+      });
   }, [billId]);
 
   useEffect(() => {
@@ -133,6 +150,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
       setSetoffPreview(null);
       return;
     }
+    const requestId = ++previewRequestIdRef.current;
     const amt = Number(form.amount) || 0;
     const params = new URLSearchParams({
       bill_id: String(bill.id),
@@ -141,8 +159,14 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
     });
     api
       .get<SetoffPreview>(`/api/payments/setoff-preview?${params}`)
-      .then(setSetoffPreview)
-      .catch(() => setSetoffPreview(null));
+      .then((preview) => {
+        if (previewRequestIdRef.current !== requestId) return;
+        setSetoffPreview(preview);
+      })
+      .catch(() => {
+        if (previewRequestIdRef.current !== requestId) return;
+        setSetoffPreview(null);
+      });
   }, [bill, balanceMode, form.amount, form.payment_mode]);
 
   const onModeChange = (mode: string) => {
@@ -287,14 +311,25 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
           {error}
         </Banner>
       )}
+      {billLoadError && (
+        <Banner tone="danger" className="mb-4">
+          {billLoadError}
+        </Banner>
+      )}
 
-      {bill && (
+      {billLoading ? (
+        <Card>
+          <CardBody>
+            <p className="text-sm text-ink-muted">Loading bill…</p>
+          </CardBody>
+        </Card>
+      ) : bill ? (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
           <Card>
             <CardHeader title="Bill snapshot" subtitle="Read-only summary of money on this bill" />
             <CardBody className="grid grid-cols-2 gap-3 pt-0 sm:grid-cols-3">
               {[
-                ["Final payable", formatInr(bill.grand_total)],
+                ["Final payable", formatInr(bill.final_payable ?? bill.grand_total)],
                 ["Amount paid", formatInr(bill.amount_paid)],
                 ["Amount due", formatInr(due)],
                 ...(bill.bill_type === "purchase" && debitBal > 0 ? [["Customer debit balance", formatInr(debitBal)] as const] : []),
@@ -413,6 +448,14 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
             </Card>
           )}
         </div>
+      ) : (
+        !billLoadError && (
+          <Card>
+            <CardBody>
+              <p className="text-sm text-ink-muted">Loading bill…</p>
+            </CardBody>
+          </Card>
+        )
       )}
 
       <BackdateAuthDialog
