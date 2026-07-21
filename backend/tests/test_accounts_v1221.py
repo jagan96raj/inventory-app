@@ -25,6 +25,7 @@ from app.models.entities import (
     Customer,
     ExpenseCategory,
     ExpenseCategoryKind,
+    Company,
     Location,
     Payment,
     PaymentMode,
@@ -265,6 +266,18 @@ class ExpenseCategoryServiceTests(unittest.TestCase):
     def test_reject_creating_transfer_kind(self):
         with self.assertRaises(ValueError):
             create_category(self.db, name="Bad Transfer", kind=ExpenseCategoryKind.transfer)
+
+    def test_active_name_unique_per_company_not_globally(self):
+        company2 = Company(name="Other Co", is_active=True)
+        self.db.add(company2)
+        self.db.flush()
+        # Company 1 already has active "Rent" from seed; company 2 may use the same name.
+        rent_other = create_category(
+            self.db, company_id=company2.id, name="Rent", kind=ExpenseCategoryKind.expense
+        )
+        self.assertEqual(rent_other.company_id, company2.id)
+        with self.assertRaises(ValueError):
+            create_category(self.db, company_id=1, name=" rent ", kind=ExpenseCategoryKind.expense)
 
     def test_cannot_edit_or_delete_system_row(self):
         with self.assertRaises(ValueError):
