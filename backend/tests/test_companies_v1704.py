@@ -131,9 +131,10 @@ class CompaniesV1704Tests(unittest.TestCase):
             select(BookSettings).where(BookSettings.company_id == company_id)
         )
         self.assertIsNotNone(settings_row)
-        self.assertEqual(settings_row.company_name, "New Traders")
-        self.assertEqual(settings_row.company_address_line, "12 Market Road")
-        self.assertEqual(settings_row.company_phone, "9000000000")
+        # Legacy book_settings company_* columns are not populated on register.
+        self.assertIsNone(settings_row.company_name)
+        self.assertIsNone(settings_row.company_address_line)
+        self.assertIsNone(settings_row.company_phone)
         self.assertEqual(Decimal(str(settings_row.cash_opening_balance)), Decimal("0"))
 
         # API isolation: list products as new owner

@@ -1,5 +1,6 @@
 import type { Bill, BillLine, BookSettings } from "../api/client";
 import { billDueAmount } from "./billAmounts";
+import { formatCompanyAddressLines } from "./companyAddressFields";
 import { formatInr, formatQtyKg } from "./format";
 
 export { billDueAmount } from "./billAmounts";
@@ -31,6 +32,18 @@ export type BillPrintDocumentProps = {
   bookSettings: BookSettings | null;
   billType: "sales" | "purchase";
 };
+
+/** Company header lines for bill print (book-settings embeds companies row fields). */
+export function bookSettingsCompanyAddressLines(settings: BookSettings | null): string[] {
+  if (!settings) return [];
+  return formatCompanyAddressLines({
+    address_line: settings.company_address_line,
+    address_line_2: settings.company_address_line_2,
+    district: settings.company_district,
+    state: settings.company_state,
+    pin_code: settings.company_pin_code,
+  });
+}
 
 export function billTotalsRows(bill: Bill): Array<{ label: string; value: string; emphasis?: boolean }> {
   const rows = [
