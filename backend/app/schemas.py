@@ -268,6 +268,7 @@ class BillFinalizeCreate(BaseModel):
     bill_date: date | None = None
     discount_percent: Decimal = Field(Decimal("0"), ge=0, le=100)
     adjustment: Decimal = Field(Decimal("0"), ge=0)
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[BillLineIn] = Field(min_length=1)
 
     @field_validator("bill_date")
@@ -278,6 +279,14 @@ class BillFinalizeCreate(BaseModel):
         if v > business_today():
             raise ValueError("Bill date cannot be in the future")
         return v
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
 
     @model_validator(mode="after")
     def validate_location_for_bill_type(self) -> "BillFinalizeCreate":
@@ -297,7 +306,16 @@ class BillEditFinalized(BaseModel):
     expected_version: int | None = None
     discount_percent: Decimal | None = Field(default=None, ge=0, le=100)
     adjustment: Decimal | None = Field(default=None, ge=0)
+    notes: str | None = Field(default=None, max_length=1000)
     lines: list[BillEditLineIn] | None = None
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
 
 
 class BillListItemOut(BaseModel):
@@ -317,6 +335,7 @@ class BillListItemOut(BaseModel):
     payment_status: str
     order_delivery_status: str
     version: int
+    notes: str | None = None
 
 
 class BillsListSummaryOut(BaseModel):
@@ -345,6 +364,7 @@ class BillOut(BaseModel):
     discount_percent: Decimal
     discount_amount: Decimal
     adjustment: Decimal
+    notes: str | None = None
     total_amount: Decimal
     final_payable: Decimal
     subtotal: Decimal
@@ -955,8 +975,143 @@ class UserOut(BaseModel):
     name: str | None = None
     picture_url: str | None = None
     role: Literal["owner", "writer", "stock_manager", "factory_manager"] | None = None
+    company_id: int
+    company_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class CompanyOut(BaseModel):
+    id: int
+    name: str
+    address_line: str | None = None
+    address_line_2: str | None = None
+    district: str | None = None
+    state: str | None = None
+    pin_code: str | None = None
+    gstin: str | None = None
+    phone: str | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+def _trim_optional_str(v: str | None) -> str | None:
+    if v is None:
+        return None
+    s = v.strip()
+    return s or None
+
+
+class CompanyUpdate(BaseModel):
+    """Spec v17.0.5/v17.0.6 — owner updates company profile (partial)."""
+
+    name: str | None = None
+    address_line: str | None = None
+    address_line_2: str | None = None
+    district: str | None = None
+    state: str | None = None
+    pin_code: str | None = None
+    gstin: str | None = None
+    phone: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        name = v.strip()
+        if not name:
+            raise ValueError("Company name is required")
+        if len(name) > 255:
+            raise ValueError("Company name must be at most 255 characters")
+        return name
+
+    @field_validator("address_line", "address_line_2", "district", "state", "pin_code", "phone")
+    @classmethod
+    def normalize_optional(cls, v: str | None) -> str | None:
+        return _trim_optional_str(v)
+
+    @field_validator("gstin")
+    @classmethod
+    def normalize_gstin(cls, v: str | None) -> str | None:
+        s = _trim_optional_str(v)
+        if s is None:
+            return None
+        s = s.upper()
+        if len(s) > 20:
+            raise ValueError("GSTIN must be at most 20 characters")
+        return s
+
+
+class RegistrationStatusOut(BaseModel):
+    """Spec v17.0.4 — whether public company registration is enabled."""
+
+    allowed: bool
+
+
+class CompanyRegisterIn(BaseModel):
+    """Spec v17.0.4 / v17.0.6 — public company + owner registration."""
+
+    company_name: str
+    company_address_line: str | None = None
+    company_address_line_2: str | None = None
+    company_district: str | None = None
+    company_state: str | None = None
+    company_pin_code: str | None = None
+    company_gstin: str | None = None
+    company_phone: str | None = None
+    owner_name: str | None = None
+    email: str
+    password: str
+
+    @field_validator("company_name")
+    @classmethod
+    def require_company_name(cls, v: str) -> str:
+        name = (v or "").strip()
+        if not name:
+            raise ValueError("Company name is required")
+        if len(name) > 255:
+            raise ValueError("Company name must be at most 255 characters")
+        return name
+
+    @field_validator(
+        "company_address_line",
+        "company_address_line_2",
+        "company_district",
+        "company_state",
+        "company_pin_code",
+        "company_phone",
+        "owner_name",
+    )
+    @classmethod
+    def normalize_optional(cls, v: str | None) -> str | None:
+        return _trim_optional_str(v)
+
+    @field_validator("company_gstin")
+    @classmethod
+    def normalize_gstin(cls, v: str | None) -> str | None:
+        s = _trim_optional_str(v)
+        if s is None:
+            return None
+        s = s.upper()
+        if len(s) > 20:
+            raise ValueError("GSTIN must be at most 20 characters")
+        return s
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        email = v.strip().lower()
+        if "@" not in email or "." not in email.split("@")[-1]:
+            raise ValueError("Enter a valid email address")
+        return email
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return validate_new_password_field(v)
 
 
 class UserAdminOut(UserOut):
@@ -1538,6 +1693,11 @@ class BookSettingsOut(BaseModel):
     powder_bag_type_name: str | None = None
     company_name: str | None = None
     company_address_line: str | None = None
+    company_address_line_2: str | None = None
+    company_district: str | None = None
+    company_state: str | None = None
+    company_pin_code: str | None = None
+    company_gstin: str | None = None
     company_phone: str | None = None
 
     model_config = {"from_attributes": True}

@@ -344,6 +344,9 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
                           <Badge tone={isSetoff ? "info" : "primary"} size="md">
                             {paymentModeLabel(p.payment_mode)}
                           </Badge>
+                          {p.payment_mode === "bank" && p.bank_account_name && (
+                            <p className="mt-1 text-xs text-ink-subtle">{p.bank_account_name}</p>
+                          )}
                         </td>
                         <td className={cn(detailTd, "v2-mono text-ink-muted", voided && "line-through")}>
                           {formatDateTime(p.paid_at)}
@@ -721,6 +724,12 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
                 <span className="v2-mono text-base">{formatInr(finalPayable)}</span>
               </div>
             </div>
+            {bill.notes?.trim() && (
+              <div className="rounded-xl border border-line/70 bg-surface-muted/40 px-4 py-3">
+                <p className="text-sm font-medium text-ink-subtle">Notes</p>
+                <p className="mt-1 whitespace-pre-wrap text-base text-ink">{bill.notes.trim()}</p>
+              </div>
+            )}
           </>
         )}
       </CardBody>
@@ -870,6 +879,12 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
       {error && (
         <Banner tone="danger" className="mb-4" onClose={() => setError("")}>
           {error}
+        </Banner>
+      )}
+
+      {!isVoided && voidPrecheck && !voidPrecheck.can_void && voidPrecheck.block_reasons.length > 0 && (
+        <Banner tone="warning" className="mb-4">
+          Void bill unavailable: {voidPrecheck.block_reasons.join(" ")}
         </Banner>
       )}
 

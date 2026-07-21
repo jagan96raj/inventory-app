@@ -8,6 +8,7 @@ from app.core.auth import get_current_user
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.core.permissions import Permission, require_permission
+from app.core.tenant import company_id_for_user, require_entity_company, require_for_company, scope_query
 from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
 from app.database import get_db
 from app.models.entities import BagType, Brand, Customer, Inventory, InventoryOwnerType, Location, Product, User
@@ -53,8 +54,8 @@ def inv_to_out(row: Inventory) -> InventoryOut:
     )
 
 
-def _load_inventory(db: Session, iid: int) -> Inventory | None:
-    return db.scalar(
+def _load_inventory(db: Session, iid: int, company_id: int | None = None) -> Inventory | None:
+    inv = db.scalar(
         select(Inventory)
         .where(Inventory.id == iid)
         .options(
@@ -65,11 +66,15 @@ def _load_inventory(db: Session, iid: int) -> Inventory | None:
             joinedload(Inventory.customer),
         )
     )
+    if company_id is not None:
+        require_entity_company(inv, company_id, label="Inventory")
+    return inv
 
 
 @router.get("/inventory", response_model=InventoryPageOut, dependencies=INV_VIEW)
 def list_inventory(
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
     product_id: int | None = None,
     brand_id: int | None = None,
     location_id: int | None = None,
@@ -80,9 +85,10 @@ def list_inventory(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
 ):
+    company_id = company_id_for_user(user)
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = (
+    q = scope_query(
         select(Inventory)
         .join(Inventory.location)
         .join(Inventory.product)
@@ -93,7 +99,9 @@ def list_inventory(
             joinedload(Inventory.location),
             joinedload(Inventory.bag_type),
             joinedload(Inventory.customer),
-        )
+        ),
+        Inventory,
+        company_id,
     )
     if product_id:
         q = q.where(Inventory.product_id == product_id)
@@ -135,12 +143,18 @@ def stock_at_location(
     owner_type: str | None = None,
     customer_id: int | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    q = select(Inventory).where(Inventory.location_id == location_id).options(
-        joinedload(Inventory.product),
-        joinedload(Inventory.brand),
-        joinedload(Inventory.bag_type),
-        joinedload(Inventory.customer),
+    company_id = company_id_for_user(user)
+    q = scope_query(
+        select(Inventory).where(Inventory.location_id == location_id).options(
+            joinedload(Inventory.product),
+            joinedload(Inventory.brand),
+            joinedload(Inventory.bag_type),
+            joinedload(Inventory.customer),
+        ),
+        Inventory,
+        company_id,
     )
     if product_id:
         q = q.where(Inventory.product_id == product_id)
@@ -155,10 +169,12 @@ def stock_at_location(
 
 
 @router.get("/inventory/{iid}/usage", response_model=InventoryUsageOut, dependencies=INV_VIEW)
-def get_inventory_usage(iid: int, db: Session = Depends(get_db)):
-    inv = db.get(Inventory, iid)
-    if not inv:
-        raise HTTPException(404, "Not found")
+def get_inventory_usage(
+    iid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    inv = require_for_company(db, Inventory, iid, company_id_for_user(user), label="Inventory")
     links = [InventoryUsageLinkOut.model_validate(link) for link in inventory_usage_links(db, inv)]
     return InventoryUsageOut(
         inventory_id=inv.id,
@@ -185,8 +201,10 @@ def create_inventory(
             validate_bags_loose(bt, body.bag_count, body.loose_kg)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
+        company_id = company_id_for_user(user)
         existing = db.scalar(
             select(Inventory).where(
+                Inventory.company_id == company_id,
                 Inventory.product_id == body.product_id,
                 Inventory.brand_id == body.brand_id,
                 Inventory.location_id == body.location_id,
@@ -198,6 +216,7 @@ def create_inventory(
         if existing:
             raise HTTPException(400, "Inventory row already exists for this combination")
         inv = Inventory(
+            company_id=company_id,
             product_id=body.product_id,
             brand_id=body.brand_id,
             location_id=body.location_id,
@@ -210,7 +229,7 @@ def create_inventory(
         recalc_inventory_row(inv, bt)
         db.add(inv)
         db.commit()
-        inv = _load_inventory(db, inv.id)
+        inv = _load_inventory(db, inv.id, company_id)
         out = inv_to_out(inv)
         return out, 201
 
@@ -230,9 +249,8 @@ def update_inventory(
     request_hash = hash_pydantic_body(body)
 
     def execute():
-        inv = db.get(Inventory, iid)
-        if not inv:
-            raise HTTPException(404, "Not found")
+        company_id = company_id_for_user(user)
+        inv = require_for_company(db, Inventory, iid, company_id, label="Inventory")
         if (
             body.product_id != inv.product_id
             or body.brand_id != inv.brand_id
@@ -273,7 +291,7 @@ def update_inventory(
                 },
             )
 
-        inv = _load_inventory(db, iid)
+        inv = _load_inventory(db, iid, company_id)
         out = inv_to_out(inv)
         return out, 200
 

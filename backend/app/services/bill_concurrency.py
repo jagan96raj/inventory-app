@@ -46,4 +46,7 @@ def http_exception_for_value_error(exc: ValueError) -> HTTPException:
         BILL_VOID_HAS_LINKED_CASHBOOK_MSG,
     ):
         return HTTPException(409, msg)
+    # Spec v17.0.2 — cross-company / missing entities: prefer 404 (no existence leak).
+    if msg.lower().endswith("not found"):
+        return HTTPException(404, msg)
     return HTTPException(400, msg)

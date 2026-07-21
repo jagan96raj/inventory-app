@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Briefcase, Eye, Plus } from "lucide-react";
+import { Briefcase, Calendar, Eye, Plus } from "lucide-react";
 import {
   DEFAULT_PAGE_LIMIT,
   jobWorkApi,
@@ -30,6 +30,28 @@ function netReceivedKg(order: JobWorkOrder): number {
   return total;
 }
 
+function isVoided(order: JobWorkOrder): boolean {
+  return order.status === "cancelled";
+}
+
+function groupOrdersByDate(orders: JobWorkOrder[]): { date: string; orders: JobWorkOrder[] }[] {
+  const map = new Map<string, JobWorkOrder[]>();
+  for (const order of orders) {
+    const key = order.job_date || "unknown";
+    const list = map.get(key);
+    if (list) list.push(order);
+    else map.set(key, [order]);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([date, grouped]) => ({
+      date,
+      orders: [...grouped].sort((x, y) => y.id - x.id),
+    }));
+}
+
+type ListMode = "active" | "voided";
+
 export default function JobWorkListPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<JobWorkOrder[]>([]);
@@ -37,7 +59,7 @@ export default function JobWorkListPage() {
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [listMode, setListMode] = useState<ListMode>("active");
   const [customerFilter, setCustomerFilter] = useState<number | null>(null);
   const limit = DEFAULT_PAGE_LIMIT;
 
@@ -47,16 +69,22 @@ export default function JobWorkListPage() {
       .list({
         limit,
         offset,
-        status: statusFilter ? (statusFilter as "open" | "completed" | "cancelled") : undefined,
+        // Active = omit status (API excludes voided). Voided = status=cancelled only.
+        status: listMode === "voided" ? "cancelled" : undefined,
         customer_id: customerFilter ?? undefined,
       })
       .then((page) => {
-        setRows(page.items);
+        // Safety net: active list never shows voided even if API regresses.
+        const items =
+          listMode === "active"
+            ? page.items.filter((o) => o.status !== "cancelled")
+            : page.items;
+        setRows(items);
         setTotal(page.total);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Error"))
       .finally(() => setLoading(false));
-  }, [limit, offset, statusFilter, customerFilter]);
+  }, [limit, offset, listMode, customerFilter]);
 
   useEffect(() => {
     load();
@@ -64,7 +92,9 @@ export default function JobWorkListPage() {
 
   useEffect(() => {
     setOffset(0);
-  }, [statusFilter, customerFilter]);
+  }, [listMode, customerFilter]);
+
+  const ordersByDate = useMemo(() => groupOrdersByDate(rows), [rows]);
 
   const columns: Column<JobWorkOrder>[] = [
     {
@@ -80,11 +110,6 @@ export default function JobWorkListPage() {
       key: "customer",
       header: "Customer",
       cell: (r) => r.customer_name ?? `Customer #${r.customer_id}`,
-    },
-    {
-      key: "job_date",
-      header: "Date",
-      cell: (r) => <span className="v2-mono">{formatDate(r.job_date)}</span>,
     },
     {
       key: "lines",
@@ -117,7 +142,7 @@ export default function JobWorkListPage() {
     },
   ];
 
-  const hasFilters = Boolean(statusFilter || customerFilter != null);
+  const hasFilters = Boolean(listMode === "voided" || customerFilter != null);
 
   return (
     <>
@@ -145,24 +170,24 @@ export default function JobWorkListPage() {
           icon={<Briefcase className="h-5 w-5" />}
           tone="primary"
         />
-        <Stat
-          label="Total matching"
-          value={total}
-          tone="neutral"
-        />
+        <Stat label="Total matching" value={total} tone="neutral" />
       </div>
 
       <Card>
         <CardHeader
-          title="All orders"
-          subtitle="Filter by customer or status."
+          title={listMode === "voided" ? "Voided orders" : "Orders"}
+          subtitle={
+            listMode === "voided"
+              ? "Voided orders only — switch back to Active for normal work."
+              : "Grouped by date. Voided orders are hidden unless you select Voided."
+          }
           actions={
             hasFilters ? (
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => {
-                  setStatusFilter("");
+                  setListMode("active");
                   setCustomerFilter(null);
                 }}
               >
@@ -184,13 +209,15 @@ export default function JobWorkListPage() {
                 />
               )}
             </FormField>
-            <FormField label="Status">
+            <FormField label="Show">
               {({ id }) => (
-                <Select id={id} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                  <option value="">All statuses</option>
-                  <option value="open">Open</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Voided</option>
+                <Select
+                  id={id}
+                  value={listMode}
+                  onChange={(e) => setListMode(e.target.value as ListMode)}
+                >
+                  <option value="active">Active</option>
+                  <option value="voided">Voided</option>
                 </Select>
               )}
             </FormField>
@@ -205,47 +232,106 @@ export default function JobWorkListPage() {
           ) : rows.length === 0 ? (
             <EmptyState
               icon={<Briefcase className="h-8 w-8" />}
-              title="No job work orders"
-              description={hasFilters ? "Try clearing filters." : "Create a new order to receive customer material."}
+              title={listMode === "voided" ? "No voided orders" : "No job work orders"}
+              description={
+                hasFilters
+                  ? listMode === "voided"
+                    ? "No voided orders match."
+                    : "Try clearing filters."
+                  : "Create a new order to receive customer material."
+              }
               action={
-                <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => navigate("/job-work/new")}>
-                  New order
-                </Button>
+                listMode === "active" ? (
+                  <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => navigate("/job-work/new")}>
+                    New order
+                  </Button>
+                ) : undefined
               }
             />
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table columns={columns} rows={rows} rowKey={(r) => r.id} caption="Job work orders" />
+              <div className="hidden space-y-5 md:block">
+                {ordersByDate.map(({ date, orders: dayOrders }) => {
+                  const label = date === "unknown" ? "No job date" : formatDate(date);
+                  return (
+                    <section key={date} className="space-y-3" aria-labelledby={`jw-date-${date}`}>
+                      <header
+                        id={`jw-date-${date}`}
+                        className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200">
+                            <Calendar className="h-4 w-4" aria-hidden="true" />
+                          </div>
+                          <h2 className="text-lg font-bold text-ink">{label}</h2>
+                        </div>
+                        <span className="text-sm font-medium text-ink-muted">
+                          {dayOrders.length} order{dayOrders.length === 1 ? "" : "s"}
+                        </span>
+                      </header>
+                      <Table
+                        columns={columns}
+                        rows={dayOrders}
+                        rowKey={(r) => r.id}
+                        caption={`Job work orders · ${label}`}
+                      />
+                    </section>
+                  );
+                })}
               </div>
-              <div className="space-y-3 md:hidden">
-                {rows.map((r) => (
-                  <div
-                    key={r.id}
-                    className={cn(
-                      "rounded-2xl border border-line/80 p-4",
-                      r.status === "open" && "border-l-4 border-l-primary-500 bg-primary-50/30 dark:bg-primary-950/20"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <Link to={`/job-work/${r.id}`} className="v2-mono text-lg font-bold text-primary-800 dark:text-primary-200">
-                          {r.job_number}
-                        </Link>
-                        <p className="mt-0.5 text-base text-ink">{r.customer_name}</p>
-                        <p className="mt-1 text-sm text-ink-muted">{formatDate(r.job_date)}</p>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-sm text-ink-muted">
-                      {r.lines.length} line{r.lines.length === 1 ? "" : "s"} · Received {formatQtyKg(netReceivedKg(r))}
-                    </p>
-                    <Link to={`/job-work/${r.id}`} className="mt-3 block">
-                      <Button className="w-full" variant="secondary" leftIcon={<Eye className="h-4 w-4" />}>
-                        View order
-                      </Button>
-                    </Link>
-                  </div>
-                ))}
+              <div className="space-y-5 md:hidden">
+                {ordersByDate.map(({ date, orders: dayOrders }) => {
+                  const label = date === "unknown" ? "No job date" : formatDate(date);
+                  return (
+                    <section key={date} className="space-y-3" aria-labelledby={`jw-date-m-${date}`}>
+                      <header
+                        id={`jw-date-m-${date}`}
+                        className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200">
+                            <Calendar className="h-4 w-4" aria-hidden="true" />
+                          </div>
+                          <h2 className="text-lg font-bold text-ink">{label}</h2>
+                        </div>
+                        <span className="text-sm font-medium text-ink-muted">
+                          {dayOrders.length} order{dayOrders.length === 1 ? "" : "s"}
+                        </span>
+                      </header>
+                      {dayOrders.map((r) => (
+                        <div
+                          key={r.id}
+                          className={cn(
+                            "rounded-2xl border border-line/80 p-4",
+                            !isVoided(r) && "border-l-4 border-l-primary-500 bg-primary-50/30 dark:bg-primary-950/20",
+                            isVoided(r) && "border-l-4 border-l-danger-500 opacity-80"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <Link
+                                to={`/job-work/${r.id}`}
+                                className="v2-mono text-lg font-bold text-primary-800 dark:text-primary-200"
+                              >
+                                {r.job_number}
+                              </Link>
+                              <p className="mt-0.5 text-base text-ink">{r.customer_name}</p>
+                            </div>
+                          </div>
+                          <p className="mt-3 text-sm text-ink-muted">
+                            {r.lines.length} line{r.lines.length === 1 ? "" : "s"} · Received{" "}
+                            {formatQtyKg(netReceivedKg(r))}
+                          </p>
+                          <Link to={`/job-work/${r.id}`} className="mt-3 block">
+                            <Button className="w-full" variant="secondary" leftIcon={<Eye className="h-4 w-4" />}>
+                              View order
+                            </Button>
+                          </Link>
+                        </div>
+                      ))}
+                    </section>
+                  );
+                })}
               </div>
               <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} />
             </>

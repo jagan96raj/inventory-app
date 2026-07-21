@@ -14,6 +14,7 @@ from app.core.permissions import (
     require_permission,
     require_void_user,
 )
+from app.core.tenant import company_id_for_user
 from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.database import get_db
 from app.models.entities import JobWorkOrderStatus, User
@@ -59,8 +60,11 @@ FULFILLMENT_WRITE = [Depends(require_permission(Permission.JOB_WORK_FULFILLMENT_
 
 
 @router.get("/job-work/next-number", dependencies=MANAGE)
-def preview_next_job_number(db: Session = Depends(get_db)):
-    return {"job_number": preview_job_number(db)}
+def preview_next_job_number(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return {"job_number": preview_job_number(db, company_id_for_user(user))}
 
 
 @router.get("/job-work", response_model=JobWorkOrderPageOut, dependencies=MANAGE)
@@ -70,11 +74,17 @@ def list_orders(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     rows, total = list_job_work_orders(
-        db, customer_id=customer_id, status=status, limit=limit, offset=offset
+        db,
+        company_id=company_id_for_user(user),
+        customer_id=customer_id,
+        status=status,
+        limit=limit,
+        offset=offset,
     )
     items = [JobWorkOrderOut.model_validate(serialize_job_work_order(r)) for r in rows]
     return JobWorkOrderPageOut(**page_dict(items, total, limit, offset))
@@ -96,6 +106,7 @@ def create_order(
         try:
             order = create_job_work_order(
                 db,
+                company_id=company_id_for_user(user),
                 customer_id=body.customer_id,
                 job_date=body.job_date,
                 notes=body.notes,
@@ -116,21 +127,31 @@ def list_fulfillment_orders(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Open JW orders with bill-like receive/return lines (unified list; tab receive/return for legacy filters)."""
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     rows, total = list_jw_fulfillment_orders(
-        db, tab=tab, visibility=visibility, limit=limit, offset=offset
+        db,
+        company_id=company_id_for_user(user),
+        tab=tab,
+        visibility=visibility,
+        limit=limit,
+        offset=offset,
     )
     items = [JobWorkFulfillmentOrderOut.model_validate(r) for r in rows]
     return JobWorkFulfillmentOrderPageOut(**page_dict(items, total, limit, offset))
 
 
 @router.get("/job-work/{order_id}", response_model=JobWorkOrderOut, dependencies=MANAGE)
-def get_order(order_id: int, db: Session = Depends(get_db)):
+def get_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     try:
-        order = load_job_work_order(db, order_id)
+        order = load_job_work_order(db, order_id, company_id=company_id_for_user(user))
     except ValueError as e:
         raise HTTPException(404, str(e)) from e
     return JobWorkOrderOut.model_validate(serialize_job_work_order(order))
@@ -150,9 +171,12 @@ def void_order(
     def execute():
         verify_void_authorization(void_password, user)
         try:
-            order = void_job_work_order(db, order_id, actor=user)
+            order = void_job_work_order(
+                db, order_id, actor=user, company_id=company_id_for_user(user)
+            )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         out = JobWorkOrderOut.model_validate(serialize_job_work_order(order))
         return out, 200
 
@@ -182,9 +206,11 @@ def receive_material(
                 vehicle_no=body.vehicle_no,
                 notes=body.notes,
                 received_date=body.received_date,
+                company_id=company_id_for_user(user),
             )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         out = JobWorkReceiptOut.model_validate(_serialize_receipt_summary(receipt))
         return out, 201
 
@@ -205,9 +231,12 @@ def void_receipt(
     def execute():
         verify_void_authorization(void_password, user)
         try:
-            receipt = void_job_work_receipt(db, receipt_id, actor=user)
+            receipt = void_job_work_receipt(
+                db, receipt_id, actor=user, company_id=company_id_for_user(user)
+            )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         out = JobWorkReceiptOut.model_validate(_serialize_receipt_summary(receipt))
         return out, 200
 
@@ -236,15 +265,17 @@ def return_to_customer(
                 loose_kg=body.loose_kg,
                 notes=body.notes,
                 received_date=body.received_date,
+                company_id=company_id_for_user(user),
             )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         from app.models.entities import JobWorkLine
 
         line = db.get(JobWorkLine, body.line_id)
         if not line:
             raise HTTPException(404, "Line not found")
-        order = load_job_work_order(db, line.order_id)
+        order = load_job_work_order(db, line.order_id, company_id=company_id_for_user(user))
         out = JobWorkOrderOut.model_validate(serialize_job_work_order(order))
         return out, 200
 
@@ -257,10 +288,15 @@ def customer_statement(
     from_date: date | None = None,
     to_date: date | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     try:
         data = get_customer_job_work_statement(
-            db, customer_id, from_date=from_date, to_date=to_date
+            db,
+            customer_id,
+            company_id=company_id_for_user(user),
+            from_date=from_date,
+            to_date=to_date,
         )
     except ValueError as e:
         raise HTTPException(404, str(e)) from e

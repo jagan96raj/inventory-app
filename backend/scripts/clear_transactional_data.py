@@ -38,6 +38,7 @@ from app.models.entities import (
     BillNumberCounter,
     BookSettings,
     Brand,
+    JWNumberCounter,
     CashBookEntry,
     Customer,
     ExpenseCategory,
@@ -110,6 +111,7 @@ def clear_transactional_data(db) -> dict[str, int]:
     ).rowcount
 
     counters_reset = db.execute(update(BillNumberCounter).values(last_number=0)).rowcount
+    jw_counters_reset = db.execute(update(JWNumberCounter).values(last_number=0)).rowcount
 
     from app.utils.time import business_today
 
@@ -130,6 +132,7 @@ def clear_transactional_data(db) -> dict[str, int]:
         "deleted": counts,
         "customers_reset": customers_updated,
         "counters_reset": counters_reset,
+        "jw_counters_reset": jw_counters_reset,
         "book_settings_reset": book_settings_reset,
         "kept": kept,
     }
@@ -147,6 +150,7 @@ def main() -> None:
                 print(f"  {table}: {n}")
         print(f"\nCustomer balances reset: {result['customers_reset']}")
         print(f"Bill number counters reset: {result['counters_reset']}")
+        print(f"JW number counters reset: {result['jw_counters_reset']}")
         print(f"Book settings cash opening reset: {result['book_settings_reset']}")
         print("\nKept:")
         for table, n in result["kept"].items():

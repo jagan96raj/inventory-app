@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Cog } from "lucide-react";
+import { ArrowLeft, ArrowRight, Cog } from "lucide-react";
 import {
   api,
   DEFAULT_PAGE_LIMIT,
   type PageOut,
   type ProcessingJobListItem,
 } from "../../api/client";
-import OperationPageHeader from "../../components/OperationPageHeader";
+import PageHeader from "../../components/ui/PageHeader";
 import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
 import { Card, CardBody, CardHeader } from "../../components/ui/Card";
@@ -51,12 +51,17 @@ export default function ProcessingHistoryPage() {
 
   return (
     <>
-      <OperationPageHeader
+      <PageHeader
+        eyebrow="History"
         title="Processing history"
         subtitle="Completed jobs — newest first. Open a job to review batches, summary, and mass balance."
-        formTo="/operations/processing"
-        historyTo="/histories/processing"
-        mode="history"
+        actions={
+          <Link to="/operations/processing">
+            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
+              Back to open jobs
+            </Button>
+          </Link>
+        }
       />
 
       <Card>
@@ -137,7 +142,7 @@ export default function ProcessingHistoryPage() {
                             {formatQtyKg(outputKg)}
                           </td>
                           <td className={cn(LIST_TD, "text-right")}>
-                            <Link to={`/operations/processing/${j.id}`}>
+                            <Link to={`/operations/processing/${j.id}?from=history`}>
                               <Button
                                 variant="secondary"
                                 size="sm"
@@ -181,7 +186,7 @@ export default function ProcessingHistoryPage() {
                         <Badge tone="success">Completed</Badge>
                       </div>
                       <div className="mt-4">
-                        <Link to={`/operations/processing/${j.id}`} className="block">
+                        <Link to={`/operations/processing/${j.id}?from=history`} className="block">
                           <Button className="w-full" rightIcon={<ArrowRight className="h-4 w-4" />}>
                             View job
                           </Button>

@@ -14,10 +14,13 @@ import FormField from "../components/ui/FormField";
 import Input from "../components/ui/Input";
 import Select from "../components/ui/Select";
 import SegmentedControl from "../components/ui/SegmentedControl";
+import AsyncSearchCombobox from "../components/ui/AsyncSearchCombobox";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import EmptyState from "../components/ui/EmptyState";
 import PaginationBar from "../components/ui/PaginationBar";
-import Skeleton from "../components/ui/Skeleton";import {
+import Skeleton from "../components/ui/Skeleton";
+import { searchBrands, searchProducts } from "../lib/masterSearch";
+import {
   deliveryStatusLabel,
   normalizeDeliveryStatus,
   type DeliveryStatusFilter,
@@ -417,6 +420,8 @@ export default function FulfillmentPage() {
   const [billTypeFilter, setBillTypeFilter] = useState<BillTypeFilter>("all");
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("actionable");
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<DeliveryStatusFilter>("all");
+  const [productId, setProductId] = useState<number | null>(null);
+  const [brandId, setBrandId] = useState<number | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [bills, setBills] = useState<FulfillmentBill[]>([]);
@@ -454,6 +459,8 @@ export default function FulfillmentPage() {
       limit: String(limit),
       offset: String(offset),
     });
+    if (productId != null) params.set("product_id", String(productId));
+    if (brandId != null) params.set("brand_id", String(brandId));
     if (dateFrom) params.set("date_from", dateFrom);
     if (dateTo) params.set("date_to", dateTo);
     return api
@@ -464,11 +471,11 @@ export default function FulfillmentPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [billTypeFilter, visibilityFilter, dateFrom, dateTo, limit, offset]);
+  }, [billTypeFilter, visibilityFilter, productId, brandId, dateFrom, dateTo, limit, offset]);
 
   useEffect(() => {
     setOffset(0);
-  }, [billTypeFilter, visibilityFilter, deliveryStatusFilter, dateFrom, dateTo]);
+  }, [billTypeFilter, visibilityFilter, deliveryStatusFilter, productId, brandId, dateFrom, dateTo]);
 
   useEffect(() => {
     load();
@@ -500,11 +507,17 @@ export default function FulfillmentPage() {
 
   const hasDateFilter = Boolean(dateFrom || dateTo);
   const hasExtraFilters =
-    visibilityFilter === "actionable" || deliveryStatusFilter !== "all" || hasDateFilter;
+    visibilityFilter === "actionable" ||
+    deliveryStatusFilter !== "all" ||
+    productId != null ||
+    brandId != null ||
+    hasDateFilter;
 
   const clearFilters = () => {
     setVisibilityFilter("all");
     setDeliveryStatusFilter("all");
+    setProductId(null);
+    setBrandId(null);
     setDateFrom("");
     setDateTo("");
   };
@@ -618,6 +631,31 @@ export default function FulfillmentPage() {
                   <option value="actionable">Bills needing action</option>
                   <option value="all">All bills</option>
                 </Select>
+              )}
+            </FormField>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <FormField label="Product">
+              {() => (
+                <AsyncSearchCombobox
+                  value={productId}
+                  onChange={setProductId}
+                  searchFn={searchProducts}
+                  placeholder="All products"
+                  emptyText="No matching product"
+                />
+              )}
+            </FormField>
+            <FormField label="Brand">
+              {() => (
+                <AsyncSearchCombobox
+                  value={brandId}
+                  onChange={setBrandId}
+                  searchFn={searchBrands}
+                  placeholder="All brands"
+                  emptyText="No matching brand"
+                />
               )}
             </FormField>
           </div>

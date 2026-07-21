@@ -44,6 +44,8 @@ from app.models.entities import User
 
 from app.schemas import GoogleAuthIn, LoginIn, LoginOtpIn, SignupIn, UserOut
 
+from app.services.companies import get_default_company_id
+
 from app.services.login_history import LoginFailureReason, record_login_event
 
 from app.services.login_otp import INVALID_OTP, login_with_otp
@@ -188,6 +190,10 @@ def user_to_out(user: User) -> UserOut:
 
         role=user.role.value if user.role else None,
 
+        company_id=user.company_id,
+
+        company_name=user.company.name if user.company else None,
+
     )
 
 
@@ -226,6 +232,8 @@ def signup(
 
     now = datetime.now(UTC)
 
+    default_company_id = get_default_company_id(db)
+
     user = User(
 
         email=email,
@@ -233,6 +241,8 @@ def signup(
         password_hash=hash_password(body.password),
 
         name=body.name.strip() if body.name else None,
+
+        company_id=default_company_id,
 
         last_login_at=now,
 
@@ -488,6 +498,8 @@ def google_login(
 
         check_email_allowed_for_signup(email)
 
+        default_company_id = get_default_company_id(db)
+
         user = User(
 
             google_sub=str(info["sub"]),
@@ -497,6 +509,8 @@ def google_login(
             name=info.get("name"),
 
             picture_url=info.get("picture"),
+
+            company_id=default_company_id,
 
             last_login_at=now,
 

@@ -17,6 +17,7 @@ from app.schemas import (
     CashBookEntryOut,
     CashBookEntryPageOut,
 )
+from app.core.tenant import company_id_for_user, require_for_company
 from app.services.cash_book import (
     CASH_BOOK_EXPECTED_VERSION_REQUIRED_MSG,
     CASH_BOOK_STALE_MSG,
@@ -47,6 +48,8 @@ def _http_for_value_error(exc: ValueError) -> HTTPException:
         return HTTPException(409, msg)
     if msg == CASH_BOOK_EXPECTED_VERSION_REQUIRED_MSG:
         return HTTPException(400, msg)
+    if "not found" in msg.lower():
+        return HTTPException(404, msg)
     return HTTPException(400, msg)
 
 
@@ -64,11 +67,13 @@ def list_cash_book_endpoint(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     q = list_cash_book(
         db,
+        company_id=company_id_for_user(user),
         entry_type=entry_type,
         category_id=category_id,
         source_payment_mode=source_payment_mode,
@@ -88,10 +93,11 @@ def list_cash_book_endpoint(
 def get_cash_book_entry(
     entry_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    entry = db.get(CashBookEntry, entry_id)
-    if entry is None:
-        raise HTTPException(404, "Cash book entry not found")
+    entry = require_for_company(
+        db, CashBookEntry, entry_id, company_id_for_user(user), label="Cash book entry"
+    )
     return _to_out(entry)
 
 
@@ -111,6 +117,7 @@ def post_cash_book_entry(
         try:
             entry = create_cash_book_entry(
                 db,
+                company_id=company_id_for_user(user),
                 entry_type=body.entry_type,
                 category_id=body.category_id,
                 amount=body.amount,
@@ -146,6 +153,7 @@ def patch_cash_book_entry(
             entry = edit_cash_book_entry(
                 db,
                 entry_id,
+                company_id=company_id_for_user(user),
                 expected_version=body.expected_version,
                 entry_type=body.entry_type,
                 category_id=body.category_id,
@@ -181,7 +189,11 @@ def void_cash_book_entry_endpoint(
     def execute():
         try:
             entry = void_cash_book_entry(
-                db, entry_id, expected_version=expected_version, actor=user
+                db,
+                entry_id,
+                expected_version=expected_version,
+                actor=user,
+                company_id=company_id_for_user(user),
             )
         except ValueError as e:
             raise _http_for_value_error(e) from e

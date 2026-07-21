@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.permissions import Permission, require_permission
+from app.core.tenant import company_id_for_user, require_entity_company
 from app.database import get_db
 from app.models.entities import User, UserRole
 from app.schemas import LoginOtpOut, UserAdminOut, UserCreate, UserUpdate
@@ -21,6 +22,8 @@ def _user_admin_out(user: User) -> UserAdminOut:
         name=user.name,
         picture_url=user.picture_url,
         role=role,
+        company_id=user.company_id,
+        company_name=user.company.name if user.company else None,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
         password=user.password_plain,
@@ -31,9 +34,9 @@ def _user_admin_out(user: User) -> UserAdminOut:
 @router.get("", response_model=list[UserAdminOut])
 def get_users(
     db: Session = Depends(get_db),
-    _user: User = Depends(require_permission(Permission.USERS_MANAGE)),
+    actor: User = Depends(require_permission(Permission.USERS_MANAGE)),
 ):
-    return [_user_admin_out(u) for u in list_users(db)]
+    return [_user_admin_out(u) for u in list_users(db, company_id=company_id_for_user(actor))]
 
 
 @router.post("", response_model=UserAdminOut, status_code=201)
@@ -92,7 +95,7 @@ def remove_user(
     actor: User = Depends(require_permission(Permission.USERS_MANAGE)),
 ):
     try:
-        delete_user(db, user_id, actor_id=actor.id)
+        delete_user(db, user_id, actor=actor)
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower():
@@ -105,11 +108,10 @@ def remove_user(
 def post_login_otp(
     user_id: int,
     db: Session = Depends(get_db),
-    _actor: User = Depends(require_permission(Permission.USERS_MANAGE)),
+    actor: User = Depends(require_permission(Permission.USERS_MANAGE)),
 ):
     user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(404, "User not found")
+    require_entity_company(user, company_id_for_user(actor), label="User")
     code, expires_at = generate_login_otp(db, user)
     return LoginOtpOut(
         otp=code,

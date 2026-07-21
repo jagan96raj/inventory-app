@@ -31,24 +31,32 @@ def _format_bill_number(bill_type: BillType, seq: int) -> str:
     return f"{_bill_number_prefix(bill_type)}-{seq:06d}"
 
 
-def _get_counter_for_update(db: Session, bill_type: BillType) -> BillNumberCounter:
+def _get_counter_for_update(
+    db: Session, bill_type: BillType, company_id: int = 1
+) -> BillNumberCounter:
     row = db.scalar(
         select(BillNumberCounter)
-        .where(BillNumberCounter.bill_type == bill_type)
+        .where(
+            BillNumberCounter.company_id == company_id,
+            BillNumberCounter.bill_type == bill_type,
+        )
         .with_for_update()
     )
     if row:
         return row
     try:
         with db.begin_nested():
-            row = BillNumberCounter(bill_type=bill_type, last_number=0)
+            row = BillNumberCounter(company_id=company_id, bill_type=bill_type, last_number=0)
             db.add(row)
             db.flush()
     except IntegrityError:
         pass
     row = db.scalar(
         select(BillNumberCounter)
-        .where(BillNumberCounter.bill_type == bill_type)
+        .where(
+            BillNumberCounter.company_id == company_id,
+            BillNumberCounter.bill_type == bill_type,
+        )
         .with_for_update()
     )
     if not row:
@@ -56,16 +64,21 @@ def _get_counter_for_update(db: Session, bill_type: BillType) -> BillNumberCount
     return row
 
 
-def preview_bill_number(db: Session, bill_type: BillType) -> str:
+def preview_bill_number(db: Session, bill_type: BillType, company_id: int = 1) -> str:
     """Read-only next number for UI preview (does not consume counter)."""
-    row = db.scalar(select(BillNumberCounter).where(BillNumberCounter.bill_type == bill_type))
+    row = db.scalar(
+        select(BillNumberCounter).where(
+            BillNumberCounter.company_id == company_id,
+            BillNumberCounter.bill_type == bill_type,
+        )
+    )
     next_seq = (row.last_number + 1) if row else 1
     return _format_bill_number(bill_type, next_seq)
 
 
-def next_bill_number(db: Session, bill_type: BillType) -> str:
-    """Allocate next bill number under row lock (Spec v12.7)."""
-    counter = _get_counter_for_update(db, bill_type)
+def next_bill_number(db: Session, bill_type: BillType, company_id: int = 1) -> str:
+    """Allocate next bill number under row lock (Spec v12.7 / v17.0.3 per company)."""
+    counter = _get_counter_for_update(db, bill_type, company_id)
     counter.last_number += 1
     db.flush()
     return _format_bill_number(bill_type, counter.last_number)
@@ -279,15 +292,17 @@ def finalize_bill(db: Session, bill: Bill) -> Bill:
 
 
 
-def load_bill(db: Session, bill_id: int) -> Bill | None:
+def load_bill(db: Session, bill_id: int, company_id: int | None = None) -> Bill | None:
+
+    q = select(Bill).where(Bill.id == bill_id)
+
+    if company_id is not None:
+
+        q = q.where(Bill.company_id == company_id)
 
     return db.scalar(
 
-        select(Bill)
-
-        .where(Bill.id == bill_id)
-
-        .options(
+        q.options(
 
             joinedload(Bill.lines).joinedload(BillLine.product),
 
@@ -402,6 +417,7 @@ def void_bill(
     *,
     expected_version: int | None,
     actor: User | None = None,
+    company_id: int | None = None,
 ) -> Bill:
     from app.services.bill_concurrency import assert_bill_version, bump_bill_version
     from app.services.bill_lock import lock_bill_for_update
@@ -409,8 +425,10 @@ def void_bill(
     locked = lock_bill_for_update(db, bill_id)
     if not locked:
         raise ValueError("Bill not found")
+    if company_id is not None and int(getattr(locked, "company_id", company_id) or company_id) != int(company_id):
+        raise ValueError("Bill not found")
     assert_bill_version(locked, expected_version)
-    bill = load_bill(db, bill_id)
+    bill = load_bill(db, bill_id, company_id=company_id)
     if not bill:
         raise ValueError("Bill not found")
 

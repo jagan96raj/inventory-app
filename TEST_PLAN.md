@@ -1,8 +1,62 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 08 Jul 2026 — covers Spec v5.4 through **v16.0.22**; backend v12.21 + v12.22  
+**Last updated:** 10 Jul 2026 — covers Spec v5.4 through **v17.0.5**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.0.5 — Profile & company header ownership
+
+1. **Topbar Profile** — Opens `/profile` (not Home). Menu shows company name under email when available.
+2. **Account section** — Name, email, role are view-only.
+3. **Owner company edit** — Owner can change company name/address/phone → Save; bill print shows updated header.
+4. **Non-owner** — Company fields read-only; note that only the owner can edit; `PATCH /api/companies/me` → **403**.
+5. **Book Settings** — No company header fields; cash opening + powder still present and save without company_* in payload.
+6. **Home unchanged** — `/home` remains shortcuts; not the Profile page.
+
+## v17.0.4 — Multi-tenant Phase 5 (company registration)
+
+1. **Flag off (Raj Agro default)** — With `ALLOW_COMPANY_REGISTRATION=false`, `POST /api/companies/register` → **403**; Login page does not show “Register your company” (or status `allowed: false`).
+2. **Flag on (local/dev only)** — Set `ALLOW_COMPANY_REGISTRATION=true`, restart backend; open `/register`; create company + owner → lands on dashboard; books empty (no Raj Agro masters/bills).
+3. **Settings / counters** — New company book settings `company_name` matches; cash opening `0`; first sales bill number `S-000001` without colliding with company 1.
+4. **Validations** — Duplicate email → **409**; weak password → **400**; empty company name rejected.
+5. **Isolation** — New company product list does not include Raj Agro products; company 1 unchanged.
+6. **Raj Agro staff path unchanged** — Keep `ALLOWED_EMAILS`; staff still join via **Users** page (not company register). Do **not** leave registration enabled on Raj Agro production.
+
+## v17.0.3 — Multi-tenant Phase 4 (per-company settings & counters)
+
+1. **Raj Agro book settings** — Login as company 1; Book settings shows cash opening (and powder); company header is on **Profile** (v17.0.5).
+2. **Bill number continues** — Create a new sales bill → number continues previous series (not `S-000001` unless that was next).
+3. **JW number continues** — Create a job work order → `JW-…` continues previous company-1 series.
+4. **Second company (if present)** — Company 2 gets `S-000001` (and own JW-000001) and own blank/default book settings; patching company 2 does not change company 1.
+5. **Registration** — Delivered in **v17.0.4** (flag-gated).
+
+## v17.0.2 — Multi-tenant Phase 3 (tenant-scoped API queries)
+
+1. **Company 2 masters** — User in company 2 `GET /api/products` (etc.) does not include company 1 products; own masters still listed.
+2. **Bill get isolation** — Company 2 `GET /api/bills/{id}` for a company-1 bill → **404**.
+3. **Company 1 unchanged** — Company 1 user still lists/gets own bills and products.
+4. **Payment isolation** — Company 2 cannot pay on a company-1 bill → **404** / **400**.
+5. **Inventory isolation** — Each company lists only its own inventory rows.
+6. **Reports / accounts** — Company 2 dashboard-bundle / business-summary / accounts customers exclude company 1 totals and customers.
+7. **Users isolation** — Company 2 `GET /api/users` does not list company 1 users (and vice versa).
+8. **Book settings** — Delivered in **v17.0.3** (per-company; no longer 403 for company 2).
+9. **Registration** — Delivered in **v17.0.4** (flag-gated).
+
+## v17.0.1 — Multi-tenant Phase 2 (company_id on business data)
+
+1. **Migration** — `alembic upgrade head` (`046`); spot-check products / customers / bills have `company_id = 1`.
+2. **Create product** — New product via API gets logged-in user's `company_id`.
+3. **Per-company uniqueness** — Two companies can share the same product name (test DB).
+4. **Cross-company FK** — Bill create with another company's `customer_id` → **400**.
+5. **Note** — List/get filters delivered in **v17.0.2**; no registration page.
+
+## v17.0.0 — Multi-tenant Phase 1 (company + users)
+
+1. **Migration** — `alembic upgrade head`; all users have `company_id`; default company exists (from `book_settings` or `'Raj Agro'`).
+2. **`/api/auth/me`** — Response includes `company_id` and `company_name`.
+3. **`GET /api/companies/me`** — Returns authenticated user's company (`name`, `address_line`, `phone`, `is_active`).
+4. **Admin user create** — New user inherits admin's `company_id`.
+5. **Signup** — Self-signup user gets default company; no registration page.
 
 ## v16.0.22 — Hybrid master picker (browse + word search)
 
@@ -114,7 +168,7 @@ Amended tests/helpers only (no production logic changes): signup lockdown mocks 
 
 ## v16.0.9 — Bill print & PDF
 
-1. **Company header** — Accounts → Book settings → set company name, address, phone → Save.
+1. **Company header** — **Profile** (owner) → set company name, address, phone → Save. (Supersedes Book settings company header — v17.0.5.)
 2. **Print** — Open a sales or purchase bill → **Print** → clean layout, no sidebar; browser print dialog.
 3. **Download PDF** — **Download PDF** → saves `{bill_number}.pdf` (client-side).
 4. **Voided bill** — VOIDED watermark visible; print still works for records.

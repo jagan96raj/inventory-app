@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -49,8 +50,26 @@ import { VoidPill } from "../components/ui/StatusPill";
 import SegmentedControl from "../components/ui/SegmentedControl";
 import { cn } from "../lib/cn";
 import { calcPreviewTotalKg, isLooseBagType } from "../lib/bagType";
-import { formatDateTime, formatQtyKg } from "../lib/format";
-import { computeMassBalance, computeOutputLineCountsByBrand, computeProcessingEntryCounts, jobAvailableReprocessKg, jobSummary, totalOutputKg, totalPowderKgFromBatches, activeProcessingBatches } from "../lib/processingSummary";
+import { formatDate, formatDateTime, formatQtyKg } from "../lib/format";
+import {
+  computeMassBalance,
+  computeOutputLineCountsByBrand,
+  computeProcessingEntryCounts,
+  jobAvailableReprocessKg,
+  jobSummary,
+  lastBalanceReturnEntries,
+  lastBrandOutputEntries,
+  lastMiscEntries,
+  lastPowderEntries,
+  lastWasteEntries,
+  totalOutputKg,
+  totalPowderKgFromBatches,
+  activeProcessingBatches,
+  type RecentBalanceReturnEntry,
+  type RecentBrandOutputEntry,
+  type RecentMiscEntry,
+  type RecentWasteEntry,
+} from "../lib/processingSummary";
 import { usePermissions } from "../lib/permissions";
 import { useSidebarCollapsed } from "../components/Sidebar";
 import {
@@ -119,6 +138,9 @@ type OutputLineForm = {
   bag_type_id: string;
   bag_count: string;
   loose_kg: string;
+  brand_label?: string;
+  location_label?: string;
+  bag_type_label?: string;
 };
 
 const emptyInputLine = (): InputLineForm => ({
@@ -427,6 +449,7 @@ function ownerRulesBannerMessage(job: ProcessingJob, customerLabels: CustomerLab
 
 export default function ProcessingJobPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const [job, setJob] = useState<ProcessingJob | null>(null);
   const bagTypeCache = useBagTypeCache();
   const getBagType = bagTypeCache.get;
@@ -1215,7 +1238,17 @@ export default function ProcessingJobPage() {
   if (!jobLoadDone) {
     return (
       <>
-        <PageHeader eyebrow="Processing job" title="Loading job…" />
+        <PageHeader
+          eyebrow="Processing job"
+          title="Loading job…"
+          actions={
+            <Link to="/operations/processing">
+              <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
+                Back
+              </Button>
+            </Link>
+          }
+        />
         <div className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[3fr_71fr_3fr_25fr]">
           <div className="hidden lg:col-start-2 lg:block">
             <div className="space-y-4">
@@ -1232,7 +1265,17 @@ export default function ProcessingJobPage() {
   if (!job) {
     return (
       <>
-        <PageHeader eyebrow="Processing job" title="Could not load job" />
+        <PageHeader
+          eyebrow="Processing job"
+          title="Could not load job"
+          actions={
+            <Link to="/operations/processing">
+              <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
+                Back
+              </Button>
+            </Link>
+          }
+        />
         {error && (
           <Banner tone="danger" className="mb-4">
             {error}
@@ -1248,7 +1291,9 @@ export default function ProcessingJobPage() {
                 Retry
               </Button>
               <Link to="/operations/processing">
-                <Button variant="ghost">All jobs</Button>
+                <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />}>
+                  Back to jobs
+                </Button>
               </Link>
             </div>
           }
@@ -1261,41 +1306,62 @@ export default function ProcessingJobPage() {
     (a, b) => new Date(b.operation_at).getTime() - new Date(a.operation_at).getTime()
   );
   const activeBatchCount = activeProcessingBatches(allBatches).length;
+  const fromParam = searchParams.get("from");
+  const fromHistory = fromParam === "history" || (fromParam !== "open" && job.status === "completed");
+  const backTo = fromHistory ? "/histories/processing" : "/operations/processing";
+  const backLabel = fromHistory ? "Back to history" : "Back to processing";
 
   return (
     <>
-      <PageHeader
-        eyebrow="Processing job"
-        title={
-          <span className="flex flex-wrap items-center gap-3">
-            <span>
-              {job.input_product_name} · {job.input_brand_name}
-            </span>
-            <Badge tone={jobStatusTone(job.status)} size="md">
-              {job.status}
-            </Badge>
-          </span>
-        }
-        subtitle={
-          job.completed_at
-            ? `Completed ${formatDateTime(job.completed_at)}`
-            : "Record input and output batches, then complete when mass balance is valid."
-        }
-        actions={
-          <Link to="/operations/processing">
-            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
-              All jobs
-            </Button>
-          </Link>
-        }
-      />
-
       <div className="min-w-0">
         <div
           ref={layoutGridRef}
           className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[3fr_71fr_3fr_25fr]"
         >
           <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1">
+            <div className="sticky top-16 z-20 -mx-1 mb-1 rounded-2xl border border-line/60 bg-[rgb(var(--canvas)/0.94)] px-3 py-3 shadow-sm backdrop-blur-md sm:px-4">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-300">
+                    {fromHistory ? (
+                      <Link to="/histories/processing" className="hover:underline">
+                        Processing history
+                      </Link>
+                    ) : (
+                      <Link to="/operations/processing" className="hover:underline">
+                        Processing
+                      </Link>
+                    )}
+                    <span className="mx-1.5 text-ink-subtle">/</span>
+                    <span className="text-ink-muted">Job</span>
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <h1 className="truncate text-lg font-bold tracking-tight text-ink sm:text-xl">
+                      {job.input_product_name} · {job.input_brand_name}
+                    </h1>
+                    <Badge tone={jobStatusTone(job.status)} size="md">
+                      {job.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    {job.completed_at
+                      ? `Completed ${formatDateTime(job.completed_at)}`
+                      : "Record input and output batches, then complete when mass balance is valid."}
+                  </p>
+                </div>
+                <Link
+                  to={backTo}
+                  className="group inline-flex shrink-0 items-center gap-2.5 rounded-full border border-line/70 bg-surface px-2.5 py-1.5 pr-3.5 text-sm font-semibold text-ink shadow-sm transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800 dark:hover:border-primary-700 dark:hover:bg-primary-950/40 dark:hover:text-primary-100"
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-md transition group-hover:scale-105">
+                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span className="hidden sm:inline">{backLabel}</span>
+                  <span className="sm:hidden">Back</span>
+                </Link>
+              </div>
+            </div>
+
             {error && (
               <Banner tone="danger" onClose={() => setError("")}>
                 {error}
@@ -1759,13 +1825,14 @@ export default function ProcessingJobPage() {
                                     const v = brandId != null ? String(brandId) : "";
                                     setOutputForm((f) => {
                                       const lines = [...f.output_lines];
-                                      lines[idx] = { ...lines[idx], brand_id: v };
+                                      lines[idx] = { ...lines[idx], brand_id: v, brand_label: undefined };
                                       return { ...f, output_lines: lines };
                                     });
                                   }}
                                   searchFn={searchBrands}
                                   placeholder="Search brand…"
                                   emptyText="No matching brand"
+                                  initialLabel={ln.brand_label}
                                 />
                               )}
                             </FormField>
@@ -1777,13 +1844,14 @@ export default function ProcessingJobPage() {
                                     const v = locationId != null ? String(locationId) : "";
                                     setOutputForm((f) => {
                                       const lines = [...f.output_lines];
-                                      lines[idx] = { ...lines[idx], location_id: v };
+                                      lines[idx] = { ...lines[idx], location_id: v, location_label: undefined };
                                       return { ...f, output_lines: lines };
                                     });
                                   }}
                                   searchFn={searchLocations}
                                   placeholder="Search location…"
                                   emptyText="No matching location"
+                                  initialLabel={ln.location_label}
                                 />
                               )}
                             </FormField>
@@ -1797,14 +1865,19 @@ export default function ProcessingJobPage() {
                                     const v = bagTypeId != null ? String(bagTypeId) : "";
                                     setOutputForm((f) => {
                                       const lines = [...f.output_lines];
-                                      lines[idx] = { ...lines[idx], bag_type_id: v, ...emptyQtyFields() };
+                                      lines[idx] = {
+                                        ...lines[idx],
+                                        bag_type_id: v,
+                                        bag_type_label: undefined,
+                                        ...emptyQtyFields(),
+                                      };
                                       return { ...f, output_lines: lines };
                                     });
                                   }}
                                   searchFn={searchBagTypes}
                                   placeholder="Search bag type…"
                                   emptyText="No matching bag type"
-                                  initialLabel={getBagType(ln.bag_type_id)?.name}
+                                  initialLabel={ln.bag_type_label ?? getBagType(ln.bag_type_id)?.name}
                                 />
                               )}
                             </FormField>
@@ -2451,10 +2524,9 @@ function MassBalancePanel({
   balance: ReturnType<typeof computeMassBalance>;
   includesPending?: boolean;
 }) {
+  const basisKg = balance.massBalanceInputKg;
   const usedPct =
-    balance.freshInputKg > 0
-      ? Math.min(100, (balance.totalOutflowKg / balance.freshInputKg) * 100)
-      : 0;
+    basisKg > 0 ? Math.min(100, (balance.totalOutflowKg / basisKg) * 100) : 0;
   const warn = balance.allowanceRemainingKg < 0;
 
   return (
@@ -2485,15 +2557,17 @@ function MassBalancePanel({
       ) : (
         <p className="mt-2 text-sm text-ink-muted">
           {includesPending
-            ? "Includes unsaved entries in the open form. Totals are in the snapshot panel on the right."
-            : "Committed batches only. Totals are in the snapshot panel on the right."}
+            ? "Includes unsaved entries in the open form. Allowance = fresh + reprocess + 100 − outflow (same in-side as misc)."
+            : "Committed batches only. Allowance = fresh + reprocess + 100 − outflow (same in-side as misc)."}
         </p>
       )}
-      {balance.freshInputKg > 0 && (
+      {basisKg > 0 && (
         <div className="mt-4">
           <div className="mb-1 flex justify-between text-sm text-ink-muted">
             <span>
-              {includesPending ? "Outflow vs fresh input (with this form)" : "Outflow vs fresh input"}
+              {includesPending
+                ? "Outflow vs fresh + reprocess (with this form)"
+                : "Outflow vs fresh + reprocess"}
             </span>
             <span className="v2-mono">{usedPct.toFixed(2)}%</span>
           </div>
@@ -2506,7 +2580,14 @@ function MassBalancePanel({
               style={{ width: `${usedPct}%` }}
             />
           </div>
-          <p className="mt-2 text-xs text-ink-subtle">100 kg tolerance band enforced on submit.</p>
+          <p className="mt-2 text-xs text-ink-subtle">
+            Basis {formatQtyKg(basisKg)}
+            {balance.reprocessInputKg > 0
+              ? ` (fresh ${formatQtyKg(balance.freshInputKg)} + reprocess ${formatQtyKg(balance.reprocessInputKg)})`
+              : ""}
+            {" · "}
+            100 kg tolerance on submit.
+          </p>
         </div>
       )}
     </div>
@@ -2545,6 +2626,157 @@ function SummaryMetricRow({
   );
 }
 
+type SnapshotRecentItem = {
+  key: string;
+  primary: string;
+  secondary?: string;
+};
+
+/** Compact hover panel — last entries for reference (view only). */
+function SnapshotRecentHover({
+  title,
+  items,
+  children,
+  className,
+}: {
+  title: string;
+  items: SnapshotRecentItem[];
+  children: ReactNode;
+  className?: string;
+}) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const closeTimer = useRef<number | null>(null);
+
+  const clearClose = () => {
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+
+  const placePanel = () => {
+    const el = anchorRef.current;
+    if (!el || items.length === 0) return;
+    const r = el.getBoundingClientRect();
+    const panelW = 260;
+    const gap = 10;
+    const placeLeft = r.left >= panelW + gap + 12;
+    const left = placeLeft
+      ? r.left - panelW - gap
+      : Math.min(r.right + gap, window.innerWidth - panelW - 12);
+    const estimatedH = 36 + items.length * 44;
+    const top = Math.min(Math.max(12, r.top), window.innerHeight - estimatedH - 12);
+    setPos({ top, left: Math.max(12, left) });
+  };
+
+  const show = () => {
+    clearClose();
+    if (items.length === 0) return;
+    placePanel();
+    setOpen(true);
+  };
+
+  const hide = () => {
+    clearClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 80);
+  };
+
+  useEffect(() => () => clearClose(), []);
+
+  if (items.length === 0) {
+    return <div className={className}>{children}</div>;
+  }
+
+  return (
+    <div
+      ref={anchorRef}
+      className={cn("relative", className)}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+    >
+      {children}
+      {open &&
+        createPortal(
+          <div
+            role="tooltip"
+            className="pointer-events-none fixed z-[80] w-[260px] overflow-hidden rounded-lg border border-line/60 bg-surface/95 shadow-[0_8px_30px_rgb(var(--shadow-color)/0.18)] ring-1 ring-black/5 backdrop-blur-md dark:ring-white/10"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            <div className="border-b border-line/50 bg-surface-muted/50 px-3 py-1.5">
+              <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                {title}
+              </p>
+            </div>
+            <ul className="divide-y divide-line/40 py-0.5">
+              {items.map((item) => (
+                <li key={item.key} className="px-3 py-1.5">
+                  <p className="v2-mono text-[12px] font-semibold leading-snug text-ink">{item.primary}</p>
+                  {item.secondary ? (
+                    <p className="mt-0.5 truncate text-[11px] leading-snug text-ink-muted">{item.secondary}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
+
+function formatBrandEntryPrimary(entry: RecentBrandOutputEntry): string {
+  if (entry.bagCount > 0) {
+    return `${entry.bagCount} bag${entry.bagCount === 1 ? "" : "s"} · ${formatQtyKg(entry.quantityKg)}`;
+  }
+  return formatQtyKg(entry.quantityKg);
+}
+
+function formatBrandEntrySecondary(entry: RecentBrandOutputEntry): string {
+  const parts = [
+    entry.locationName ?? `Loc #${entry.locationId}`,
+    entry.bagTypeName ?? `Bag #${entry.bagTypeId}`,
+  ];
+  if (Number(entry.looseKg) > 0 && entry.bagCount > 0) {
+    parts.push(`${formatQtyKg(entry.looseKg)} loose`);
+  }
+  parts.push(formatDateTime(entry.operationAt));
+  return parts.join(" · ");
+}
+
+function formatWasteEntryPrimary(entry: RecentWasteEntry): string {
+  return formatQtyKg(entry.totalKg);
+}
+
+function formatWasteEntrySecondary(entry: RecentWasteEntry): string {
+  const parts: string[] = [];
+  if (Number(entry.dustKg) > 0) parts.push(`Dust ${formatQtyKg(entry.dustKg)}`);
+  if (Number(entry.stoneKg) > 0) parts.push(`Stone ${formatQtyKg(entry.stoneKg)}`);
+  if (Number(entry.sackKg) > 0) parts.push(`Sack ${formatQtyKg(entry.sackKg)}`);
+  parts.push(formatDateTime(entry.operationAt));
+  return parts.join(" · ");
+}
+
+function formatBalanceReturnPrimary(entry: RecentBalanceReturnEntry): string {
+  if (entry.bagCount > 0) {
+    return `${entry.bagCount} bag${entry.bagCount === 1 ? "" : "s"} · ${formatQtyKg(entry.quantityKg)}`;
+  }
+  return formatQtyKg(entry.quantityKg);
+}
+
+function formatBalanceReturnSecondary(entry: RecentBalanceReturnEntry): string {
+  const parts = [
+    entry.locationName ?? "Location",
+    entry.bagTypeName ?? "Bag type",
+  ];
+  if (Number(entry.looseKg) > 0 && entry.bagCount > 0) {
+    parts.push(`${formatQtyKg(entry.looseKg)} loose`);
+  }
+  parts.push(formatDateTime(entry.operationAt));
+  return parts.join(" · ");
+}
+
 function SummarySidebarBody({
   summary,
   batches,
@@ -2552,8 +2784,6 @@ function SummarySidebarBody({
   summary: ProcessingJobSummary;
   batches: ProcessingBatch[];
 }) {
-  const outputKg = totalOutputKg(summary);
-  const netBalance = Number(summary.net_balance_kg);
   const counts = computeProcessingEntryCounts(batches);
   const outputLinesByBrand = computeOutputLineCountsByBrand(batches);
   const wasteKg = Number(summary.total_waste_kg ?? 0);
@@ -2561,7 +2791,11 @@ function SummarySidebarBody({
   const wasteDisplayKg = powderKg > 0 ? Math.max(wasteKg - powderKg, 0) : wasteKg;
   const miscKg = Number(summary.total_misc_kg ?? 0);
   const lossKg = Number(summary.total_loss_kg ?? 0);
-  const powderStorageLabels = powderStorageLabelsFromBatches(batches);
+  const recentWaste = lastWasteEntries(batches, 5);
+  const recentMisc = lastMiscEntries(batches, 5);
+  const recentPowder = lastPowderEntries(batches, 5);
+  const recentBalanceReturns = lastBalanceReturnEntries(batches, 5);
+  const latestBalanceReturn = recentBalanceReturns[0] ?? null;
 
   const freshValue =
     summary.fresh_input_bags && summary.fresh_input_bags > 0
@@ -2571,18 +2805,21 @@ function SummarySidebarBody({
   return (
     <div className="space-y-2.5">
       <SummaryMetricRow label="Fresh in" value={freshValue} entryCount={counts.freshInputLines} tone="primary" />
-      <SummaryMetricRow
-        label="Output"
-        value={formatQtyKg(outputKg)}
-        entryCount={counts.outputLines}
-        tone="success"
-      />
-      <SummaryMetricRow
-        label="Net unclean"
-        value={formatQtyKg(netBalance)}
-        entryCount={counts.netBalanceLines}
-        tone={netBalance > 0 ? "warning" : "neutral"}
-      />
+      <SnapshotRecentHover
+        title="Balance return"
+        items={recentBalanceReturns.map((entry) => ({
+          key: entry.key,
+          primary: formatBalanceReturnPrimary(entry),
+          secondary: formatBalanceReturnSecondary(entry),
+        }))}
+      >
+        <SummaryMetricRow
+          label="Balance return"
+          value={formatQtyKg(latestBalanceReturn?.quantityKg ?? 0)}
+          entryCount={counts.balanceReturnLines}
+          tone={latestBalanceReturn ? "warning" : "neutral"}
+        />
+      </SnapshotRecentHover>
 
       <div className="border-t border-line/50 pt-3">
         <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">Output by brand</p>
@@ -2590,19 +2827,27 @@ function SummarySidebarBody({
           <div className="space-y-2">
             {summary.output_by_brand.map((row) => {
               const lineCount = outputLinesByBrand.get(row.brand_id) ?? 0;
+              const recent = lastBrandOutputEntries(batches, row.brand_id, 5);
               return (
-                <div
+                <SnapshotRecentHover
                   key={row.brand_id}
-                  className="rounded-xl border border-accent-200/50 bg-accent-50/40 px-3 py-2.5 dark:border-accent-800/35 dark:bg-accent-950/20"
+                  title={row.brand_name ?? `Brand #${row.brand_id}`}
+                  items={recent.map((entry) => ({
+                    key: entry.key,
+                    primary: formatBrandEntryPrimary(entry),
+                    secondary: formatBrandEntrySecondary(entry),
+                  }))}
                 >
-                  <p className="text-sm font-semibold text-ink">{row.brand_name ?? `Brand #${row.brand_id}`}</p>
-                  <p className="v2-mono text-base font-bold text-accent-800 dark:text-accent-300">
-                    {formatQtyKg(row.quantity_kg)}
-                    {lineCount > 0 ? (
-                      <span className="ml-1.5 text-sm font-semibold text-ink-muted">({lineCount})</span>
-                    ) : null}
-                  </p>
-                </div>
+                  <div className="rounded-xl border border-accent-200/50 bg-accent-50/40 px-3 py-2.5 transition hover:border-accent-300/80 dark:border-accent-800/35 dark:bg-accent-950/20 dark:hover:border-accent-700/50">
+                    <p className="text-sm font-semibold text-ink">{row.brand_name ?? `Brand #${row.brand_id}`}</p>
+                    <p className="v2-mono text-base font-bold text-accent-800 dark:text-accent-300">
+                      {formatQtyKg(row.quantity_kg)}
+                      {lineCount > 0 ? (
+                        <span className="ml-1.5 text-sm font-semibold text-ink-muted">({lineCount})</span>
+                      ) : null}
+                    </p>
+                  </div>
+                </SnapshotRecentHover>
               );
             })}
           </div>
@@ -2611,35 +2856,49 @@ function SummarySidebarBody({
         )}
       </div>
 
-      {powderKg > 0 && powderStorageLabels.length > 0 && (
-        <div className="border-t border-line/50 pt-3">
-          <p className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">Powder locations</p>
-          <div className="space-y-1.5">
-            {powderStorageLabels.map((label) => (
-              <p key={label} className="text-sm font-medium leading-snug text-ink">
-                {label}
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="space-y-2.5 border-t border-line/50 pt-3">
         {powderKg > 0 && (
-          <SummaryMetricRow
-            label="Powder stock"
-            value={formatQtyKg(powderKg)}
-            entryCount={counts.powderBatches}
-            tone="success"
-          />
+          <SnapshotRecentHover
+            title="Powder stock"
+            items={recentPowder.map((entry) => ({
+              key: entry.key,
+              primary: formatQtyKg(entry.powderKg),
+              secondary: formatDateTime(entry.operationAt),
+            }))}
+          >
+            <SummaryMetricRow
+              label="Powder stock"
+              value={formatQtyKg(powderKg)}
+              entryCount={counts.powderBatches}
+              tone="success"
+            />
+          </SnapshotRecentHover>
         )}
-        <SummaryMetricRow
-          label={powderKg > 0 ? "Waste (excl. powder)" : "Waste"}
-          value={formatQtyKg(wasteDisplayKg)}
-          entryCount={counts.wasteBatches}
-          tone="warning"
-        />
-        <SummaryMetricRow label="Misc" value={formatQtyKg(miscKg)} tone="muted" />
+        <SnapshotRecentHover
+          title="Waste"
+          items={recentWaste.map((entry) => ({
+            key: entry.key,
+            primary: formatWasteEntryPrimary(entry),
+            secondary: formatWasteEntrySecondary(entry),
+          }))}
+        >
+          <SummaryMetricRow
+            label={powderKg > 0 ? "Waste (excl. powder)" : "Waste"}
+            value={formatQtyKg(wasteDisplayKg)}
+            entryCount={counts.wasteBatches}
+            tone="warning"
+          />
+        </SnapshotRecentHover>
+        <SnapshotRecentHover
+          title="Misc"
+          items={recentMisc.map((entry: RecentMiscEntry) => ({
+            key: entry.key,
+            primary: formatQtyKg(entry.miscKg),
+            secondary: formatDateTime(entry.operationAt),
+          }))}
+        >
+          <SummaryMetricRow label="Misc" value={formatQtyKg(miscKg)} tone="muted" />
+        </SnapshotRecentHover>
         <SummaryMetricRow label="Total loss" value={formatQtyKg(lossKg)} tone="warning" />
       </div>
     </div>
@@ -2690,6 +2949,8 @@ function SummarySidebar({
     </div>
   );
 
+  const body = <SummarySidebarBody summary={summary} batches={batches} />;
+
   return (
     <>
       {(layout === "mobile" || layout === "both") && (
@@ -2706,9 +2967,7 @@ function SummarySidebar({
             <span className="hidden text-sm text-ink-muted group-open:inline">Tap to collapse</span>
           </div>
         </summary>
-        <div className="border-t border-line/50 px-4 py-4">
-          <SummarySidebarBody summary={summary} batches={batches} />
-        </div>
+        <div className="border-t border-line/50 px-4 py-4">{body}</div>
       </details>
       )}
 
@@ -2716,9 +2975,7 @@ function SummarySidebar({
       <aside className={layout === "both" ? "hidden lg:block" : undefined}>
         <div className={shellClass}>
           {header}
-          <div className="px-4 py-4">
-            <SummarySidebarBody summary={summary} batches={batches} />
-          </div>
+          <div className="px-4 py-4">{body}</div>
         </div>
       </aside>
       )}
@@ -2768,18 +3025,6 @@ function wasteAuditCategories(wa: ProcessingWasteAllocation): { label: string; k
     label,
     kg: Number(wa[key] ?? 0),
   })).filter((row) => row.kg > 0);
-}
-
-function powderStorageLabelsFromBatches(batches: ProcessingBatch[]): string[] {
-  const labels = new Set<string>();
-  for (const batch of activeProcessingBatches(batches)) {
-    if (Number(batch.powder_kg) <= 0) continue;
-    if (batch.powder_location_name) {
-      const parts = [batch.powder_location_name, batch.powder_brand_name, batch.powder_bag_type_name].filter(Boolean);
-      labels.add(parts.join(" · "));
-    }
-  }
-  return [...labels];
 }
 
 function SummaryCard({
@@ -2921,8 +3166,22 @@ function batchNumberFor(batch: ProcessingBatch, allBatches: ProcessingBatch[]): 
   return sorted.findIndex((b) => b.id === batch.id) + 1;
 }
 
-function summarizeBatch(batch: ProcessingBatch): { inputKg: number; outputKg: number; wasteKg: number; parts: string[] } {
-  const inputKg = batch.input_lines.reduce((sum, ln) => sum + Number(ln.quantity_kg), 0);
+function summarizeBatch(batch: ProcessingBatch): {
+  inputKg: number;
+  freshInputKg: number;
+  reprocessKg: number;
+  outputKg: number;
+  wasteKg: number;
+  parts: string[];
+} {
+  let freshInputKg = 0;
+  let reprocessKg = 0;
+  for (const ln of batch.input_lines) {
+    const qty = Number(ln.quantity_kg);
+    if ((ln.input_source ?? "fresh") === "balance_reprocess") reprocessKg += qty;
+    else freshInputKg += qty;
+  }
+  const inputKg = freshInputKg; // primary "input" = fresh from stock only (matches snapshot)
   const outputKg =
     batch.output_lines.reduce((sum, ln) => sum + Number(ln.quantity_kg), 0) +
     (batch.balance_return_lines ?? []).reduce((sum, ln) => sum + Number(ln.quantity_kg), 0);
@@ -2933,10 +3192,11 @@ function summarizeBatch(batch: ProcessingBatch): { inputKg: number; outputKg: nu
     Number(batch.powder_kg ?? 0) +
     Number(batch.miscellaneous_waste_kg);
   const parts: string[] = [];
-  if (inputKg > 0) parts.push(`Input ${formatQtyKg(inputKg)}`);
+  if (freshInputKg > 0) parts.push(`Fresh ${formatQtyKg(freshInputKg)}`);
+  if (reprocessKg > 0) parts.push(`Reprocess ${formatQtyKg(reprocessKg)}`);
   if (outputKg > 0) parts.push(`Output ${formatQtyKg(outputKg)}`);
   if (wasteKg > 0) parts.push(`Waste ${formatQtyKg(wasteKg)}`);
-  return { inputKg, outputKg, wasteKg, parts };
+  return { inputKg, freshInputKg, reprocessKg, outputKg, wasteKg, parts };
 }
 
 function buildProcessingLogGroups(
@@ -3038,16 +3298,55 @@ function groupTotalKg<T extends { quantityKg: string }>(rows: T[]): number {
   return rows.reduce((sum, row) => sum + Number(row.quantityKg), 0);
 }
 
+function logDayKey(at: string): string {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return at.slice(0, 10) || "unknown";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatLogTime(at: string): string {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Newest date first; rows within a day keep newest-first order. */
+function groupLogRowsByDate<T extends { at: string; sortAt: number }>(
+  rows: T[]
+): { dayKey: string; label: string; rows: T[]; totalKg: number }[] {
+  const map = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = logDayKey(row.at);
+    const list = map.get(key);
+    if (list) list.push(row);
+    else map.set(key, [row]);
+  }
+  return [...map.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([dayKey, dayRows]) => ({
+      dayKey,
+      label: formatDate(dayRows[0]?.at),
+      rows: dayRows,
+      totalKg: groupTotalKg(dayRows),
+    }));
+}
+
 function LogSection({
   title,
   titleTone,
   totalKg,
+  secondaryLabel,
   children,
   emptyLabel,
 }: {
   title: string;
   titleTone: string;
   totalKg: number;
+  /** Optional muted line (e.g. reprocess) — never mixed into totalKg. */
+  secondaryLabel?: string | null;
   children: ReactNode;
   emptyLabel: string;
 }) {
@@ -3055,21 +3354,41 @@ function LogSection({
     <section className="rounded-2xl border border-line/80 bg-surface/50">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line/60 px-4 py-3 sm:px-5">
         <h4 className={cn("text-base font-semibold", titleTone)}>{title}</h4>
-        <span className="v2-mono text-sm font-semibold text-ink">
-          {totalKg > 0 ? formatQtyKg(totalKg) : emptyLabel}
-        </span>
+        <div className="text-right">
+          <span className="v2-mono text-sm font-semibold text-ink">
+            {totalKg > 0 ? formatQtyKg(totalKg) : emptyLabel}
+          </span>
+          {secondaryLabel ? (
+            <p className="mt-0.5 text-xs font-medium text-ink-muted">{secondaryLabel}</p>
+          ) : null}
+        </div>
       </div>
-      <div className="p-1 sm:p-2">{children}</div>
+      <div className="space-y-3 p-2 sm:p-3">{children}</div>
     </section>
   );
 }
 
+function LogDateGroup({
+  label,
+  totalKg,
+  children,
+}: {
+  label: string;
+  totalKg: number;
+  children: ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-line/60 bg-surface/80">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 bg-surface-muted/40 px-3 py-2">
+        <p className="text-sm font-semibold text-ink">{label}</p>
+        <span className="v2-mono text-xs font-semibold text-ink-muted">{formatQtyKg(totalKg)}</span>
+      </div>
+      <div className="p-1">{children}</div>
+    </div>
+  );
+}
+
 const INPUT_COLUMNS: Column<InputLogRow>[] = [
-  {
-    key: "at",
-    header: "Date & time",
-    cell: (r) => <span className="v2-mono text-sm text-ink">{formatDateTime(r.at)}</span>,
-  },
   {
     key: "source",
     header: "Source",
@@ -3109,14 +3428,15 @@ const INPUT_COLUMNS: Column<InputLogRow>[] = [
     numeric: true,
     cell: (r) => <span className="v2-mono text-sm font-semibold text-ink">{formatQtyKg(r.quantityKg)}</span>,
   },
+  {
+    key: "at",
+    header: "Time",
+    numeric: true,
+    cell: (r) => <span className="v2-mono text-sm text-ink-muted">{formatLogTime(r.at)}</span>,
+  },
 ];
 
 const OUTPUT_COLUMNS: Column<OutputLogRow>[] = [
-  {
-    key: "at",
-    header: "Date & time",
-    cell: (r) => <span className="v2-mono text-sm text-ink">{formatDateTime(r.at)}</span>,
-  },
   { key: "kind", header: "Kind", cell: (r) => (
       <span
         className={cn(
@@ -3152,14 +3472,15 @@ const OUTPUT_COLUMNS: Column<OutputLogRow>[] = [
     numeric: true,
     cell: (r) => <span className="v2-mono text-sm font-semibold text-ink">{formatQtyKg(r.quantityKg)}</span>,
   },
+  {
+    key: "at",
+    header: "Time",
+    numeric: true,
+    cell: (r) => <span className="v2-mono text-sm text-ink-muted">{formatLogTime(r.at)}</span>,
+  },
 ];
 
 const WASTE_COLUMNS: Column<WasteLogRow>[] = [
-  {
-    key: "at",
-    header: "Date & time",
-    cell: (r) => <span className="v2-mono text-sm text-ink">{formatDateTime(r.at)}</span>,
-  },
   {
     key: "category",
     header: "Category",
@@ -3170,6 +3491,12 @@ const WASTE_COLUMNS: Column<WasteLogRow>[] = [
     header: "Quantity (kg)",
     numeric: true,
     cell: (r) => <span className="v2-mono text-sm font-semibold text-ink">{formatQtyKg(r.quantityKg)}</span>,
+  },
+  {
+    key: "at",
+    header: "Time",
+    numeric: true,
+    cell: (r) => <span className="v2-mono text-sm text-ink-muted">{formatLogTime(r.at)}</span>,
   },
 ];
 
@@ -3201,18 +3528,36 @@ function ProcessingInputLog({
   customerNames: Map<number, string>;
 }) {
   const groups = useProcessingLogGroups(batches, customerNames);
-  const inputTotal = groupTotalKg(groups.input);
+  const freshRows = groups.input.filter((r) => r.source === "Fresh");
+  const reprocessRows = groups.input.filter((r) => r.source === "Reprocess");
+  // Match snapshot "Fresh in": total must be fresh-from-stock only — never add/subtract reprocess.
+  const freshTotal = groupTotalKg(freshRows);
+  const reprocessTotal = groupTotalKg(reprocessRows);
+  const byDate = groupLogRowsByDate(groups.input);
   if (groups.input.length === 0) {
     return <p className="px-3 py-4 text-sm text-ink-muted">No input recorded yet.</p>;
   }
   return (
     <LogSection
-      title="Input"
+      title="Input (fresh from stock)"
       titleTone="text-primary-700 dark:text-primary-300"
-      totalKg={inputTotal}
-      emptyLabel="No input"
+      totalKg={freshTotal}
+      secondaryLabel={
+        reprocessTotal > 0 ? `Reprocess (not in total): ${formatQtyKg(reprocessTotal)}` : null
+      }
+      emptyLabel="No fresh input"
     >
-      <Table columns={INPUT_COLUMNS} rows={groups.input} rowKey={(r) => r.id} caption="Input log" compact />
+      {byDate.map((day) => (
+        <LogDateGroup key={day.dayKey} label={day.label} totalKg={day.totalKg}>
+          <Table
+            columns={INPUT_COLUMNS}
+            rows={day.rows}
+            rowKey={(r) => r.id}
+            caption={`Input log ${day.label}`}
+            compact
+          />
+        </LogDateGroup>
+      ))}
     </LogSection>
   );
 }
@@ -3226,6 +3571,7 @@ function ProcessingOutputLog({
 }) {
   const groups = useProcessingLogGroups(batches, customerNames);
   const outputTotal = groupTotalKg(groups.output);
+  const byDate = groupLogRowsByDate(groups.output);
   if (groups.output.length === 0) {
     return <p className="px-3 py-4 text-sm text-ink-muted">No output or balance return recorded yet.</p>;
   }
@@ -3236,7 +3582,17 @@ function ProcessingOutputLog({
       totalKg={outputTotal}
       emptyLabel="No output"
     >
-      <Table columns={OUTPUT_COLUMNS} rows={groups.output} rowKey={(r) => r.id} caption="Output log" compact />
+      {byDate.map((day) => (
+        <LogDateGroup key={day.dayKey} label={day.label} totalKg={day.totalKg}>
+          <Table
+            columns={OUTPUT_COLUMNS}
+            rows={day.rows}
+            rowKey={(r) => r.id}
+            caption={`Output log ${day.label}`}
+            compact
+          />
+        </LogDateGroup>
+      ))}
     </LogSection>
   );
 }
@@ -3246,6 +3602,7 @@ const EMPTY_CUSTOMER_NAMES = new Map<number, string>();
 function ProcessingWasteLog({ batches }: { batches: ProcessingBatch[] }) {
   const groups = useProcessingLogGroups(batches, EMPTY_CUSTOMER_NAMES);
   const wasteTotal = groupTotalKg(groups.waste);
+  const byDate = groupLogRowsByDate(groups.waste);
   if (groups.waste.length === 0) {
     return <p className="px-3 py-4 text-sm text-ink-muted">No waste recorded yet.</p>;
   }
@@ -3256,7 +3613,17 @@ function ProcessingWasteLog({ batches }: { batches: ProcessingBatch[] }) {
       totalKg={wasteTotal}
       emptyLabel="No waste"
     >
-      <Table columns={WASTE_COLUMNS} rows={groups.waste} rowKey={(r) => r.id} caption="Waste log" compact />
+      {byDate.map((day) => (
+        <LogDateGroup key={day.dayKey} label={day.label} totalKg={day.totalKg}>
+          <Table
+            columns={WASTE_COLUMNS}
+            rows={day.rows}
+            rowKey={(r) => r.id}
+            caption={`Waste log ${day.label}`}
+            compact
+          />
+        </LogDateGroup>
+      ))}
     </LogSection>
   );
 }

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.auth import get_current_user
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.permissions import Permission, require_permission, require_void_user
+from app.core.tenant import assert_entity_company, company_filter, company_id_for_user, require_entity_company
 from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.pagination import (
     DEFAULT_LIMIT,
@@ -23,9 +24,12 @@ from app.models.entities import (
     BillLine,
     BillStatus,
     BillType,
+    Brand,
     Customer,
     DeliveryStatus,
+    Location,
     PaymentStatus,
+    Product,
     User,
 )
 from app.services.idempotency import hash_empty_body, hash_pydantic_body
@@ -74,7 +78,7 @@ from app.services.bill_concurrency import (
 )
 from app.services.payments import opposite_bills_due_total, update_bill_payment_status
 from app.routers.payments import payment_to_out
-from app.utils import validate_bags_loose
+from app.utils import calc_quantity_kg, validate_bags_loose
 
 router = APIRouter(
     tags=["bills"],
@@ -142,6 +146,7 @@ def bill_list_item_to_out(bill: Bill) -> BillListItemOut:
         payment_status=bill.payment_status.value,
         order_delivery_status=bill.order_delivery_status.value,
         version=bill.version,
+        notes=bill.notes,
     )
 
 
@@ -225,6 +230,7 @@ def bill_to_out(bill: Bill, db: Session | None = None, *, include_payments: bool
         discount_percent=bill.discount_percent,
         discount_amount=bill.discount_amount,
         adjustment=bill.adjustment,
+        notes=bill.notes,
         total_amount=bill.subtotal,
         final_payable=bill.grand_total,
         subtotal=bill.subtotal,
@@ -246,7 +252,9 @@ def bill_to_out(bill: Bill, db: Session | None = None, *, include_payments: bool
         customer_credit_balance=bill.customer.credit_balance if bill.customer else None,
         customer_debit_balance=bill.customer.debit_balance if bill.customer else None,
         opposite_due_total=(
-            opposite_bills_due_total(db, bill.customer_id, bill.bill_type)
+            opposite_bills_due_total(
+                db, bill.customer_id, bill.bill_type, company_id=bill.company_id
+            )
             if db is not None and bill.customer_id
             else None
         ),
@@ -265,6 +273,24 @@ def validate_lines(db: Session, bill: Bill, lines_in: list[BillLineIn]) -> None:
         seen.add(key)
 
 
+def _validate_bill_company_fks(
+    db: Session,
+    company_id: int,
+    *,
+    customer_id: int,
+    location_id: int | None,
+    bill_type: BillType,
+    lines_in: list[BillLineIn],
+) -> None:
+    assert_entity_company(db.get(Customer, customer_id), company_id, "Customer")
+    if bill_type == BillType.sales and location_id is not None:
+        assert_entity_company(db.get(Location, location_id), company_id, "Location")
+    for li in lines_in:
+        assert_entity_company(db.get(Product, li.product_id), company_id, "Product")
+        assert_entity_company(db.get(Brand, li.brand_id), company_id, "Brand")
+        assert_entity_company(db.get(BagType, li.bag_type_id), company_id, "Bag type")
+
+
 def build_lines(db: Session, bill: Bill, lines_in: list[BillLineIn]) -> None:
     if lines_in:
         validate_lines(db, bill, lines_in)
@@ -277,7 +303,7 @@ def build_lines(db: Session, bill: Bill, lines_in: list[BillLineIn]) -> None:
         if not bt:
             raise HTTPException(400, f"Invalid bag type {li.bag_type_id}")
         try:
-            validate_bags_loose(bt, li.ordered_bags, li.ordered_loose_kg)
+            validate_bags_loose(bt, li.ordered_bags, li.ordered_loose_kg, allow_zero=True)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         line = BillLine(
@@ -295,12 +321,28 @@ def build_lines(db: Session, bill: Bill, lines_in: list[BillLineIn]) -> None:
         recalc_line(line, bt)
         bill.lines.append(line)
     if lines_in:
+        has_qty = False
+        for li in lines_in:
+            bt_row = db.get(BagType, li.bag_type_id)
+            if bt_row is None:
+                continue
+            if calc_quantity_kg(bt_row, li.ordered_bags, li.ordered_loose_kg) > 0:
+                has_qty = True
+                break
+        if not has_qty:
+            raise HTTPException(400, "At least one line must have quantity greater than zero")
         db.flush()
 
 
 @router.get("/bills/next-number")
-def preview_next_bill_number(bill_type: BillType, db: Session = Depends(get_db)):
-    return {"bill_number": preview_bill_number(db, bill_type)}
+def preview_next_bill_number(
+    bill_type: BillType,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return {
+        "bill_number": preview_bill_number(db, bill_type, company_id_for_user(user)),
+    }
 
 
 @router.get("/bills/picker", response_model=BillPickerPageOut)
@@ -310,14 +352,16 @@ def bills_picker(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Lightweight bills listing for the cash-book link picker."""
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
     q = (
         select(Bill)
         .options(joinedload(Bill.customer))
-        .where(Bill.status == BillStatus.finalized)
+        .where(Bill.status == BillStatus.finalized, company_filter(Bill, company_id))
         .order_by(Bill.id.desc())
     )
     if bill_type is not None:
@@ -357,6 +401,7 @@ def list_bills(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     if payment_status is not None and payment_status not in ("unpaid", "partial", "paid"):
         raise HTTPException(400, "Invalid payment_status")
@@ -366,9 +411,10 @@ def list_bills(
         raise HTTPException(400, "date_from must be on or before date_to")
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
+    company_id = company_id_for_user(user)
 
     base_q = _apply_bill_list_filters(
-        select(Bill),
+        select(Bill).where(company_filter(Bill, company_id)),
         bill_type=bill_type,
         payment_status=payment_status,
         delivery_status=delivery_status,
@@ -379,7 +425,9 @@ def list_bills(
     summary = _bills_list_summary(db, base_q)
 
     items_q = _apply_bill_list_filters(
-        select(Bill).options(
+        select(Bill)
+        .where(company_filter(Bill, company_id))
+        .options(
             joinedload(Bill.customer),
             joinedload(Bill.location),
         ),
@@ -403,8 +451,8 @@ def list_bills(
 
 
 @router.get("/bills/{bid}", response_model=BillOut)
-def get_bill(bid: int, db: Session = Depends(get_db)):
-    bill = load_bill(db, bid)
+def get_bill(bid: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    bill = load_bill(db, bid, company_id=company_id_for_user(user))
     if not bill:
         raise HTTPException(404, "Not found")
     return bill_to_out(bill, db, include_payments=True)
@@ -423,18 +471,32 @@ def create_finalized_bill(
     request_hash = hash_pydantic_body(body)
 
     def execute():
+        company_id = company_id_for_user(user)
+        try:
+            _validate_bill_company_fks(
+                db,
+                company_id,
+                customer_id=body.customer_id,
+                location_id=body.location_id if body.bill_type == BillType.sales else None,
+                bill_type=body.bill_type,
+                lines_in=body.lines,
+            )
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
         bill = None
         last_error: Exception | None = None
         for attempt in range(3):
             try:
                 bill = Bill(
-                    bill_number=next_bill_number(db, body.bill_type),
+                    company_id=company_id,
+                    bill_number=next_bill_number(db, body.bill_type, company_id),
                     bill_type=body.bill_type,
                     bill_date=body.bill_date if body.bill_date is not None else business_today(),
                     customer_id=body.customer_id,
                     location_id=body.location_id if body.bill_type == BillType.sales else None,
                     discount_percent=body.discount_percent,
                     adjustment=body.adjustment,
+                    notes=body.notes,
                 )
                 db.add(bill)
                 db.flush()
@@ -460,7 +522,7 @@ def create_finalized_bill(
         else:
             raise HTTPException(500, f"Bill submit failed: {last_error}") from last_error
 
-        bill = load_bill(db, bill.id)
+        bill = load_bill(db, bill.id, company_id=company_id)
         out = bill_to_out(bill, db)
         return out, 201
 
@@ -479,17 +541,19 @@ def edit_finalized_bill(
     request_hash = hash_pydantic_body(body)
 
     def execute():
+        company_id = company_id_for_user(user)
         try:
             locked = lock_bill_for_update(db, bid)
         except ValueError as e:
             raise http_exception_for_value_error(e) from e
         if not locked:
             raise HTTPException(404, "Not found")
+        require_entity_company(locked, company_id, label="Bill")
         try:
             assert_bill_version(locked, body.expected_version)
         except ValueError as e:
             raise http_exception_for_value_error(e) from e
-        bill = load_bill(db, bid)
+        bill = load_bill(db, bid, company_id=company_id)
         if not bill:
             raise HTTPException(404, "Not found")
         if bill.status == BillStatus.voided:
@@ -510,6 +574,8 @@ def edit_finalized_bill(
                 bill.discount_percent = body.discount_percent
             if body.adjustment is not None:
                 bill.adjustment = body.adjustment
+            if "notes" in body.model_fields_set:
+                bill.notes = body.notes
 
             if body.lines:
                 line_map = {ln.id: ln for ln in _unique_bill_lines(bill)}
@@ -526,13 +592,16 @@ def edit_finalized_bill(
                         line.rate_per_kg = item.rate_per_kg
                     new_bags = line.ordered_bags if item.ordered_bags is None else item.ordered_bags
                     new_loose = line.ordered_loose_kg if item.ordered_loose_kg is None else item.ordered_loose_kg
-                    validate_bags_loose(bt, new_bags, new_loose)
+                    validate_bags_loose(bt, new_bags, new_loose, allow_zero=True)
                     line.ordered_bags = new_bags
                     line.ordered_loose_kg = new_loose
                     recalc_line(line, bt)
 
-            recalc_bill_totals(db, bill)
             db_lines = _unique_bill_lines(bill)
+            if not any(Decimal(ln.ordered_quantity_kg or 0) > 0 for ln in db_lines):
+                raise HTTPException(400, "At least one line must have quantity greater than zero")
+
+            recalc_bill_totals(db, bill)
             validate_edit_bill(bill, db_lines)
             apply_balance_on_edit_replace(db, customer, bill, previous_grand_total)
             recalc_delivery_status_after_edit(db, bill, db_lines)
@@ -551,7 +620,7 @@ def edit_finalized_bill(
 
         from app.services.audit_log import AuditAction, AuditEntityType, record_audit_event
 
-        bill_after = load_bill(db, bid)
+        bill_after = load_bill(db, bid, company_id=company_id)
         if bill_after:
             record_audit_event(
                 db,
@@ -575,9 +644,10 @@ def list_bill_linked_entries(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """Spec v12.21 — paginated cash book entries linked to this bill."""
-    bill = db.get(Bill, bid)
+    bill = load_bill(db, bid, company_id=company_id_for_user(user))
     if not bill:
         raise HTTPException(404, "Bill not found")
     limit = clamp_limit(limit)
@@ -589,9 +659,13 @@ def list_bill_linked_entries(
 
 
 @router.get("/bills/{bid}/void-precheck", response_model=BillVoidLinkedInfoOut)
-def bill_void_precheck(bid: int, db: Session = Depends(get_db)):
+def bill_void_precheck(
+    bid: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """Spec v15.9 — preflight for voiding a bill: eligibility + linked cash book entries."""
-    bill = db.get(Bill, bid)
+    bill = load_bill(db, bid, company_id=company_id_for_user(user))
     if not bill:
         raise HTTPException(404, "Bill not found")
     count, total_amount = count_active_linked_entries(db, bid)
@@ -619,11 +693,14 @@ def void_bill_endpoint(
     request_hash = hash_empty_body()
 
     def execute():
+        company_id = company_id_for_user(user)
         try:
-            bill = void_bill(db, bid, expected_version=expected_bill_version, actor=user)
+            bill = void_bill(
+                db, bid, expected_version=expected_bill_version, actor=user, company_id=company_id
+            )
         except ValueError as e:
             raise http_exception_for_value_error(e) from e
-        out = bill_to_out(load_bill(db, bill.id), db, include_payments=True)
+        out = bill_to_out(load_bill(db, bill.id, company_id=company_id), db, include_payments=True)
         return out, 200
 
     return run_idempotent_mutation(db, user, idempotency_key, route_key, request_hash, execute)

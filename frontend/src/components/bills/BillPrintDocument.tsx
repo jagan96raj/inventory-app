@@ -6,6 +6,7 @@ import {
   formatCustomerAddress,
   type BillPrintDocumentProps,
 } from "../../lib/billPrint";
+import { formatCompanyAddressLines } from "../../lib/companyAddressFields";
 import { formatInr, formatDate } from "../../lib/format";
 import { cn } from "../../lib/cn";
 
@@ -16,6 +17,15 @@ const BillPrintDocument = forwardRef<HTMLDivElement, BillPrintDocumentProps>(fun
   const isVoided = bill.status === "voided";
   const customerAddress = formatCustomerAddress(bill);
   const totals = billTotalsRows(bill);
+  const companyAddressLines = bookSettings
+    ? formatCompanyAddressLines({
+        address_line: bookSettings.company_address_line,
+        address_line_2: bookSettings.company_address_line_2,
+        district: bookSettings.company_district,
+        state: bookSettings.company_state,
+        pin_code: bookSettings.company_pin_code,
+      })
+    : [];
 
   return (
     <div
@@ -40,14 +50,19 @@ const BillPrintDocument = forwardRef<HTMLDivElement, BillPrintDocumentProps>(fun
         {bookSettings?.company_name && (
           <h1 className="text-2xl font-bold tracking-tight text-ink">{bookSettings.company_name}</h1>
         )}
-        {bookSettings?.company_address_line && (
-          <p className="mt-1 text-sm text-ink-muted">{bookSettings.company_address_line}</p>
-        )}
+        {companyAddressLines.map((line) => (
+          <p key={line} className="mt-1 text-sm text-ink-muted">
+            {line}
+          </p>
+        ))}
         {bookSettings?.company_phone && (
           <p className="mt-1 text-sm text-ink-muted">Phone: {bookSettings.company_phone}</p>
         )}
+        {bookSettings?.company_gstin && (
+          <p className="mt-1 text-sm text-ink-muted">GSTIN: {bookSettings.company_gstin}</p>
+        )}
         {!bookSettings?.company_name && (
-          <p className="text-sm text-ink-muted">Set company name in Accounts → Book settings</p>
+          <p className="text-sm text-ink-muted">Set company details on Profile</p>
         )}
       </header>
 
@@ -120,6 +135,13 @@ const BillPrintDocument = forwardRef<HTMLDivElement, BillPrintDocumentProps>(fun
           </tbody>
         </table>
       </div>
+
+      {bill.notes?.trim() && (
+        <div className="mt-6 rounded-md border border-ink/10 bg-surface-muted/30 px-4 py-3 text-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Notes</p>
+          <p className="mt-1 whitespace-pre-wrap text-ink">{bill.notes.trim()}</p>
+        </div>
+      )}
 
       <footer className="mt-10 border-t border-ink/10 pt-4 text-xs text-ink-muted">
         Computer-generated bill · {bill.bill_number}

@@ -20,18 +20,8 @@ import { toast } from "../../components/ui/Toaster";
 const REMAINING_HELP =
   "Remaining = ordered − total receive events + total returns (returns reopen receive allowance).";
 
-function statusTone(status: string): "primary" | "success" | "muted" | "danger" {
-  if (status === "open") return "primary";
-  if (status === "completed") return "success";
-  if (status === "cancelled") return "danger";
-  return "muted";
-}
-
-function statusLabel(status: string): string {
-  if (status === "open") return "Open";
-  if (status === "completed") return "Completed";
-  if (status === "cancelled") return "Voided";
-  return status;
+function isVoidedStatus(status: string): boolean {
+  return status === "cancelled";
 }
 
 function lineIsLoose(ln: JobWorkLine): boolean {
@@ -84,7 +74,9 @@ export default function JobWorkDetailPage() {
     return order.lines.reduce((s, ln) => s + Number(ln.remaining_receive_kg ?? 0), 0);
   }, [order]);
 
-  const canVoidOrder = order?.status === "open" && netReceivedKgTotal === 0;
+  const canVoidOrder = order != null && !isVoidedStatus(order.status) && netReceivedKgTotal === 0;
+  const isVoided = order != null && isVoidedStatus(order.status);
+  const isActive = order != null && !isVoided;
 
   const voidOrder = async (password: string) => {
     if (!order) return;
@@ -147,7 +139,7 @@ export default function JobWorkDetailPage() {
       className: "text-right",
       headerClassName: "text-right",
     },
-    ...(order?.status === "open"
+    ...(isActive
       ? [
           {
             key: "remaining",
@@ -208,7 +200,7 @@ export default function JobWorkDetailPage() {
                 Back
               </Button>
             </Link>
-            {order.status === "open" && (
+            {isActive && (
               <Link to="/job-work/fulfillment">
                 <Button leftIcon={<Truck className="h-4 w-4" />}>Receive / Return</Button>
               </Link>
@@ -237,11 +229,11 @@ export default function JobWorkDetailPage() {
       )}
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
-        <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
+        {isVoided ? <Badge tone="danger">Voided</Badge> : null}
         {order.notes && <span className="text-sm text-ink-muted">{order.notes}</span>}
       </div>
 
-      {order.status === "open" && (
+      {isActive && (
         <Banner tone="info" className="mb-5">
           Receive and return material on{" "}
           <Link to="/job-work/fulfillment" className="font-semibold text-primary-700 underline dark:text-primary-300">
@@ -251,31 +243,31 @@ export default function JobWorkDetailPage() {
         </Banner>
       )}
 
-      {order.status === "open" && netReceivedKgTotal > 0 && (
+      {isActive && netReceivedKgTotal > 0 && (
         <Banner tone="warning" className="mb-5">
           Return all material to the customer before voiding this order ({formatQtyKg(netReceivedKgTotal)} still
           received).
         </Banner>
       )}
 
-      {order.status === "cancelled" && (
+      {isVoided && (
         <Banner tone="danger" className="mb-5">
           This job work order has been voided. Receive, return, and fulfillment actions are disabled.
         </Banner>
       )}
 
       <div
-        className={`mb-5 grid gap-3 ${order.status === "open" && remainingKg > 0 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+        className={`mb-5 grid gap-3 ${isActive && remainingKg > 0 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
       >
         <Stat label="Ordered (kg)" value={formatQtyKg(orderedKg)} tone="neutral" />
         <Stat label="Received (kg)" value={formatQtyKg(netReceivedKgTotal)} tone="primary" />
-        {order.status === "open" && remainingKg > 0 ? (
+        {isActive && remainingKg > 0 ? (
           <Stat label="Remaining" value={formatQtyKg(remainingKg)} tone="info" />
         ) : null}
       </div>
 
       <Card className="mb-5">
-        <CardHeader title="Lines" subtitle={order.status === "open" ? REMAINING_HELP : undefined} />
+        <CardHeader title="Lines" subtitle={isActive ? REMAINING_HELP : undefined} />
         <CardBody>
           <Table columns={lineColumns} rows={order.lines} rowKey={(ln) => ln.id} caption="Job work lines" />
         </CardBody>

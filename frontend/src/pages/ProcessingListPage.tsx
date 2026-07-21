@@ -87,7 +87,7 @@ export default function ProcessingListPage() {
         { headers: idempotencyHeaders(idemKeyRef.current) }
       );
       idemKeyRef.current = null;
-      navigate(`/operations/processing/${job.id}`);
+      navigate(`/operations/processing/${job.id}?from=open`);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -224,7 +224,7 @@ export default function ProcessingListPage() {
                           {formatDateTime(j.opened_at)}
                         </td>
                         <td className={cn(LIST_TD, "text-right")}>
-                          <Link to={`/operations/processing/${j.id}`}>
+                          <Link to={`/operations/processing/${j.id}?from=open`}>
                             <Button
                               variant="secondary"
                               size="sm"
@@ -257,7 +257,7 @@ export default function ProcessingListPage() {
                       <Badge tone="primary">Open</Badge>
                     </div>
                     <div className="mt-4">
-                      <Link to={`/operations/processing/${j.id}`} className="block">
+                      <Link to={`/operations/processing/${j.id}?from=open`} className="block">
                         <Button className="w-full" rightIcon={<ArrowRight className="h-4 w-4" />}>
                           Continue job
                         </Button>

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, UserPlus } from "lucide-react";
+import { ArrowLeft, Package, Plus, UserPlus } from "lucide-react";
 import {
   api,
   idempotencyHeadersOptionalAuth,
@@ -40,6 +40,7 @@ import AsyncSearchCombobox from "../components/ui/AsyncSearchCombobox";
 import FormField from "../components/ui/FormField";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import AddCustomerDialog from "../components/AddCustomerDialog";
+import Textarea from "../components/ui/Textarea";
 
 type LineForm = {
   line_id?: number;
@@ -167,6 +168,7 @@ export default function BillFormPage({
   const [header, setHeader] = useState({ customer_id: "", location_id: "" });
   const [discountPercent, setDiscountPercent] = useState("");
   const [adjustment, setAdjustment] = useState("");
+  const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineForm[]>([emptyLine()]);
 
   const headerReady = isSales
@@ -195,6 +197,7 @@ export default function BillFormPage({
         });
         setDiscountPercent(b.discount_percent);
         setAdjustment(b.adjustment);
+        setNotes(b.notes ?? "");
         setLines(
           b.lines.map((l) => ({
             line_id: l.id,
@@ -259,6 +262,11 @@ export default function BillFormPage({
   const amountDue = useMemo(
     () => Math.max(totals.finalPayable - amountPaid, 0),
     [totals.finalPayable, amountPaid]
+  );
+
+  const productsBilledCount = useMemo(
+    () => lines.filter((l) => l.product_id && l.brand_id && l.bag_type_id).length,
+    [lines]
   );
 
   const handleCustomerChange = (customerId: string) => {
@@ -326,13 +334,16 @@ export default function BillFormPage({
     for (let i = 0; i < lines.length; i++) {
       if (isDuplicateLine(lines, i, isSales)) return "Duplicate line: same product, brand, and bag type";
     }
+    let hasPositiveQty = false;
     for (const line of complete) {
       const bt = getBagType(line.bag_type_id);
       if (!bt) return "Invalid bag type on a line";
       const qty = orderedQtyKg(line, bt);
-      if (qty <= 0) return "Quantity must be greater than zero";
+      if (qty < 0) return "Quantity cannot be negative";
+      if (qty > 0) hasPositiveQty = true;
       if (!line.rate_per_kg || Number(line.rate_per_kg) < 0) return "Enter rate per kg on each line";
     }
+    if (!hasPositiveQty) return "At least one line must have quantity greater than zero";
     return null;
   };
 
@@ -391,6 +402,7 @@ export default function BillFormPage({
       bill_date: billDate,
       discount_percent: Number(discountPercent),
       adjustment: Number(adjustment),
+      notes: notes.trim() || null,
       lines: lines
         .filter((l) => l.product_id && l.brand_id && l.bag_type_id)
         .map((l) => linePayload(l, getBagType, isSales)),
@@ -405,6 +417,7 @@ export default function BillFormPage({
     expected_version: bill?.version,
     discount_percent: Number(discountPercent),
     adjustment: Number(adjustment),
+    notes: notes.trim() || null,
     lines: (bill?.lines ?? []).map((bl, idx) => {
       const lf = lines[idx];
       const bt = getBagType(String(bl.bag_type_id));
@@ -418,18 +431,21 @@ export default function BillFormPage({
 
   const validateEditLines = (): string | null => {
     if (!bill) return "Bill not loaded";
+    let hasPositiveQty = false;
     for (let i = 0; i < bill.lines.length; i++) {
       const bl = bill.lines[i];
       const lf = lines[i];
       const bt = getBagType(String(bl.bag_type_id));
       const qty = orderedQtyKg(lf, bt);
       const floor = Number(bl.delivered_quantity_kg ?? 0);
-      if (qty <= 0) return `Quantity must be greater than zero on line ${i + 1}`;
+      if (qty < 0) return `Quantity cannot be negative on line ${i + 1}`;
+      if (qty > 0) hasPositiveQty = true;
       if (qty < floor) {
         return `Cannot reduce qty below delivered (${formatQtyKg(floor)}); return first`;
       }
       if (Number(lf.rate_per_kg) < 0) return "Enter rate per kg on each line";
     }
+    if (!hasPositiveQty) return "At least one line must have quantity greater than zero";
     const totalsErr = validateTotals();
     if (totalsErr) return totalsErr;
     if (totals.finalPayable < amountPaid) {
@@ -593,7 +609,6 @@ export default function BillFormPage({
           : "No owned stock at this location"
         : "Select product";
     const cascade = (
-      n: number,
       label: string,
       value: string,
       disabled: boolean,
@@ -601,8 +616,8 @@ export default function BillFormPage({
       opts: { id: number; label: string }[],
       onPick: (v: string) => void
     ) => (
-      <label key={n}>
-        {n}. {label}
+      <label key={label}>
+        {label}
         <select value={value} disabled={disabled} onChange={(e) => onPick(e.target.value)}>
           <option value="">{ph}</option>
           {opts.map((o) => (
@@ -615,7 +630,7 @@ export default function BillFormPage({
     );
     const purchaseProductField = (
       <label key="product">
-        1. Product
+        Product
         <AsyncSearchCombobox
           value={line.product_id ? Number(line.product_id) : null}
           onChange={(id) =>
@@ -633,7 +648,7 @@ export default function BillFormPage({
     );
     const purchaseBrandField = (
       <label key="brand">
-        2. Brand
+        Brand
         <AsyncSearchCombobox
           value={line.brand_id ? Number(line.brand_id) : null}
           onChange={(id) =>
@@ -651,7 +666,7 @@ export default function BillFormPage({
     );
     const purchaseBagTypeField = (
       <label key="bag-type">
-        3. Bag type
+        Bag type
         <AsyncSearchCombobox
           value={line.bag_type_id ? Number(line.bag_type_id) : null}
           onChange={(id, opt) => {
@@ -709,7 +724,6 @@ export default function BillFormPage({
           {isSales ? (
             <>
               {cascade(
-                1,
                 "Product",
                 line.product_id,
                 productDisabled,
@@ -718,7 +732,6 @@ export default function BillFormPage({
                 (v) => updateLine(idx, { ...resetLineFrom(line, "product"), product_id: v })
               )}
               {cascade(
-                2,
                 "Brand",
                 line.brand_id,
                 !linesEnabled || !s1,
@@ -731,7 +744,6 @@ export default function BillFormPage({
                   })
               )}
               {cascade(
-                3,
                 "Bag type",
                 line.bag_type_id,
                 !linesEnabled || !s2,
@@ -753,8 +765,35 @@ export default function BillFormPage({
               {purchaseBagTypeField}
             </>
           )}
+          {isLooseBagType(bt) ? (
+            <label>
+              Loose kg
+              <input
+                type="number"
+                min="0"
+                step="0.001"
+                value={line.ordered_loose_kg}
+                disabled={!linesEnabled || !s3}
+                placeholder="Enter kg"
+                onChange={(e) => updateLine(idx, { ...line, ordered_loose_kg: e.target.value, ordered_bags: "" })}
+              />
+            </label>
+          ) : (
+            <label>
+              {bagsLabel}
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={line.ordered_bags}
+                disabled={!linesEnabled || !s3}
+                placeholder="Enter bags"
+                onChange={(e) => updateLine(idx, { ...line, ordered_bags: e.target.value, ordered_loose_kg: "" })}
+              />
+            </label>
+          )}
           <label>
-            4. Rate / kg (₹)
+            Rate / kg (₹)
             <input
               type="number"
               min="0"
@@ -765,33 +804,6 @@ export default function BillFormPage({
               onChange={(e) => updateLine(idx, { ...line, rate_per_kg: e.target.value })}
             />
           </label>
-          {isLooseBagType(bt) ? (
-            <label>
-              5. Loose kg
-              <input
-                type="number"
-                min="0"
-                step="0.001"
-                value={line.ordered_loose_kg}
-                disabled={!linesEnabled || !s4}
-                placeholder="Enter kg"
-                onChange={(e) => updateLine(idx, { ...line, ordered_loose_kg: e.target.value, ordered_bags: "" })}
-              />
-            </label>
-          ) : (
-            <label>
-              5. {bagsLabel}
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={line.ordered_bags}
-                disabled={!linesEnabled || !s4}
-                placeholder="Enter bags"
-                onChange={(e) => updateLine(idx, { ...line, ordered_bags: e.target.value, ordered_loose_kg: "" })}
-              />
-            </label>
-          )}
         </div>
         {inv && s3 && (
           <div className="stock-hint">
@@ -897,6 +909,9 @@ export default function BillFormPage({
         {qtyKg > 0 && qtyKg < floor && (
           <p className="error">Below delivered minimum — return first or increase qty</p>
         )}
+        {qtyKg === 0 && floor === 0 && (
+          <p className="hint">Set bags/kg to 0 to drop this product from the bill total (line stays for history).</p>
+        )}
       </div>
     );
   };
@@ -953,16 +968,7 @@ export default function BillFormPage({
 
       <div className="space-y-6">
         <Card>
-          <CardHeader
-            title="Bill header"
-            subtitle={
-              editMode
-                ? "Customer and location are fixed after finalize."
-                : isSales
-                  ? "Choose customer and delivery location before adding lines."
-                  : "Choose the supplier / customer before adding lines."
-            }
-          />
+          <CardHeader title="Bill header" />
           <CardBody className="space-y-4">
             <div className="form-grid bill-form-grid">
               {!editMode && (
@@ -1113,6 +1119,16 @@ export default function BillFormPage({
           </CardBody>
         </Card>
 
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-line/80 bg-surface-subtle/60 px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2.5 text-ink">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
+              <Package className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <p className="text-sm font-semibold text-ink">Products billed</p>
+          </div>
+          <p className="v2-mono text-2xl font-bold tabular-nums text-ink">{productsBilledCount}</p>
+        </div>
+
         <Card className="border-primary-200/60 bg-gradient-to-br from-primary-50/30 via-surface to-surface dark:border-primary-800/40 dark:from-primary-950/20">
           <CardHeader title="Totals & submit" subtitle="Review discount, adjustment, and final payable." />
           <CardBody className="space-y-6">
@@ -1171,6 +1187,19 @@ export default function BillFormPage({
                 </>
               )}
             </div>
+
+            <FormField label="Notes" hint="Optional — shown on bill detail and print.">
+              {({ id }) => (
+                <Textarea
+                  id={id}
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Any notes for this bill…"
+                  maxLength={1000}
+                />
+              )}
+            </FormField>
 
             <div className="flex flex-wrap justify-end gap-3 border-t border-line/60 pt-4">
               {editMode ? (

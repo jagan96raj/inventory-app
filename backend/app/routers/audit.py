@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.core.pagination import clamp_limit, clamp_offset, page_dict, paginate_select
 from app.core.permissions import Permission, require_permission
+from app.core.tenant import company_id_for_user
 from app.database import get_db
 from app.models.entities import AuditEvent, User
 from app.schemas import AuditEventOut, AuditEventPageOut
@@ -29,10 +31,16 @@ def list_audit_events(
     limit: int = Query(50, ge=1),
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(AuditEvent).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+    company_id = company_id_for_user(user)
+    q = (
+        select(AuditEvent)
+        .where(AuditEvent.company_id == company_id)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+    )
     if user_id is not None:
         q = q.where(AuditEvent.user_id == user_id)
     if action and action.strip():

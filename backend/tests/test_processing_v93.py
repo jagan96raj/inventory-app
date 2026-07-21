@@ -3,8 +3,9 @@
 Manual test checklist:
 1. New job → output only → blocked
 2. Input 2000 kg → output 1950 + balance 15 + waste 15 → OK
-3. Second batch fresh 2000 + reprocess 15 → summary fresh still 4000 → output within allowance → OK
-4. Try outflow > fresh + 100 → blocked on submit
+3. Second batch fresh 2000 + reprocess 15 → summary fresh still 4000;
+   allowance basis = fresh + reprocess → output within allowance → OK
+4. Try outflow > (fresh + reprocess) + 100 → blocked on submit
 """
 import unittest
 from decimal import Decimal
@@ -15,6 +16,7 @@ from app.models.entities import ProcessingInputSource, ProcessingJobStatus
 from app.services.processing import (
     PROCESSING_OUTPUT_TOLERANCE_KG,
     compute_job_fresh_input_kg,
+    compute_job_mass_balance_input_kg,
     compute_job_outflow_kg,
     submit_batch,
     validate_processing_mass_balance,
@@ -68,6 +70,7 @@ def _batch(
         stone_kg=stone,
         sack_weight_waste_kg=sack,
         miscellaneous_waste_kg=misc,
+        powder_kg=Decimal("0"),
     )
 
 
@@ -102,7 +105,14 @@ class ProcessingV93ValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             self._validate(
                 job,
-                pending_output_lines=[{"bag_type_id": 1, "bag_count": 0, "loose_kg": Decimal("50"), "quantity_kg": Decimal("50")}],
+                pending_output_lines=[
+                    {
+                        "bag_type_id": 1,
+                        "bag_count": 0,
+                        "loose_kg": Decimal("50"),
+                        "quantity_kg": Decimal("50"),
+                    }
+                ],
             )
         self.assertIn("fresh input", str(ctx.exception).lower())
 
@@ -116,7 +126,7 @@ class ProcessingV93ValidationTests(unittest.TestCase):
         job = self._job([_batch(fresh_input=Decimal("2000"), output=Decimal("2090"))])
         self._validate(job)
 
-    def test_two_batch_unclean_reprocess_excluded_from_fresh(self):
+    def test_two_batch_unclean_reprocess_in_allowance_basis(self):
         job = self._job(
             [
                 _batch(
@@ -137,9 +147,64 @@ class ProcessingV93ValidationTests(unittest.TestCase):
             ]
         )
         fresh = compute_job_fresh_input_kg(job)
+        input_kg = compute_job_mass_balance_input_kg(job)
         self.assertEqual(fresh, Decimal("4000"))
+        self.assertEqual(input_kg, Decimal("4015"))
         outflow = compute_job_outflow_kg(job)
-        self.assertLessEqual(outflow, fresh + PROCESSING_OUTPUT_TOLERANCE_KG)
+        self.assertLessEqual(outflow, input_kg + PROCESSING_OUTPUT_TOLERANCE_KG)
+        self._validate(job)
+
+    def test_reprocess_raises_ceiling_when_returns_in_outflow(self):
+        """Return counts as outflow; without counting reprocess as in, this would fail."""
+        job = self._job(
+            [
+                _batch(
+                    fresh_input=Decimal("1000"),
+                    output=Decimal("900"),
+                    balance_return=Decimal("80"),
+                    dust=Decimal("20"),
+                ),
+                _batch(
+                    reprocess=Decimal("80"),
+                    output=Decimal("175"),  # uses returned material; total outflow 1175
+                ),
+            ]
+        )
+        # fresh=1000, input=1080, outflow=900+80+20+175=1175
+        # old rule: 1175 > 1000+100 → fail
+        # new rule: 1175 <= 1080+100 → pass
+        self.assertEqual(compute_job_fresh_input_kg(job), Decimal("1000"))
+        self.assertEqual(compute_job_mass_balance_input_kg(job), Decimal("1080"))
+        self.assertEqual(compute_job_outflow_kg(job), Decimal("1175"))
+        self._validate(job)
+
+    def test_allowance_equals_misc_plus_tolerance(self):
+        job = self._job(
+            [
+                _batch(
+                    fresh_input=Decimal("12500"),
+                    output=Decimal("12000"),
+                    balance_return=Decimal("50"),
+                    stone=Decimal("20"),
+                ),
+                _batch(
+                    fresh_input=Decimal("12500"),
+                    reprocess=Decimal("50"),
+                    output=Decimal("12400"),
+                    dust=Decimal("30"),
+                ),
+            ]
+        )
+        fresh = compute_job_fresh_input_kg(job)
+        reprocess = Decimal("50")
+        input_kg = compute_job_mass_balance_input_kg(job)
+        outflow = compute_job_outflow_kg(job)
+        explicit_waste = Decimal("50")
+        output = Decimal("24400")
+        bal_ret = Decimal("50")
+        residual_misc = fresh + reprocess - output - bal_ret - explicit_waste
+        allowance = input_kg + PROCESSING_OUTPUT_TOLERANCE_KG - outflow
+        self.assertEqual(allowance, residual_misc + PROCESSING_OUTPUT_TOLERANCE_KG)
         self._validate(job)
 
 

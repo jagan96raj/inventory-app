@@ -49,12 +49,15 @@ import ExpenseCategoriesMasterPage from "./pages/accounts/ExpenseCategoriesMaste
 import BookSettingsPage from "./pages/accounts/BookSettingsPage";
 import PendingAccessPage from "./pages/PendingAccessPage";
 import UsersPage from "./pages/UsersPage";
+import CompanyRegisterPage from "./pages/CompanyRegisterPage";
+import ProfilePage from "./pages/ProfilePage";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<Navigate to="/login" replace />} />
+      <Route path="/register" element={<CompanyRegisterPage />} />
+      <Route path="/signup" element={<Navigate to="/register" replace />} />
       <Route element={<RequireAuth />}>
         <Route element={<RequireRole permission="bills_manage" />}>
           <Route path="/sales-bills/:id/print" element={<BillPrintPage billType="sales" />} />
@@ -67,6 +70,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
           </Route>
           <Route path="/home" element={<HomePage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route element={<RequireRole permission="masters_manage" />}>
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/brands" element={<BrandsPage />} />

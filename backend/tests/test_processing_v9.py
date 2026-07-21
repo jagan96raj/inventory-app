@@ -70,7 +70,7 @@ class ProcessingV9ServiceTests(unittest.TestCase):
         subtract_calls: list[tuple] = []
         add_calls: list[tuple] = []
 
-        def _sub(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None):
+        def _sub(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None, company_id=1):
             subtract_calls.append((pid, bid, lid, btid, bags, loose))
             return Decimal("50")
 
@@ -108,7 +108,7 @@ class ProcessingV9ServiceTests(unittest.TestCase):
         mock_db_stored_input_lines(db, job=job)
         add_calls: list[tuple] = []
 
-        def _add(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None):
+        def _add(db_, pid, bid, lid, btid, bags, loose, owner_type=None, customer_id=None, company_id=1):
             add_calls.append((pid, bid, lid, btid, bags, loose))
             return Decimal("30")
 

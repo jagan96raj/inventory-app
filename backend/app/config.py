@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # Dev only — never true on production (Spec v15.7).
     allow_destructive_scripts: bool = False
     destructive_script_confirm: str = ""
+    # Public company + owner registration (Spec v17.0.4). Default off for Raj Agro.
+    allow_company_registration: bool = False
     # Idempotency guard table retention (Spec v16.0.3).
     idempotency_retention_days: int = 90
     idempotency_stale_in_progress_hours: int = 24

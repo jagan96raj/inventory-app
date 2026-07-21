@@ -1,12 +1,27 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type AuthUser } from "../api/client";
 
+export type CompanyRegisterInput = {
+  company_name: string;
+  company_address_line?: string | null;
+  company_address_line_2?: string | null;
+  company_district?: string | null;
+  company_state?: string | null;
+  company_pin_code?: string | null;
+  company_gstin?: string | null;
+  company_phone?: string | null;
+  owner_name?: string | null;
+  email: string;
+  password: string;
+};
+
 type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   loginWithOtp: (email: string, otp: string, newPassword?: string) => Promise<void>;
   signup: (email: string, password: string, name?: string) => Promise<void>;
+  registerCompany: (input: CompanyRegisterInput) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
 };
@@ -22,7 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const me = await api.get<AuthUser>("/api/auth/me", { skipAuthRedirect: true });
       setUser(me);
     } catch {
-      setUser(null);
+      // Only clear session on initial load failures — never log out mid-session
+      // because a follow-up /me call failed (e.g. after saving profile).
+      setUser((prev) => (prev == null ? null : prev));
     } finally {
       setLoading(false);
     }
@@ -49,6 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me);
   }, []);
 
+  const registerCompany = useCallback(async (input: CompanyRegisterInput) => {
+    const me = await api.post<AuthUser>("/api/companies/register", input, { skipAuthRedirect: true });
+    setUser(me);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.post("/api/auth/logout", {});
@@ -58,8 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, loginWithOtp, signup, logout, refreshMe }),
-    [user, loading, login, loginWithOtp, signup, logout, refreshMe]
+    () => ({ user, loading, login, loginWithOtp, signup, registerCompany, logout, refreshMe }),
+    [user, loading, login, loginWithOtp, signup, registerCompany, logout, refreshMe]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

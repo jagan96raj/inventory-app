@@ -30,11 +30,14 @@ def main() -> None:
     try:
         for name, weight, is_loose in SEEDS:
             if db.scalar(
-                select(BagType).where(func.lower(func.trim(BagType.name)) == name.lower())
+                select(BagType).where(
+                    BagType.company_id == 1,
+                    func.lower(func.trim(BagType.name)) == name.lower(),
+                )
             ):
                 print(f"Skip existing: {name}")
                 continue
-            db.add(BagType(name=name, weight_per_bag_kg=weight, is_loose=is_loose))
+            db.add(BagType(name=name, weight_per_bag_kg=weight, is_loose=is_loose, company_id=1))
             print(f"Added: {name}")
         db.commit()
         print("Bag types seed complete.")

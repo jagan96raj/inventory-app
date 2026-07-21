@@ -220,6 +220,7 @@ def apply_stock_change(
                     line.bag_type_id,
                     owner_type,
                     customer_id,
+                    company_id=bill.company_id,
                 )
                 if not inv or inv.total_quantity_kg < quantity_kg:
                     raise ValueError("Insufficient stock for delivery")
@@ -237,6 +238,7 @@ def apply_stock_change(
                     line.bag_type_id,
                     InventoryOwnerType.owned,
                     None,
+                    company_id=bill.company_id,
                 )
                 if bag_type.is_loose:
                     inv.loose_kg += quantity_kg
@@ -254,6 +256,7 @@ def apply_stock_change(
                     line.bag_type_id,
                     owner_type,
                     customer_id,
+                    company_id=bill.company_id,
                 )
                 if bag_type.is_loose:
                     inv.loose_kg += quantity_kg
@@ -269,6 +272,7 @@ def apply_stock_change(
                     line.bag_type_id,
                     InventoryOwnerType.owned,
                     None,
+                    company_id=bill.company_id,
                 )
                 if not inv:
                     raise ValueError("Insufficient stock for purchase return")
@@ -320,6 +324,7 @@ def reverse_stock_change(
                     line.bag_type_id,
                     owner_type,
                     customer_id,
+                    company_id=bill.company_id,
                 )
                 if bag_type.is_loose:
                     inv.loose_kg += quantity_kg
@@ -335,6 +340,7 @@ def reverse_stock_change(
                     line.bag_type_id,
                     InventoryOwnerType.owned,
                     None,
+                    company_id=bill.company_id,
                 )
                 if not inv:
                     raise ValueError("Insufficient stock")
@@ -358,6 +364,7 @@ def reverse_stock_change(
                     line.bag_type_id,
                     owner_type,
                     customer_id,
+                    company_id=bill.company_id,
                 )
                 if not inv:
                     raise ValueError("Insufficient stock")
@@ -379,6 +386,7 @@ def reverse_stock_change(
                     line.bag_type_id,
                     InventoryOwnerType.owned,
                     None,
+                    company_id=bill.company_id,
                 )
                 if bag_type.is_loose:
                     inv.loose_kg += quantity_kg
@@ -413,6 +421,7 @@ def void_fulfillment_entry(
     *,
     expected_version: int | None,
     actor: User | None = None,
+    company_id: int | None = None,
 ) -> FulfillmentEntry:
     entry = db.scalar(
         select(FulfillmentEntry)
@@ -432,6 +441,8 @@ def void_fulfillment_entry(
     if not line or not line.bill:
         raise ValueError("Bill line not found")
     bill = line.bill
+    if company_id is not None and int(getattr(bill, "company_id", company_id) or company_id) != int(company_id):
+        raise ValueError("Fulfillment entry not found")
     locked_bill = lock_bill_for_update(db, bill.id)
     if not locked_bill:
         raise ValueError("Bill not found")
@@ -684,6 +695,7 @@ def create_fulfillment(
     *,
     expected_version: int | None = None,
     fulfilled_date: date | None = None,
+    company_id: int | None = None,
 ) -> FulfillmentEntry:
     line = db.scalar(
         select(BillLine)
@@ -693,6 +705,8 @@ def create_fulfillment(
     if not line or not line.bill:
         raise ValueError("Bill line not found")
     bill = line.bill
+    if company_id is not None and int(getattr(bill, "company_id", company_id) or company_id) != int(company_id):
+        raise ValueError("Bill line not found")
     if bill.status != BillStatus.finalized:
         raise ValueError("Bill must be finalized for fulfillment")
     locked_bill = lock_bill_for_update(db, bill.id)
@@ -734,9 +748,10 @@ def create_bill_fulfillment_event(
     location_id: int | None = None,
     *,
     expected_version: int | None = None,
+    company_id: int | None = None,
 ) -> dict:
     """Apply deliver/return for all lines with qty > 0 in one transaction."""
-    bill = db.scalar(
+    q = (
         select(Bill)
         .where(Bill.id == bill_id)
         .options(
@@ -745,6 +760,9 @@ def create_bill_fulfillment_event(
             joinedload(Bill.lines).joinedload(BillLine.brand),
         )
     )
+    if company_id is not None:
+        q = q.where(Bill.company_id == company_id)
+    bill = db.scalar(q)
     if not bill:
         raise ValueError("Bill not found")
     locked_bill = lock_bill_for_update(db, bill.id)
@@ -836,8 +854,10 @@ def create_bill_fulfillment_event(
     return {"bill_id": bill_id, "entry_type": entry_type.value, "entries_created": len(entries)}
 
 
-def load_fulfillment_line(db: Session, line_id: int) -> BillLine | None:
-    return db.scalar(
+def load_fulfillment_line(
+    db: Session, line_id: int, company_id: int | None = None
+) -> BillLine | None:
+    line = db.scalar(
         select(BillLine)
         .where(BillLine.id == line_id)
         .options(
@@ -848,6 +868,13 @@ def load_fulfillment_line(db: Session, line_id: int) -> BillLine | None:
             joinedload(BillLine.bag_type),
         )
     )
+    if line is None:
+        return None
+    if company_id is not None:
+        bill = line.bill
+        if bill is None or int(getattr(bill, "company_id", company_id) or company_id) != int(company_id):
+            return None
+    return line
 
 
 def serialize_fulfillment_line(

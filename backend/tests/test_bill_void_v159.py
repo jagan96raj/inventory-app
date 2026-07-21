@@ -70,7 +70,7 @@ def _seed(db: Session) -> dict:
     if db.get(BookSettings, 1) is None:
         from datetime import date
 
-        db.add(BookSettings(id=1, cash_opening_balance=Decimal("0"), cash_opening_balance_at=date.today()))
+        db.add(BookSettings(id=1, company_id=1, cash_opening_balance=Decimal("0"), cash_opening_balance_at=date.today()))
     freight = ExpenseCategory(name="Freight", kind=ExpenseCategoryKind.expense, is_system=False, is_active=True)
     db.add(freight)
     db.commit()

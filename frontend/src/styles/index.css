@@ -77,13 +77,13 @@
 }
 
 @layer base {
-  /* Comfortable default: ~17px root so rem-based text scales up gently */
+  /* Default ~15px root — slightly tighter than browser 16px */
   html:has(body.app-shell-v2) {
-    font-size: 106.25%;
+    font-size: 93.75%;
   }
 
   html:has(body.app-shell-v2)[data-density="compact"] {
-    font-size: 100%;
+    font-size: 87.5%;
   }
 
   html {
@@ -795,6 +795,14 @@ body.app-shell-v2 .bill-form-line + .bill-form-line {
 body.app-shell-v2 .bill-form-line .form-grid label {
   font-size: 1.0625rem;
   font-weight: 600;
+}
+
+body.app-shell-v2 .bill-form-line .form-grid input,
+body.app-shell-v2 .bill-form-line .form-grid select {
+  min-height: var(--row-h);
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 1.0625rem;
 }
 
 /* Reduced motion: disable non-essential animations */

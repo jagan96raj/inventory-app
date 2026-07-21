@@ -60,13 +60,15 @@ def opposite_bill_type(bill_type: BillType) -> BillType:
 
 
 
-def opposite_bills_due_total(db: Session, customer_id: int, bill_type: BillType) -> Decimal:
+def opposite_bills_due_total(
+    db: Session, customer_id: int, bill_type: BillType, company_id: int | None = None
+) -> Decimal:
 
     """Sum remaining due on finalized opposite-type bills for the customer."""
 
     opposite = opposite_bill_type(bill_type)
 
-    bills = db.scalars(
+    q = (
 
         select(Bill)
 
@@ -84,7 +86,11 @@ def opposite_bills_due_total(db: Session, customer_id: int, bill_type: BillType)
 
         .order_by(Bill.bill_date, Bill.id)
 
-    ).unique().all()
+    )
+    if company_id is not None:
+        q = q.where(Bill.company_id == company_id)
+
+    bills = db.scalars(q).unique().all()
 
     return sum(
 
@@ -98,13 +104,15 @@ def opposite_bills_due_total(db: Session, customer_id: int, bill_type: BillType)
 
 
 
-def load_opposite_bills_with_due(db: Session, customer_id: int, bill_type: BillType) -> list[tuple[Bill, Decimal]]:
+def load_opposite_bills_with_due(
+    db: Session, customer_id: int, bill_type: BillType, company_id: int | None = None
+) -> list[tuple[Bill, Decimal]]:
 
     """Opposite bills with due > 0, FIFO order (bill_date, id)."""
 
     opposite = opposite_bill_type(bill_type)
 
-    bills = db.scalars(
+    q = (
 
         select(Bill)
 
@@ -122,7 +130,11 @@ def load_opposite_bills_with_due(db: Session, customer_id: int, bill_type: BillT
 
         .order_by(Bill.bill_date, Bill.id)
 
-    ).unique().all()
+    )
+    if company_id is not None:
+        q = q.where(Bill.company_id == company_id)
+
+    bills = db.scalars(q).unique().all()
 
     out: list[tuple[Bill, Decimal]] = []
 
@@ -292,7 +304,11 @@ def max_setoff_payment_amount(
 
 def preview_setoff_allocation(
 
-    db: Session, bill_id: int, amount: Decimal, payment_mode: PaymentMode
+    db: Session,
+    bill_id: int,
+    amount: Decimal,
+    payment_mode: PaymentMode,
+    company_id: int | None = None,
 
 ) -> dict:
 
@@ -300,15 +316,15 @@ def preview_setoff_allocation(
 
         raise ValueError("Set-off is not a user-selectable payment mode")
 
-    bill = db.scalar(
-
+    q = (
         select(Bill)
-
         .where(Bill.id == bill_id)
-
         .options(joinedload(Bill.payments), joinedload(Bill.customer))
-
     )
+    if company_id is not None:
+        q = q.where(Bill.company_id == company_id)
+
+    bill = db.scalar(q)
 
     if not bill:
 
@@ -334,13 +350,15 @@ def preview_setoff_allocation(
 
     remaining = _bill_remaining_due(bill)
 
-    opposite_due = opposite_bills_due_total(db, bill.customer_id, bill.bill_type)
+    opposite_due = opposite_bills_due_total(db, bill.customer_id, bill.bill_type, company_id=company_id)
 
     max_amount = max_setoff_payment_amount(bill, customer, remaining, opposite_due)
 
 
 
-    opposite_bills = load_opposite_bills_with_due(db, bill.customer_id, bill.bill_type)
+    opposite_bills = load_opposite_bills_with_due(
+        db, bill.customer_id, bill.bill_type, company_id=company_id
+    )
 
     effective_amount = min(amount, max_amount) if amount > 0 else max_amount
 
@@ -381,18 +399,27 @@ PAYMENT_BANK_NOT_FOUND_MSG = "Bank account not found"
 
 
 def _resolve_bank_account(
-    db: Session, payment_mode: PaymentMode, bank_account_id: int | None
+    db: Session,
+    payment_mode: PaymentMode,
+    bank_account_id: int | None,
+    company_id: int | None = None,
 ) -> int | None:
     if payment_mode == PaymentMode.bank:
         if bank_account_id is None:
             # Try to fall back to the default bank for convenience (UI typically passes one)
-            default_bank = db.scalar(
-                select(BankAccount).where(BankAccount.is_default.is_(True), BankAccount.is_active.is_(True))
+            q = select(BankAccount).where(
+                BankAccount.is_default.is_(True), BankAccount.is_active.is_(True)
             )
+            if company_id is not None:
+                q = q.where(BankAccount.company_id == company_id)
+            default_bank = db.scalar(q)
             if default_bank is None:
                 raise ValueError(PAYMENT_BANK_ID_REQUIRED_MSG)
             return default_bank.id
-        bank = db.get(BankAccount, bank_account_id)
+        q = select(BankAccount).where(BankAccount.id == bank_account_id)
+        if company_id is not None:
+            q = q.where(BankAccount.company_id == company_id)
+        bank = db.scalar(q)
         if not bank:
             raise ValueError(PAYMENT_BANK_NOT_FOUND_MSG)
         if not bank.is_active:
@@ -407,6 +434,7 @@ def create_payment(
     db: Session, bill_id: int, amount: Decimal, payment_mode: PaymentMode,
     *, expected_version: int | None, bank_account_id: int | None = None,
     paid_date: date | None = None,
+    company_id: int | None = None,
 ) -> Payment:
     _, paid_at = resolve_business_entry(paid_date)
 
@@ -414,24 +442,25 @@ def create_payment(
 
         raise ValueError("Set-off payments cannot be created directly")
 
-    resolved_bank_id = _resolve_bank_account(db, payment_mode, bank_account_id)
+    resolved_bank_id = _resolve_bank_account(db, payment_mode, bank_account_id, company_id=company_id)
 
 
 
     locked_bill = lock_bill_for_update(db, bill_id)
     if not locked_bill:
         raise ValueError("Bill not found")
+    if company_id is not None and int(getattr(locked_bill, "company_id", company_id) or company_id) != int(company_id):
+        raise ValueError("Bill not found")
     assert_bill_version(locked_bill, expected_version)
 
-    bill = db.scalar(
-
+    q = (
         select(Bill)
-
         .where(Bill.id == bill_id)
-
         .options(joinedload(Bill.payments), joinedload(Bill.customer))
-
     )
+    if company_id is not None:
+        q = q.where(Bill.company_id == company_id)
+    bill = db.scalar(q)
 
     if not bill:
 
@@ -481,7 +510,9 @@ def create_payment(
 
                 raise ValueError("Customer has no debit balance to apply")
 
-            opposite_due = opposite_bills_due_total(db, bill.customer_id, bill.bill_type)
+            opposite_due = opposite_bills_due_total(
+                db, bill.customer_id, bill.bill_type, company_id=company_id
+            )
 
             if opposite_due <= 0:
 
@@ -505,7 +536,9 @@ def create_payment(
 
                 raise ValueError("Customer has no credit balance to apply")
 
-            opposite_due = opposite_bills_due_total(db, bill.customer_id, bill.bill_type)
+            opposite_due = opposite_bills_due_total(
+                db, bill.customer_id, bill.bill_type, company_id=company_id
+            )
 
             if opposite_due <= 0:
 
@@ -520,8 +553,6 @@ def create_payment(
     else:
 
         raise ValueError("Unknown bill type")
-
-
 
     payment = Payment(
         bill_id=bill_id,
@@ -547,7 +578,9 @@ def create_payment(
 
     if is_balance:
 
-        opposite_bills = load_opposite_bills_with_due(db, bill.customer_id, bill.bill_type)
+        opposite_bills = load_opposite_bills_with_due(
+            db, bill.customer_id, bill.bill_type, company_id=company_id
+        )
         lock_bills_for_update(db, [b.id for b, _ in opposite_bills])
 
         allocations = allocate_setoff_fifo(opposite_bills, amount)
@@ -644,6 +677,7 @@ def void_payment(
     *,
     expected_version: int | None,
     actor: User | None = None,
+    company_id: int | None = None,
 ) -> Payment:
     payment = db.scalar(
         select(Payment)
@@ -656,6 +690,10 @@ def void_payment(
     )
     if not payment:
         raise ValueError("Payment not found")
+    if company_id is not None:
+        bill = payment.bill
+        if bill is None or int(getattr(bill, "company_id", company_id) or company_id) != int(company_id):
+            raise ValueError("Payment not found")
     if payment.voided_at is not None:
         raise ValueError(PAYMENT_ALREADY_VOIDED_MSG)
     if payment.payment_mode == PaymentMode.setoff or payment.linked_payment_id is not None:

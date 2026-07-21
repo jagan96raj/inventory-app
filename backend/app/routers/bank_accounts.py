@@ -16,6 +16,7 @@ from app.schemas import (
     BankAccountPageOut,
     BankAccountUpdate,
 )
+from app.core.tenant import company_id_for_user
 from app.services.accounts import get_bank_account_balance
 from app.services.bank_accounts import (
     create_bank_account,
@@ -38,7 +39,10 @@ def _to_out(b: BankAccount) -> BankAccountOut:
 
 def _to_balance_out(b: BankAccount, db: Session) -> BankAccountBalanceOut:
     base = _to_out(b)
-    return BankAccountBalanceOut(**base.model_dump(), balance=get_bank_account_balance(db, b.id))
+    return BankAccountBalanceOut(
+        **base.model_dump(),
+        balance=get_bank_account_balance(db, b.id, company_id=b.company_id),
+    )
 
 
 @router.get("", response_model=BankAccountPageOut)
@@ -47,11 +51,17 @@ def list_bank_accounts(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(BankAccount).order_by(
-        BankAccount.is_default.desc(), BankAccount.is_active.desc(), BankAccount.name
+    company_id = company_id_for_user(user)
+    q = (
+        select(BankAccount)
+        .where(BankAccount.company_id == company_id)
+        .order_by(
+            BankAccount.is_default.desc(), BankAccount.is_active.desc(), BankAccount.name
+        )
     )
     if active == "true":
         q = q.where(BankAccount.is_active.is_(True))
@@ -76,6 +86,7 @@ def post_bank_account(
         try:
             record = create_bank_account(
                 db,
+                company_id=company_id_for_user(user),
                 name=body.name,
                 account_number_last4=body.account_number_last4,
                 ifsc=body.ifsc,
@@ -105,13 +116,15 @@ def patch_bank_account(
             record = edit_bank_account(
                 db,
                 bank_id,
+                company_id=company_id_for_user(user),
                 name=body.name,
                 account_number_last4=body.account_number_last4,
                 ifsc=body.ifsc,
                 is_active=body.is_active,
             )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         return _to_out(record), 200
 
     return run_idempotent_mutation(db, user, idempotency_key, route_key, request_hash, execute)
@@ -121,11 +134,14 @@ def patch_bank_account(
 def delete_bank_account_endpoint(
     bank_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     try:
-        delete_bank_account(db, bank_id)
+        delete_bank_account(db, bank_id, company_id=company_id_for_user(user))
     except ValueError as e:
         msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(404, msg) from e
         status = 409 if "in use" in msg.lower() else 400
         raise HTTPException(status, msg) from e
     return {"ok": True}
@@ -143,9 +159,12 @@ def make_default_endpoint(
 
     def execute():
         try:
-            record = make_default_bank_account(db, bank_id)
+            record = make_default_bank_account(
+                db, bank_id, company_id=company_id_for_user(user)
+            )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         return _to_out(record), 200
 
     return run_idempotent_mutation(db, user, idempotency_key, route_key, request_hash, execute)

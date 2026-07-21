@@ -307,7 +307,11 @@ export default function CashBookEntryFormPage() {
     if (!payload) return;
     if (!idemRef.current) idemRef.current = newIdempotencyKey();
     if (editing && original) {
-      await cashBookApi.update(original.id, { ...payload, expected_version: original.version }, idemRef.current);
+      await cashBookApi.update(
+        original.id,
+        { ...payload, expected_version: original.version },
+        idemRef.current
+      );
       toast.success("Entry updated");
     } else {
       await cashBookApi.create(payload, idemRef.current, authorizationPassword);

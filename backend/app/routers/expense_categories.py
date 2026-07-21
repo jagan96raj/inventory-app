@@ -15,6 +15,7 @@ from app.schemas import (
     ExpenseCategoryPageOut,
     ExpenseCategoryUpdate,
 )
+from app.core.tenant import company_id_for_user
 from app.services.expense_categories import (
     create_category,
     delete_category,
@@ -40,11 +41,17 @@ def list_categories_endpoint(
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = select(ExpenseCategory).order_by(
-        ExpenseCategory.kind, ExpenseCategory.is_system.desc(), ExpenseCategory.name
+    company_id = company_id_for_user(user)
+    q = (
+        select(ExpenseCategory)
+        .where(ExpenseCategory.company_id == company_id)
+        .order_by(
+            ExpenseCategory.kind, ExpenseCategory.is_system.desc(), ExpenseCategory.name
+        )
     )
     if active == "true":
         q = q.where(ExpenseCategory.is_active.is_(True))
@@ -69,7 +76,7 @@ def post_category(
 
     def execute():
         try:
-            record = create_category(db, name=body.name, kind=body.kind)
+            record = create_category(db, company_id=company_id_for_user(user), name=body.name, kind=body.kind)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         return _to_out(record), 201
@@ -90,9 +97,16 @@ def patch_category(
 
     def execute():
         try:
-            record = edit_category(db, category_id, name=body.name, is_active=body.is_active)
+            record = edit_category(
+                db,
+                category_id,
+                company_id=company_id_for_user(user),
+                name=body.name,
+                is_active=body.is_active,
+            )
         except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+            msg = str(e)
+            raise HTTPException(404 if "not found" in msg.lower() else 400, msg) from e
         return _to_out(record), 200
 
     return run_idempotent_mutation(db, user, idempotency_key, route_key, request_hash, execute)
@@ -102,11 +116,14 @@ def patch_category(
 def delete_category_endpoint(
     category_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     try:
-        delete_category(db, category_id)
+        delete_category(db, category_id, company_id=company_id_for_user(user))
     except ValueError as e:
         msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(404, msg) from e
         status = 409 if "in use" in msg.lower() or "system" in msg.lower() else 400
         raise HTTPException(status, msg) from e
     return {"ok": True}

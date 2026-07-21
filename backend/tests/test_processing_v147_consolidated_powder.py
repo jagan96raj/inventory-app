@@ -64,6 +64,7 @@ def _seed_powder_settings(db: Session) -> dict:
     db.add(
         BookSettings(
             id=1,
+            company_id=1,
             cash_opening_balance=Decimal("0"),
             cash_opening_balance_at=date.today(),
             powder_product_id=powder_product.id,
@@ -273,6 +274,7 @@ class ProcessingV147ConsolidatedPowderTests(unittest.TestCase):
     def test_powder_without_book_settings_rejected(self):
         update_book_settings(
             self.db,
+            1,
             {
                 "powder_product_id": None,
                 "powder_brand_id": None,
