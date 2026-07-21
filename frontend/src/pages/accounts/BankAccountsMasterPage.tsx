@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import {
   bankAccountsApi,
@@ -25,6 +25,7 @@ import ConfirmDialog from "../../components/ui/ConfirmDialog";
 import PaginationBar from "../../components/ui/PaginationBar";
 import Select from "../../components/ui/Select";
 import { toast } from "../../components/ui/Toaster";
+import { useSubmitGuard } from "../../hooks/useSubmitGuard";
 
 type FormState = {
   name: string;
@@ -55,6 +56,8 @@ export default function BankAccountsMasterPage() {
   const [form, setForm] = useState<FormState>(empty);
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<BankAccount | null>(null);
+  const saveIdemRef = useRef<string | null>(null);
+  const { guardedSubmit, submitDisabled } = useSubmitGuard();
   const limit = DEFAULT_PAGE_LIMIT;
 
   const load = useCallback(() => {
@@ -101,38 +104,42 @@ export default function BankAccountsMasterPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    setBusy(true);
     setError("");
-    try {
-      if (editing) {
-        const body: BankAccountUpdateIn = {
-          name: form.name.trim(),
-          account_number_last4: form.account_number_last4.trim() || null,
-          ifsc: form.ifsc.trim() || null,
-          is_active: form.is_active,
-        };
-        await bankAccountsApi.update(editing.id, body, newIdempotencyKey());
-        toast.success("Bank account updated");
-      } else {
-        const body: BankAccountIn = {
-          name: form.name.trim(),
-          account_number_last4: form.account_number_last4.trim() || null,
-          ifsc: form.ifsc.trim() || null,
-          opening_balance: form.opening_balance || "0",
-          is_default: form.is_default,
-        };
-        await bankAccountsApi.create(body, newIdempotencyKey());
-        toast.success("Bank account added");
+    if (!saveIdemRef.current) saveIdemRef.current = newIdempotencyKey();
+    await guardedSubmit(async () => {
+      setBusy(true);
+      try {
+        if (editing) {
+          const body: BankAccountUpdateIn = {
+            name: form.name.trim(),
+            account_number_last4: form.account_number_last4.trim() || null,
+            ifsc: form.ifsc.trim() || null,
+            is_active: form.is_active,
+          };
+          await bankAccountsApi.update(editing.id, body, saveIdemRef.current!);
+          toast.success("Bank account updated");
+        } else {
+          const body: BankAccountIn = {
+            name: form.name.trim(),
+            account_number_last4: form.account_number_last4.trim() || null,
+            ifsc: form.ifsc.trim() || null,
+            opening_balance: form.opening_balance || "0",
+            is_default: form.is_default,
+          };
+          await bankAccountsApi.create(body, saveIdemRef.current!);
+          toast.success("Bank account added");
+        }
+        saveIdemRef.current = null;
+        close();
+        load();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not save";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setBusy(false);
       }
-      close();
-      load();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   const remove = async () => {
@@ -284,7 +291,13 @@ export default function BankAccountsMasterPage() {
             <Button variant="ghost" onClick={close} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" form="bank-account-form" loading={busy} leftIcon={<CheckCircle2 className="h-4 w-4" />}>
+            <Button
+              type="submit"
+              form="bank-account-form"
+              loading={busy}
+              disabled={busy || submitDisabled}
+              leftIcon={<CheckCircle2 className="h-4 w-4" />}
+            >
               {editing ? "Save changes" : "Add bank"}
             </Button>
           </div>

@@ -94,6 +94,7 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
   const [confirmTarget, setConfirmTarget] = useState<VoidTarget>(null);
   const [voidAuthError, setVoidAuthError] = useState("");
   const confirmIdemRef = useRef<string | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   const base = billType === "sales" ? "/sales-bills" : "/purchase-bills";
   const isSales = billType === "sales";
@@ -102,11 +103,22 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
 
   const loadBill = useCallback(() => {
     if (!id) return;
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
+    setBill(null);
+    setEntriesByLine({});
+    setLinkedExpenses([]);
+    setVoidPrecheck(null);
+    setError("");
     api
       .get<Bill>(`/api/bills/${id}`)
       .then(async (b) => {
+        if (loadRequestIdRef.current !== requestId) return;
         if (b.bill_type !== billType) {
+          setBill(null);
+          setEntriesByLine({});
+          setLinkedExpenses([]);
+          setVoidPrecheck(null);
           setError("Bill type mismatch");
           return;
         }
@@ -119,6 +131,7 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
             )
           )
         );
+        if (loadRequestIdRef.current !== requestId) return;
         const map: Record<number, FulfillmentEntry[]> = {};
         b.lines.forEach((line, index) => {
           map[line.id] = entryResults[index]?.items ?? [];
@@ -126,18 +139,31 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
         setEntriesByLine(map);
         try {
           const linkedPage = await billsApi.linkedEntries(b.id, { limit: 100 });
+          if (loadRequestIdRef.current !== requestId) return;
           setLinkedExpenses(linkedPage.items.filter((e) => !e.voided_at));
         } catch {
+          if (loadRequestIdRef.current !== requestId) return;
           setLinkedExpenses([]);
         }
         try {
+          if (loadRequestIdRef.current !== requestId) return;
           setVoidPrecheck(await billsApi.voidPrecheck(b.id));
         } catch {
+          if (loadRequestIdRef.current !== requestId) return;
           setVoidPrecheck(null);
         }
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (loadRequestIdRef.current !== requestId) return;
+        setBill(null);
+        setEntriesByLine({});
+        setLinkedExpenses([]);
+        setVoidPrecheck(null);
+        setError(e.message);
+      })
+      .finally(() => {
+        if (loadRequestIdRef.current === requestId) setLoading(false);
+      });
   }, [id, billType]);
 
   useEffect(() => {

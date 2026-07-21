@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Save, Settings2 } from "lucide-react";
 import { bookSettingsApi, newIdempotencyKey, type BookSettings } from "../../api/client";
@@ -17,6 +17,7 @@ import FormField from "../../components/ui/FormField";
 import NumberInput from "../../components/ui/NumberInput";
 import AsyncSearchCombobox from "../../components/ui/AsyncSearchCombobox";
 import { toast } from "../../components/ui/Toaster";
+import { useSubmitGuard } from "../../hooks/useSubmitGuard";
 
 export default function BookSettingsPage() {
   const [settings, setSettings] = useState<BookSettings | null>(null);
@@ -27,6 +28,8 @@ export default function BookSettingsPage() {
   const [powderBagTypeId, setPowderBagTypeId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const saveIdemRef = useRef<string | null>(null);
+  const { guardedSubmit, submitDisabled } = useSubmitGuard();
 
   useEffect(() => {
     bookSettingsApi
@@ -44,33 +47,37 @@ export default function BookSettingsPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setError("");
-    try {
-      const next = await bookSettingsApi.update(
-        {
-          cash_opening_balance: opening,
-          powder_product_id: powderProductId,
-          powder_brand_id: powderBrandId,
-          powder_location_id: powderLocationId,
-          powder_bag_type_id: powderBagTypeId,
-        },
-        newIdempotencyKey()
-      );
-      setSettings(next);
-      setOpening(next.cash_opening_balance);
-      setPowderProductId(next.powder_product_id ?? null);
-      setPowderBrandId(next.powder_brand_id ?? null);
-      setPowderLocationId(next.powder_location_id ?? null);
-      setPowderBagTypeId(next.powder_bag_type_id ?? null);
-      toast.success("Book settings saved");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Could not save";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setBusy(false);
-    }
+    if (!saveIdemRef.current) saveIdemRef.current = newIdempotencyKey();
+    await guardedSubmit(async () => {
+      setBusy(true);
+      try {
+        const next = await bookSettingsApi.update(
+          {
+            cash_opening_balance: opening,
+            powder_product_id: powderProductId,
+            powder_brand_id: powderBrandId,
+            powder_location_id: powderLocationId,
+            powder_bag_type_id: powderBagTypeId,
+          },
+          saveIdemRef.current!
+        );
+        saveIdemRef.current = null;
+        setSettings(next);
+        setOpening(next.cash_opening_balance);
+        setPowderProductId(next.powder_product_id ?? null);
+        setPowderBrandId(next.powder_brand_id ?? null);
+        setPowderLocationId(next.powder_location_id ?? null);
+        setPowderBagTypeId(next.powder_bag_type_id ?? null);
+        toast.success("Book settings saved");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not save";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setBusy(false);
+      }
+    });
   };
 
   return (
@@ -163,7 +170,7 @@ export default function BookSettingsPage() {
             </FormField>
           </CardBody>
           <CardFooter>
-            <Button type="submit" loading={busy} leftIcon={<Save className="h-4 w-4" />}>
+            <Button type="submit" loading={busy} disabled={busy || submitDisabled} leftIcon={<Save className="h-4 w-4" />}>
               Save
             </Button>
           </CardFooter>
