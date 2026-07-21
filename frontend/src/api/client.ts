@@ -218,7 +218,6 @@ export type InventoryRow = {
   owner_type?: InventoryOwnerType;
   customer_id?: number | null;
   customer_name?: string | null;
-  bags_count: number;
   loose_kg: string;
   total_quantity_kg: string;
   product_name?: string;
@@ -728,41 +727,6 @@ export const reportsApi = {
   dashboardBundle: (
     p: ReportMonthParams & { bill_type: BillTypeParam; group_by: "product" | "product_brand" }
   ) => api.get<DashboardBundle>(`/api/reports/dashboard-bundle?${reportQs(p)}`),
-  businessSummary: (p: ReportMonthParams) =>
-    api.get<BusinessSummary>(`/api/reports/business-summary?${reportQs(p)}`),
-  businessCompare: (p: ReportMonthParams) =>
-    api.get<BusinessCompare>(`/api/reports/business-compare?${reportQs(p)}`),
-  dailyBillAmounts: (p: ReportMonthParams) =>
-    api.get<DailyBillAmounts>(`/api/reports/daily-bill-amounts?${reportQs(p)}`),
-  billsByProduct: (p: ReportMonthParams & { bill_type: BillTypeParam; group_by: "product" | "product_brand" }) =>
-    api.get<SalesByProduct>(`/api/reports/by-product?${reportQs(p)}`),
-  billsByCustomer: (p: ReportMonthParams & { bill_type: BillTypeParam }) =>
-    api.get<SalesByCustomer>(`/api/reports/by-customer?${reportQs(p)}`),
-  billsByLocation: (p: ReportMonthParams & { bill_type: BillTypeParam }) =>
-    api.get<SalesByLocation>(`/api/reports/by-location?${reportQs(p)}`),
-  billsExportUrl: (p: ReportMonthParams & { bill_type: BillTypeParam; group_by: "product" | "product_brand" }) => {
-    const base = import.meta.env.VITE_API_URL ?? "";
-    return `${base}/api/reports/bills-export?${reportQs(p)}`;
-  },
-  salesSummary: (p: ReportMonthParams) =>
-    api.get<SalesSummary>(`/api/reports/sales-summary?${reportQs(p)}`),
-  salesByProduct: (p: ReportMonthParams & { group_by: "product" | "product_brand" }) =>
-    api.get<SalesByProduct>(`/api/reports/sales-by-product?${reportQs(p)}`),
-  salesByCustomer: (p: ReportMonthParams) =>
-    api.get<SalesByCustomer>(`/api/reports/sales-by-customer?${reportQs(p)}`),
-  salesByLocation: (p: ReportMonthParams) =>
-    api.get<SalesByLocation>(`/api/reports/sales-by-location?${reportQs(p)}`),
-  salesDaily: (p: ReportMonthParams) => api.get<SalesDaily>(`/api/reports/sales-daily?${reportQs(p)}`),
-  salesCompare: (p: ReportMonthParams) =>
-    api.get<SalesCompare>(`/api/reports/sales-compare?${reportQs(p)}`),
-  salesPaymentBreakdown: (p: ReportMonthParams) =>
-    api.get<SalesPaymentBreakdown>(`/api/reports/sales-payment-breakdown?${reportQs(p)}`),
-  salesDeliveryBreakdown: (p: ReportMonthParams) =>
-    api.get<SalesDeliveryBreakdown>(`/api/reports/sales-delivery-breakdown?${reportQs(p)}`),
-  salesExportUrl: (p: ReportMonthParams & { group_by: "product" | "product_brand" }) => {
-    const base = import.meta.env.VITE_API_URL ?? "";
-    return `${base}/api/reports/sales-export?${reportQs(p)}`;
-  },
 };
 
 export type AuditEvent = {
