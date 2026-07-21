@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { api, DEFAULT_PAGE_LIMIT, type BillListItem, type BillsPage } from "../api/client";
+import { billDueAmount } from "../lib/billAmounts";
 import { formatDate, formatInr } from "../lib/format";
 import {
   deliveryStatusLabel,
@@ -42,10 +43,6 @@ import AddCustomerDialog from "../components/AddCustomerDialog";
 import BillNotesHover from "../components/bills/BillNotesHover";
 import PaginationBar from "../components/ui/PaginationBar";
 import { cn } from "../lib/cn";
-
-function dueAmount(b: BillListItem): number {
-  return Number(b.amount_due ?? b.due_amount ?? Number(b.grand_total) - Number(b.amount_paid));
-}
 
 function groupBillsByDate(bills: BillListItem[]): { date: string; bills: BillListItem[] }[] {
   const map = new Map<string, BillListItem[]>();
@@ -159,7 +156,7 @@ function BillMobileCard({
   onEdit: () => void;
   onPay: () => void;
 }) {
-  const due = dueAmount(bill);
+  const due = billDueAmount(bill);
   const final = bill.final_payable ?? bill.grand_total;
 
   return (
@@ -330,7 +327,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       align: "right",
       numeric: true,
       cell: (b) => {
-        const due = dueAmount(b);
+        const due = billDueAmount(b);
         return (
           <div className="text-right">
             <p className="font-semibold v2-mono text-ink">{formatInr(finalPayable(b))}</p>
@@ -364,7 +361,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       width: "7.5rem",
       align: "right",
       cell: (b) => {
-        const due = dueAmount(b);
+        const due = billDueAmount(b);
         return (
           <BillActions
             due={due}

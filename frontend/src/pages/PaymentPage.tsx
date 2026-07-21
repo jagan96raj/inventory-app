@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { ArrowLeft, IndianRupee } from "lucide-react";
 import { api, bankAccountsApi, idempotencyHeadersOptionalAuth, newIdempotencyKey, type BankAccount, type Bill, type Payment, type SetoffPreview } from "../api/client";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
+import { billDueAmount } from "../lib/billAmounts";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { formatInr, localIsoDate, validateDateNotFuture } from "../lib/format";
@@ -20,10 +21,6 @@ import { toast } from "../components/ui/Toaster";
 import { cn } from "../lib/cn";
 
 type Props = { billType?: "sales" | "purchase" };
-
-function dueAmount(b: Bill): number {
-  return Number(b.amount_due ?? b.due_amount ?? Number(b.grand_total) - Number(b.amount_paid));
-}
 
 function isBalanceMode(billType: string, mode: string): boolean {
   return (billType === "purchase" && mode === "debit") || (billType === "sales" && mode === "credit");
@@ -96,7 +93,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   const creditBal = Number(bill?.customer_credit_balance ?? 0);
   const debitBal = Number(bill?.customer_debit_balance ?? 0);
   const oppositeDue = Number(bill?.opposite_due_total ?? 0);
-  const due = bill ? dueAmount(bill) : 0;
+  const due = bill ? billDueAmount(bill) : 0;
 
   const modes = useMemo(() => {
     if (!bill) return [] as { value: string; label: string }[];

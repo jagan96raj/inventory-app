@@ -27,6 +27,7 @@ import {
   type PageOut,
   type Payment,
 } from "../api/client";
+import { billDueAmount } from "../lib/billAmounts";
 import { formatInr, formatDateTime, formatQtyKg } from "../lib/format";
 import { fulfillmentEntryLabel, fulfillmentQtyLabel } from "../lib/fulfillmentLabels";
 import { paymentModeLabel } from "../lib/statusLabels";
@@ -41,10 +42,6 @@ import Badge from "../components/ui/Badge";
 import { DeliveryPill, PaymentPill, VoidPill } from "../components/ui/StatusPill";
 import { toast } from "../components/ui/Toaster";
 import { cn } from "../lib/cn";
-
-function dueAmount(b: Bill): number {
-  return Number(b.amount_due ?? b.due_amount ?? Number(b.grand_total) - Number(b.amount_paid));
-}
 
 function orderedQty(line: BillLine) {
   if (line.is_loose) return formatQtyKg(line.ordered_quantity_kg);
@@ -261,7 +258,7 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
     }
   };
 
-  const due = useMemo(() => (bill ? dueAmount(bill) : 0), [bill]);
+  const due = useMemo(() => (bill ? billDueAmount(bill) : 0), [bill]);
   const finalPayable = bill?.final_payable ?? bill?.grand_total ?? "0";
 
   if (loading) {
