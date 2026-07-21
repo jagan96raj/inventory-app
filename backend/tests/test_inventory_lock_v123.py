@@ -17,6 +17,7 @@ from app.models.entities import (
     BillStatus,
     BillType,
     Brand,
+    Company,
     Customer,
     DeliveryStatus,
     Inventory,
@@ -28,6 +29,7 @@ from app.services.fulfillment import FulfillmentType, create_bill_fulfillment_ev
 from app.services.inventory_lock import (
     get_inventory_row_for_update,
     inventory_row_key,
+    lock_inventory_rows,
     sort_inventory_keys,
 )
 from app.services.operations import create_product_transfer, subtract_inventory
@@ -241,9 +243,54 @@ class InventoryLockV123Tests(unittest.TestCase):
             m["brand"].id,
             m["location"].id,
             m["bag_type"].id,
+            company_id=1,
         )
         self.assertIsNotNone(inv)
         self.assertEqual(inv.bag_count, 100)
+
+    def test_company_scope_prevents_cross_tenant_lock_and_read(self):
+        m = self.m
+        self.db.add(Company(id=2, name="Other Co", is_active=True))
+        self.db.flush()
+        c2_inv = Inventory(
+            company_id=2,
+            product_id=m["product"].id,
+            brand_id=m["brand"].id,
+            location_id=m["location"].id,
+            bag_type_id=m["bag_type"].id,
+            bag_count=7,
+            loose_kg=Decimal("0"),
+            total_quantity_kg=Decimal("350"),
+        )
+        self.db.add(c2_inv)
+        self.db.commit()
+
+        inv_c1 = get_inventory_row_for_update(
+            self.db,
+            m["product"].id,
+            m["brand"].id,
+            m["location"].id,
+            m["bag_type"].id,
+            company_id=1,
+        )
+        inv_c2 = get_inventory_row_for_update(
+            self.db,
+            m["product"].id,
+            m["brand"].id,
+            m["location"].id,
+            m["bag_type"].id,
+            company_id=2,
+        )
+        self.assertIsNotNone(inv_c1)
+        self.assertIsNotNone(inv_c2)
+        self.assertNotEqual(inv_c1.id, inv_c2.id)
+        self.assertEqual(inv_c1.bag_count, 100)
+        self.assertEqual(inv_c2.bag_count, 7)
+
+        keys = [inventory_row_key(m["product"].id, m["brand"].id, m["location"].id, m["bag_type"].id)]
+        locked = lock_inventory_rows(self.db, 2, keys)
+        self.assertIsNotNone(locked[keys[0]])
+        self.assertEqual(locked[keys[0]].id, inv_c2.id)
 
     @unittest.skipUnless(os.environ.get("TEST_DATABASE_URL"), "Set TEST_DATABASE_URL for PostgreSQL concurrent test")
     def test_concurrent_subtract_one_succeeds_one_fails(self):

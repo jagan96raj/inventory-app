@@ -220,6 +220,7 @@ def _reprocess_line_has_physical_stock(
         line["bag_type_id"],
         owner_type=owner_type,
         customer_id=customer_id,
+        company_id=int(getattr(job, "company_id", 1)),
     )
     if not inv:
         return False

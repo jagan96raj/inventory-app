@@ -13,6 +13,19 @@ CATEGORY_NAME_REQUIRED_MSG = "Expense category name is required"
 CATEGORY_SYSTEM_LOCKED_MSG = "System category cannot be modified"
 CATEGORY_TRANSFER_KIND_FORBIDDEN_MSG = "Transfer categories are system-managed"
 
+DEFAULT_EXPENSE_CATEGORY_SEED: list[tuple[str, ExpenseCategoryKind, bool]] = [
+    ("Rent", ExpenseCategoryKind.expense, False),
+    ("Wages", ExpenseCategoryKind.expense, False),
+    ("Salary", ExpenseCategoryKind.expense, False),
+    ("Loan Repayment", ExpenseCategoryKind.expense, False),
+    ("EB Bill", ExpenseCategoryKind.expense, False),
+    ("Freight Charges", ExpenseCategoryKind.expense, False),
+    ("Other Expenses", ExpenseCategoryKind.expense, False),
+    ("Self Withdrawal", ExpenseCategoryKind.expense, False),
+    ("Capital Increase", ExpenseCategoryKind.income, False),
+    ("Transfer", ExpenseCategoryKind.transfer, True),
+]
+
 
 def _normalize_name(name: str) -> str:
     return (name or "").strip()
@@ -27,6 +40,32 @@ def _name_exists_active(db: Session, name: str, company_id: int, exclude_id: int
     if exclude_id is not None:
         q = q.where(ExpenseCategory.id != exclude_id)
     return db.scalar(q) is not None
+
+
+def seed_default_expense_categories(db: Session, company_id: int) -> None:
+    existing = {
+        row[0]
+        for row in db.execute(
+            select(func.lower(func.trim(ExpenseCategory.name))).where(
+                ExpenseCategory.company_id == company_id
+            )
+        ).all()
+        if row[0]
+    }
+    for name, kind, is_system in DEFAULT_EXPENSE_CATEGORY_SEED:
+        normalized = name.lower()
+        if normalized in existing:
+            continue
+        db.add(
+            ExpenseCategory(
+                company_id=company_id,
+                name=name,
+                kind=kind,
+                is_system=is_system,
+                is_active=True,
+            )
+        )
+        existing.add(normalized)
 
 
 def list_categories(

@@ -16,6 +16,7 @@ from app.models.entities import (
     BillType,
     BookSettings,
     Company,
+    ExpenseCategory,
     JWNumberCounter,
     Product,
     User,
@@ -126,6 +127,11 @@ class CompaniesV1704Tests(unittest.TestCase):
             self.db.scalars(select(Product).where(Product.company_id == company_id)).all()
         )
         self.assertEqual(products, [])
+        categories = list(
+            self.db.scalars(select(ExpenseCategory).where(ExpenseCategory.company_id == company_id)).all()
+        )
+        self.assertGreater(len(categories), 0)
+        self.assertIn("Transfer", {row.name for row in categories})
 
         settings_row = self.db.scalar(
             select(BookSettings).where(BookSettings.company_id == company_id)

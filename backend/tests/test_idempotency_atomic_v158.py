@@ -123,10 +123,29 @@ class IdempotencyAtomicServiceV158Tests(unittest.TestCase):
         route = "POST /api/payments"
         body_hash = "retry-hash"
         claim = claim_idempotency(self.db, 1, "retry-key", route, body_hash)
-        fail_idempotency(self.db, 1, "retry-key")
+        fail_idempotency(self.db, 1, "retry-key", route)
 
         claim2 = claim_idempotency(self.db, 1, "retry-key", route, body_hash)
         self.assertIsNotNone(claim2.record_id)
+
+    def test_same_key_different_routes_are_independent(self):
+        key = "shared-key"
+        body_hash = "same-hash"
+        route_a = "POST /api/operations/bag-change/10/void"
+        route_b = "POST /api/operations/product-transfer/10/void"
+
+        claim_a = claim_idempotency(self.db, 1, key, route_a, body_hash)
+        self.assertIsNotNone(claim_a.record_id)
+        complete_idempotency(self.db, claim_a.record_id, 200, {"route": "a"})
+
+        claim_b = claim_idempotency(self.db, 1, key, route_b, body_hash)
+        self.assertIsNotNone(claim_b.record_id)
+        complete_idempotency(self.db, claim_b.record_id, 200, {"route": "b"})
+
+        cached_a = claim_idempotency(self.db, 1, key, route_a, body_hash)
+        cached_b = claim_idempotency(self.db, 1, key, route_b, body_hash)
+        self.assertEqual(cached_a.cached["body"]["route"], "a")
+        self.assertEqual(cached_b.cached["body"]["route"], "b")
 
     def test_completed_different_hash_raises_reused(self):
         route = "POST /api/bills"

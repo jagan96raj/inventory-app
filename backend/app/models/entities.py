@@ -979,7 +979,7 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("user_id", "idempotency_key", name="uq_idempotency_user_key"),
+        UniqueConstraint("user_id", "idempotency_key", "route_key", name="uq_idempotency_user_key_route"),
     )
 
 
@@ -1058,6 +1058,13 @@ class BankAccount(Base):
 
     __table_args__ = (
         Index("ix_bank_accounts_name_lower", "company_id", func.lower(func.trim(name)), unique=True),
+        Index(
+            "uq_bank_accounts_one_default",
+            "company_id",
+            unique=True,
+            sqlite_where=text("is_default = 1"),
+            postgresql_where=text("is_default = TRUE"),
+        ),
         CheckConstraint("opening_balance >= 0", name="ck_bank_accounts_opening_non_negative"),
     )
 

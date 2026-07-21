@@ -122,12 +122,14 @@ def get_inventory_row(
     brand_id: int,
     location_id: int,
     bag_type_id: int,
+    company_id: int,
     owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
     customer_id: int | None = None,
 ) -> Inventory | None:
     ot = owner_type.value if isinstance(owner_type, InventoryOwnerType) else str(owner_type)
     ot_enum = InventoryOwnerType(ot)
     q = select(Inventory).where(
+        Inventory.company_id == company_id,
         Inventory.product_id == product_id,
         Inventory.brand_id == brand_id,
         Inventory.location_id == location_id,
@@ -819,7 +821,7 @@ def create_bill_fulfillment_event(
             inventory_row_key(pid, bid, stock_location_id, btid)
             for pid, bid, btid in sales_deliver_demand.keys()
         ]
-        locked_rows = lock_inventory_rows(db, lock_keys)
+        locked_rows = lock_inventory_rows(db, bill.company_id, lock_keys)
 
     for key, demand in sales_deliver_demand.items():
         pid, bid, btid = key
@@ -896,6 +898,7 @@ def serialize_fulfillment_line(
             ln.brand_id,
             b.location_id,
             ln.bag_type_id,
+            b.company_id,
             owner_type,
             customer_id,
         )

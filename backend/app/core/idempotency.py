@@ -93,8 +93,8 @@ def run_idempotent_mutation(
         complete_idempotency(db, record_id, status_code, body_dict)
         return result
     except HTTPException:
-        fail_idempotency(db, user.id, key)
+        fail_idempotency(db, user.id, key, route_key)
         raise
     except Exception:
-        fail_idempotency(db, user.id, key)
+        fail_idempotency(db, user.id, key, route_key)
         raise

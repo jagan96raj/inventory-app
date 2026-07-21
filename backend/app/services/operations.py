@@ -142,7 +142,14 @@ def subtract_inventory(
     qty = calc_quantity_kg(bt, bag_count, loose_kg)
 
     inv = get_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
+        db,
+        product_id,
+        brand_id,
+        location_id,
+        bag_type_id,
+        owner_type,
+        customer_id,
+        company_id=company_id,
     )
 
     if not inv:
@@ -213,7 +220,14 @@ def add_inventory(
     qty = calc_quantity_kg(bt, bag_count, loose_kg)
 
     inv = get_or_create_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
+        db,
+        product_id,
+        brand_id,
+        location_id,
+        bag_type_id,
+        owner_type,
+        customer_id,
+        company_id=company_id,
     )
 
     try:
@@ -369,7 +383,7 @@ def create_bag_change(
 
         lock_keys.append(inventory_row_key(product_id, brand_id, location_id, line["to_bag_type_id"], ot, cid))
 
-    lock_inventory_rows(db, lock_keys)
+    lock_inventory_rows(db, company_id, lock_keys)
 
 
 
@@ -495,6 +509,7 @@ def create_product_transfer(
     lock_inventory_rows(
 
         db,
+        company_id,
 
         [
 
@@ -938,7 +953,7 @@ def void_bag_change(db: Session, record_id: int, *, actor: User | None = None) -
                 record.owner_type, record.customer_id,
             )
         )
-    lock_inventory_rows(db, lock_keys)
+    lock_inventory_rows(db, record.company_id, lock_keys)
 
     for tl in sorted(record.to_lines, key=lambda x: x.line_index):
         _subtract_for_void(
@@ -991,6 +1006,7 @@ def void_product_transfer(db: Session, record_id: int, *, actor: User | None = N
 
     lock_inventory_rows(
         db,
+        record.company_id,
         [
             inventory_row_key(
                 record.product_id, record.brand_id, record.from_location_id, record.bag_type_id,
@@ -1052,6 +1068,7 @@ def void_stock_disposal(db: Session, record_id: int, *, actor: User | None = Non
 
     lock_inventory_rows(
         db,
+        record.company_id,
         [
             inventory_row_key(
                 record.product_id, record.brand_id, record.location_id, record.bag_type_id,

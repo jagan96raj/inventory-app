@@ -41,11 +41,14 @@ def hash_empty_body() -> str:
     return canonical_request_hash(None)
 
 
-def lookup_idempotent_response(db: Session, user_id: int, key: str) -> IdempotencyRecord | None:
+def lookup_idempotent_response(
+    db: Session, user_id: int, key: str, route_key: str
+) -> IdempotencyRecord | None:
     return db.scalar(
         select(IdempotencyRecord).where(
             IdempotencyRecord.user_id == user_id,
             IdempotencyRecord.idempotency_key == key,
+            IdempotencyRecord.route_key == route_key,
         )
     )
 
@@ -123,7 +126,7 @@ def claim_idempotency(
     request_hash: str,
 ) -> IdempotencyClaim:
     _maybe_run_throttled_cleanup(db)
-    record = lookup_idempotent_response(db, user_id, key)
+    record = lookup_idempotent_response(db, user_id, key, route_key)
     if record is not None:
         cached = _apply_existing_record_rules(record, request_hash)
         if cached is not None:
@@ -143,7 +146,7 @@ def claim_idempotency(
         db.commit()
     except IntegrityError:
         db.rollback()
-        existing = lookup_idempotent_response(db, user_id, key)
+        existing = lookup_idempotent_response(db, user_id, key, route_key)
         if existing is None:
             raise
         cached = _apply_existing_record_rules(existing, request_hash)
@@ -168,8 +171,8 @@ def complete_idempotency(
     db.commit()
 
 
-def fail_idempotency(db: Session, user_id: int, key: str) -> None:
-    record = lookup_idempotent_response(db, user_id, key)
+def fail_idempotency(db: Session, user_id: int, key: str, route_key: str) -> None:
+    record = lookup_idempotent_response(db, user_id, key, route_key)
     if record is None or record.status != IdempotencyStatus.in_progress:
         return
     db.delete(record)
@@ -183,7 +186,7 @@ def assert_idempotent_request(
     route_key: str,
     request_hash: str,
 ) -> dict | None:
-    record = lookup_idempotent_response(db, user_id, key)
+    record = lookup_idempotent_response(db, user_id, key, route_key)
     if record is None:
         return None
     if record.status == IdempotencyStatus.in_progress:
@@ -219,7 +222,7 @@ def store_idempotent_response(
         db.commit()
     except IntegrityError:
         db.rollback()
-        existing = lookup_idempotent_response(db, user_id, key)
+        existing = lookup_idempotent_response(db, user_id, key, route_key)
         if existing is None:
             raise
         if existing.request_hash != request_hash:
