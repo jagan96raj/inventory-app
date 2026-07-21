@@ -47,22 +47,12 @@ def get_book_settings(db: Session, company_id: int = 1) -> BookSettings:
         )
     )
     if settings is None:
-        from app.models.entities import Company
         from app.utils.time import business_today
 
-        company = db.get(Company, company_id)
-        company_name = company.name if company is not None else None
-        from app.services.companies import format_company_address
-
-        company_address = format_company_address(company) if company is not None else None
-        company_phone = company.phone if company is not None else None
         settings = BookSettings(
             company_id=company_id,
             cash_opening_balance=Decimal("0"),
             cash_opening_balance_at=business_today(),
-            company_name=company_name,
-            company_address_line=company_address,
-            company_phone=company_phone,
         )
         db.add(settings)
         db.commit()
@@ -82,25 +72,21 @@ def get_book_settings(db: Session, company_id: int = 1) -> BookSettings:
 
 
 def serialize_book_settings(settings: BookSettings) -> dict:
-    # Spec v17.0.5/v17.0.6 — prefer companies table for bill-print header; fall back to book_settings columns.
-    from app.services.companies import format_company_address
-
+    # Company header for bill print — companies table is the single source of truth.
     company = getattr(settings, "company", None)
     if company is not None:
         company_name = company.name
-        company_address = format_company_address(company) or company.address_line
+        company_address_line = company.address_line
         company_address_line_2 = company.address_line_2
         company_district = company.district
         company_state = company.state
         company_pin_code = company.pin_code
         company_gstin = company.gstin
         company_phone = company.phone
-        # Also expose line 1 separately for structured print
-        company_address_line_1 = company.address_line
     else:
+        # Orphaned book_settings without a companies row — legacy column fallback only.
         company_name = settings.company_name
-        company_address = settings.company_address_line
-        company_address_line_1 = settings.company_address_line
+        company_address_line = settings.company_address_line
         company_address_line_2 = None
         company_district = None
         company_state = None
@@ -121,7 +107,7 @@ def serialize_book_settings(settings: BookSettings) -> dict:
         "powder_bag_type_id": settings.powder_bag_type_id,
         "powder_bag_type_name": settings.powder_bag_type.name if settings.powder_bag_type else None,
         "company_name": company_name,
-        "company_address_line": company_address_line_1 or company_address,
+        "company_address_line": company_address_line,
         "company_address_line_2": company_address_line_2,
         "company_district": company_district,
         "company_state": company_state,
@@ -155,29 +141,40 @@ def update_book_settings(db: Session, company_id: int, updates: dict) -> BookSet
             entity = db.get(model, value)
             assert_entity_company(entity, company_id, label)
         setattr(settings, field, value)
-    for field in ("company_name", "company_address_line", "company_phone"):
-        if field not in updates:
-            continue
-        value = updates[field]
-        if value is not None:
-            value = value.strip()
-            if value == "":
-                value = None
-        setattr(settings, field, value)
-
-    # Spec v17.0.5 — keep companies table in sync when legacy book_settings header fields are patched.
+    # Legacy PATCH fields — write to companies (source of truth), not book_settings columns.
     header_keys = ("company_name", "company_address_line", "company_phone")
     if any(k in updates for k in header_keys):
         from app.models.entities import Company
 
         company = db.get(Company, company_id)
         if company is not None:
-            if "company_name" in updates and settings.company_name:
-                company.name = settings.company_name
+            if "company_name" in updates:
+                value = updates["company_name"]
+                if value is not None:
+                    value = value.strip() or None
+                if value:
+                    company.name = value
             if "company_address_line" in updates:
-                company.address_line = settings.company_address_line
+                value = updates["company_address_line"]
+                if value is not None:
+                    value = value.strip() or None
+                company.address_line = value
             if "company_phone" in updates:
-                company.phone = settings.company_phone
+                value = updates["company_phone"]
+                if value is not None:
+                    value = value.strip() or None
+                company.phone = value
+        else:
+            # Orphaned tenant without a companies row — legacy column fallback only.
+            for field in header_keys:
+                if field not in updates:
+                    continue
+                value = updates[field]
+                if value is not None:
+                    value = value.strip() or None
+                    if value == "":
+                        value = None
+                setattr(settings, field, value)
 
     db.commit()
     return get_book_settings(db, company_id)

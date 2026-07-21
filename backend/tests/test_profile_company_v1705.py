@@ -113,7 +113,7 @@ class ProfileCompanyV1705Tests(unittest.TestCase):
         company = self.db.get(Company, 1)
         self.assertEqual(company.name, "Raj Agro")
 
-    def test_owner_update_syncs_book_settings_header(self):
+    def test_owner_update_does_not_duplicate_book_settings_header(self):
         self._as_owner()
         res = self.client.patch(
             "/api/companies/me",
@@ -130,11 +130,20 @@ class ProfileCompanyV1705Tests(unittest.TestCase):
         self.assertEqual(res.status_code, 200, res.text)
         settings = self.db.scalar(select(BookSettings).where(BookSettings.company_id == 1))
         self.assertIsNotNone(settings)
-        self.assertEqual(settings.company_name, "Synced Name")
-        self.assertEqual(settings.company_address_line, "Synced Addr, Line 2, Erode, TN, 638001")
-        self.assertEqual(settings.company_phone, "555")
+        # Legacy columns are not synced; companies row is source of truth.
+        self.assertEqual(settings.company_name, "Raj Agro")
+        self.assertEqual(settings.company_address_line, "Old Addr")
+        self.assertEqual(settings.company_phone, "111")
         # Cash opening untouched
         self.assertEqual(Decimal(str(settings.cash_opening_balance)), Decimal("100.00"))
+        # API still exposes header from companies
+        book = self.client.get("/api/book-settings")
+        self.assertEqual(book.status_code, 200, book.text)
+        data = book.json()
+        self.assertEqual(data["company_name"], "Synced Name")
+        self.assertEqual(data["company_address_line"], "Synced Addr")
+        self.assertEqual(data["company_address_line_2"], "Line 2")
+        self.assertEqual(data["company_phone"], "555")
 
     def test_book_settings_get_still_returns_cash_and_prefers_company(self):
         company = self.db.get(Company, 1)
@@ -160,15 +169,24 @@ class ProfileCompanyV1705Tests(unittest.TestCase):
         self.assertEqual(data["company_gstin"], "33BBBBB0000B1Z5")
         self.assertEqual(data["company_phone"], "777")
 
-    def test_serialize_falls_back_when_company_missing_on_settings(self):
+    def test_serialize_prefers_company_when_relationship_present(self):
         settings = get_book_settings(self.db, 1)
-        # Detach company relationship simulation: clear and use column values
         settings.company_name = "Fallback Name"
         settings.company_address_line = "Fallback Addr"
         settings.company_phone = "000"
-        # Prefer company when relationship present
         out = serialize_book_settings(settings)
         self.assertEqual(out["company_name"], "Raj Agro")  # from companies row via relationship
+
+    def test_serialize_falls_back_when_company_missing_on_settings(self):
+        settings = get_book_settings(self.db, 1)
+        settings.company_name = "Fallback Name"
+        settings.company_address_line = "Fallback Addr"
+        settings.company_phone = "000"
+        settings.company = None
+        out = serialize_book_settings(settings)
+        self.assertEqual(out["company_name"], "Fallback Name")
+        self.assertEqual(out["company_address_line"], "Fallback Addr")
+        self.assertEqual(out["company_phone"], "000")
 
     def test_get_companies_me_ok_for_writer(self):
         self._as_writer()

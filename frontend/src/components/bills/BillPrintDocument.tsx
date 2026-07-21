@@ -2,11 +2,11 @@ import { forwardRef } from "react";
 import {
   billDocumentTitle,
   billLineQtyLabel,
+  billSettingsCompanyAddressLines,
   billTotalsRows,
   formatCustomerAddress,
   type BillPrintDocumentProps,
 } from "../../lib/billPrint";
-import { formatCompanyAddressLines } from "../../lib/companyAddressFields";
 import { formatInr, formatDate } from "../../lib/format";
 import { cn } from "../../lib/cn";
 
@@ -17,15 +17,7 @@ const BillPrintDocument = forwardRef<HTMLDivElement, BillPrintDocumentProps>(fun
   const isVoided = bill.status === "voided";
   const customerAddress = formatCustomerAddress(bill);
   const totals = billTotalsRows(bill);
-  const companyAddressLines = bookSettings
-    ? formatCompanyAddressLines({
-        address_line: bookSettings.company_address_line,
-        address_line_2: bookSettings.company_address_line_2,
-        district: bookSettings.company_district,
-        state: bookSettings.company_state,
-        pin_code: bookSettings.company_pin_code,
-      })
-    : [];
+  const companyAddressLines = bookSettingsCompanyAddressLines(bookSettings);
 
   return (
     <div

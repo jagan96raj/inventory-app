@@ -40,7 +40,7 @@ def get_company_for_user(db: Session, company_id: int) -> Company | None:
 
 
 def format_company_address(company: Company) -> str | None:
-    """Single-line address for book_settings.company_address_line / legacy print."""
+    """Single-line address join (legacy helpers / tests)."""
     parts = [
         company.address_line,
         company.address_line_2,
@@ -50,32 +50,6 @@ def format_company_address(company: Company) -> str | None:
     ]
     joined = ", ".join(p.strip().rstrip(",") for p in parts if p and str(p).strip())
     return joined or None
-
-
-BOOK_SETTINGS_ADDRESS_MAX = 2000
-
-
-def sync_book_settings_company_header(db: Session, company: Company) -> None:
-    """Keep book_settings.company_* aligned with companies (bill print compatibility)."""
-    formatted = format_company_address(company)
-    if formatted and len(formatted) > BOOK_SETTINGS_ADDRESS_MAX:
-        formatted = formatted[: BOOK_SETTINGS_ADDRESS_MAX - 1].rstrip() + "…"
-    settings = db.scalar(select(BookSettings).where(BookSettings.company_id == company.id))
-    if settings is None:
-        settings = BookSettings(
-            company_id=company.id,
-            cash_opening_balance=Decimal("0"),
-            cash_opening_balance_at=business_today(),
-            company_name=company.name,
-            company_address_line=formatted,
-            company_phone=company.phone,
-        )
-        db.add(settings)
-    else:
-        settings.company_name = company.name
-        settings.company_address_line = formatted
-        settings.company_phone = company.phone
-    db.flush()
 
 
 def update_company_profile(
@@ -91,7 +65,7 @@ def update_company_profile(
     gstin: Any = _UNSET,
     phone: Any = _UNSET,
 ) -> Company:
-    """Update companies row and sync book_settings company_* fields."""
+    """Update companies row (bill-print header reads companies only)."""
     company = db.get(Company, company_id)
     if company is None:
         raise ValueError("Company not found")
@@ -114,7 +88,6 @@ def update_company_profile(
         company.phone = phone
 
     try:
-        sync_book_settings_company_header(db, company)
         db.commit()
     except Exception:
         db.rollback()
@@ -134,9 +107,6 @@ def _seed_tenant_defaults(
             company_id=company.id,
             cash_opening_balance=Decimal("0"),
             cash_opening_balance_at=business_today(),
-            company_name=company.name,
-            company_address_line=format_company_address(company),
-            company_phone=company.phone,
         )
     )
     db.add(BillNumberCounter(company_id=company.id, bill_type=BillType.sales, last_number=0))
