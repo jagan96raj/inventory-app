@@ -47,6 +47,32 @@ BAG_TYPE_LOOSE_IMMUTABLE_MSG = (
 )
 
 
+def _paginated_master_list(
+    db: Session,
+    user: User,
+    model,
+    *,
+    order_by,
+    limit: int,
+    offset: int,
+    search: str | None = None,
+    search_column=None,
+    apply_search=None,
+) -> dict:
+    """Shared company-scoped list: clamp → scope → optional search → paginate → page_dict."""
+    company_id = company_id_for_user(user)
+    limit = clamp_limit(limit)
+    offset = clamp_offset(offset)
+    q = scope_query(select(model).order_by(order_by), model, company_id)
+    if apply_search is not None:
+        q = apply_search(q, search)
+    elif search and search.strip() and search_column is not None:
+        term = f"%{search.strip().lower()}%"
+        q = q.where(func.lower(search_column).like(term))
+    rows, total = paginate_select(db, q, limit=limit, offset=offset)
+    return page_dict(rows, total, limit, offset)
+
+
 def _delete_master(
     db: Session,
     entity,
@@ -96,15 +122,18 @@ def list_products(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    company_id = company_id_for_user(user)
-    limit = clamp_limit(limit)
-    offset = clamp_offset(offset)
-    q = scope_query(select(Product).order_by(Product.product_name), Product, company_id)
-    if search and search.strip():
-        term = f"%{search.strip().lower()}%"
-        q = q.where(func.lower(Product.product_name).like(term))
-    rows, total = paginate_select(db, q, limit=limit, offset=offset)
-    return ProductPageOut(**page_dict(rows, total, limit, offset))
+    return ProductPageOut(
+        **_paginated_master_list(
+            db,
+            user,
+            Product,
+            order_by=Product.product_name,
+            limit=limit,
+            offset=offset,
+            search=search,
+            search_column=Product.product_name,
+        )
+    )
 
 
 @router.get("/products/{pid}", response_model=ProductOut, dependencies=READ)
@@ -189,15 +218,18 @@ def list_brands(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    company_id = company_id_for_user(user)
-    limit = clamp_limit(limit)
-    offset = clamp_offset(offset)
-    q = scope_query(select(Brand).order_by(Brand.name), Brand, company_id)
-    if search and search.strip():
-        term = f"%{search.strip().lower()}%"
-        q = q.where(func.lower(Brand.name).like(term))
-    rows, total = paginate_select(db, q, limit=limit, offset=offset)
-    return BrandPageOut(**page_dict(rows, total, limit, offset))
+    return BrandPageOut(
+        **_paginated_master_list(
+            db,
+            user,
+            Brand,
+            order_by=Brand.name,
+            limit=limit,
+            offset=offset,
+            search=search,
+            search_column=Brand.name,
+        )
+    )
 
 
 @router.get("/brands/{bid}", response_model=BrandOut, dependencies=READ)
@@ -278,15 +310,18 @@ def list_locations(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    company_id = company_id_for_user(user)
-    limit = clamp_limit(limit)
-    offset = clamp_offset(offset)
-    q = scope_query(select(Location).order_by(Location.name), Location, company_id)
-    if search and search.strip():
-        term = f"%{search.strip().lower()}%"
-        q = q.where(func.lower(Location.name).like(term))
-    rows, total = paginate_select(db, q, limit=limit, offset=offset)
-    return LocationPageOut(**page_dict(rows, total, limit, offset))
+    return LocationPageOut(
+        **_paginated_master_list(
+            db,
+            user,
+            Location,
+            order_by=Location.name,
+            limit=limit,
+            offset=offset,
+            search=search,
+            search_column=Location.name,
+        )
+    )
 
 
 @router.get("/locations/{lid}", response_model=LocationOut, dependencies=READ)
@@ -378,15 +413,18 @@ def list_bag_types(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    company_id = company_id_for_user(user)
-    limit = clamp_limit(limit)
-    offset = clamp_offset(offset)
-    q = scope_query(select(BagType).order_by(BagType.name), BagType, company_id)
-    if search and search.strip():
-        term = f"%{search.strip().lower()}%"
-        q = q.where(func.lower(BagType.name).like(term))
-    rows, total = paginate_select(db, q, limit=limit, offset=offset)
-    return BagTypePageOut(**page_dict(rows, total, limit, offset))
+    return BagTypePageOut(
+        **_paginated_master_list(
+            db,
+            user,
+            BagType,
+            order_by=BagType.name,
+            limit=limit,
+            offset=offset,
+            search=search,
+            search_column=BagType.name,
+        )
+    )
 
 
 @router.get("/bag-types/{btid}", response_model=BagTypeOut, dependencies=READ)
@@ -479,13 +517,18 @@ def list_customers(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    company_id = company_id_for_user(user)
-    limit = clamp_limit(limit)
-    offset = clamp_offset(offset)
-    q = scope_query(select(Customer).order_by(Customer.name), Customer, company_id)
-    q = apply_customer_search(q, search)
-    rows, total = paginate_select(db, q, limit=limit, offset=offset)
-    return CustomerPageOut(**page_dict(rows, total, limit, offset))
+    return CustomerPageOut(
+        **_paginated_master_list(
+            db,
+            user,
+            Customer,
+            order_by=Customer.name,
+            limit=limit,
+            offset=offset,
+            search=search,
+            apply_search=apply_customer_search,
+        )
+    )
 
 
 @router.get("/customers/{cid}", response_model=CustomerOut, dependencies=READ)

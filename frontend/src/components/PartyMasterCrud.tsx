@@ -1,11 +1,14 @@
 import { FormEvent, useCallback, useEffect, useState, type ReactNode } from "react";
 import { MapPin, Pencil, Plus, Trash2, User } from "lucide-react";
-import { api, DEFAULT_PAGE_LIMIT, voidAuthHeaders, type PageOut } from "../api/client";
+import { DEFAULT_PAGE_LIMIT } from "../api/client";
 import { formatInr } from "../lib/format";
-
-function apiPath(path: string): string {
-  return path.startsWith("/api") ? path : `/api${path}`;
-}
+import {
+  buildMasterFormBody,
+  deleteMasterRecord,
+  isVoidAuthErrorMessage,
+  loadMasterPage,
+  saveMasterRecord,
+} from "../lib/masterCrudApi";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
 import PageHeader from "./ui/PageHeader";
@@ -123,12 +126,11 @@ export default function PartyMasterCrud<T extends { id: number }>({
   }, [debouncedSearch, searchable]);
 
   const load = useCallback(() => {
-    const params = new URLSearchParams({
-      limit: String(limit),
-      offset: String(offset),
-    });
-    if (searchable && debouncedSearch) params.set("search", debouncedSearch);
-    api.get<PageOut<T>>(`${apiPath(path)}?${params}`)
+    loadMasterPage<T>(path, {
+      limit,
+      offset,
+      search: searchable && debouncedSearch ? debouncedSearch : undefined,
+    })
       .then((page) => {
         setRows(page.items);
         setTotal(page.total);
@@ -160,26 +162,13 @@ export default function PartyMasterCrud<T extends { id: number }>({
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
-    const body: Record<string, unknown> = {};
-    for (const f of fields) {
-      if (editId && f.createOnly) continue;
-      const v = form[f.key];
-      if (f.optional && (v === "" || v === undefined)) {
-        if (f.type === "number") body[f.key] = 0;
-        else body[f.key] = null;
-        continue;
-      }
-      body[f.key] = f.type === "number" ? Number(v) : v;
-    }
+    const body = buildMasterFormBody(fields, form, {
+      editId,
+    });
     setSaving(true);
     try {
-      if (editId) {
-        await api.put(`${apiPath(path)}/${editId}`, body);
-        toast.success(`${kind === "customer" ? "Customer" : "Location"} updated`);
-      } else {
-        await api.post(apiPath(path), body);
-        toast.success(`${kind === "customer" ? "Customer" : "Location"} added`);
-      }
+      await saveMasterRecord(path, body, editId);
+      toast.success(`${kind === "customer" ? "Customer" : "Location"} ${editId ? "updated" : "added"}`);
       closeForm();
       load();
     } catch (err) {
@@ -207,16 +196,14 @@ export default function PartyMasterCrud<T extends { id: number }>({
     setError("");
     setVoidAuthError("");
     try {
-      await api.delete(`${apiPath(path)}/${pendingDelete.id}`, {
-        headers: voidAuthHeaders(authorizationPassword),
-      });
+      await deleteMasterRecord(path, pendingDelete.id, authorizationPassword);
       if (editId === pendingDelete.id) closeForm();
       setPendingDelete(null);
       toast.success("Deleted");
       load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error";
-      if (msg.toLowerCase().includes("authorization") || msg.toLowerCase().includes("password")) {
+      if (isVoidAuthErrorMessage(msg)) {
         setVoidAuthError(msg);
       } else {
         setError(msg);

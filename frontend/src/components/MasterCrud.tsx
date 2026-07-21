@@ -1,10 +1,13 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { api, DEFAULT_PAGE_LIMIT, voidAuthHeaders, type PageOut } from "../api/client";
-
-function apiPath(path: string): string {
-  return path.startsWith("/api") ? path : `/api${path}`;
-}
+import { DEFAULT_PAGE_LIMIT } from "../api/client";
+import {
+  buildMasterFormBody,
+  deleteMasterRecord,
+  isVoidAuthErrorMessage,
+  loadMasterPage,
+  saveMasterRecord,
+} from "../lib/masterCrudApi";
 import Button from "./ui/Button";
 import PageHeader from "./ui/PageHeader";
 import { Card, CardBody } from "./ui/Card";
@@ -66,7 +69,7 @@ export default function MasterCrud<T extends { id: number }>({
   const limit = DEFAULT_PAGE_LIMIT;
 
   const load = useCallback(() => {
-    api.get<PageOut<T>>(`${apiPath(path)}?limit=${limit}&offset=${offset}`)
+    loadMasterPage<T>(path, { limit, offset })
       .then((page) => {
         setRows(page.items);
         setTotal(page.total);
@@ -98,25 +101,13 @@ export default function MasterCrud<T extends { id: number }>({
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
-    const body: Record<string, unknown> = {};
-    for (const f of fields) {
-      const v = form[f.key];
-      if (f.optional && (v === "" || v === undefined)) {
-        if (f.type === "number") body[f.key] = 0;
-        else body[f.key] = null;
-        continue;
-      }
-      body[f.key] = f.type === "number" ? Number(v) : v;
-    }
+    const body = buildMasterFormBody(fields, form, {
+      editId,
+    });
     setSaving(true);
     try {
-      if (editId) {
-        await api.put(`${apiPath(path)}/${editId}`, body);
-        toast.success(`${title} updated`);
-      } else {
-        await api.post(apiPath(path), body);
-        toast.success(`${title} added`);
-      }
+      await saveMasterRecord(path, body, editId);
+      toast.success(editId ? `${title} updated` : `${title} added`);
       closeForm();
       load();
     } catch (err) {
@@ -144,16 +135,14 @@ export default function MasterCrud<T extends { id: number }>({
     setError("");
     setVoidAuthError("");
     try {
-      await api.delete(`${apiPath(path)}/${pendingDelete.id}`, {
-        headers: voidAuthHeaders(authorizationPassword),
-      });
+      await deleteMasterRecord(path, pendingDelete.id, authorizationPassword);
       if (editId === pendingDelete.id) closeForm();
       setPendingDelete(null);
       toast.success(`${title} deleted`);
       load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error";
-      if (msg.toLowerCase().includes("authorization") || msg.toLowerCase().includes("password")) {
+      if (isVoidAuthErrorMessage(msg)) {
         setVoidAuthError(msg);
       } else {
         setError(msg);
