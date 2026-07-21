@@ -50,7 +50,8 @@ def get_inventory_row_for_update(
     bag_type_id: int,
     owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
     customer_id: int | None = None,
-    company_id: int = 1,
+    *,
+    company_id: int,
 ) -> Inventory | None:
     ot, cid = _normalize_owner(owner_type, customer_id)
     ot_enum = InventoryOwnerType(ot)
@@ -81,10 +82,18 @@ def get_or_create_inventory_row_for_update(
     bag_type_id: int,
     owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
     customer_id: int | None = None,
-    company_id: int = 1,
+    *,
+    company_id: int,
 ) -> Inventory:
     inv = get_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
+        db,
+        product_id,
+        brand_id,
+        location_id,
+        bag_type_id,
+        owner_type,
+        customer_id,
+        company_id=company_id,
     )
     if inv:
         return inv
@@ -109,7 +118,14 @@ def get_or_create_inventory_row_for_update(
     except IntegrityError:
         pass
     inv = get_inventory_row_for_update(
-        db, product_id, brand_id, location_id, bag_type_id, owner_type, customer_id, company_id
+        db,
+        product_id,
+        brand_id,
+        location_id,
+        bag_type_id,
+        owner_type,
+        customer_id,
+        company_id=company_id,
     )
     if not inv:
         raise ValueError("Could not lock or create inventory row")
@@ -117,7 +133,7 @@ def get_or_create_inventory_row_for_update(
 
 
 def lock_inventory_rows(
-    db: Session, keys: list[InventoryKey]
+    db: Session, company_id: int, keys: list[InventoryKey]
 ) -> dict[InventoryKey, Inventory | None]:
     locked: dict[InventoryKey, Inventory | None] = {}
     for key in sort_inventory_keys(keys):
@@ -130,5 +146,6 @@ def lock_inventory_rows(
             bag_type_id,
             owner_type,
             customer_id,
+            company_id=company_id,
         )
     return locked

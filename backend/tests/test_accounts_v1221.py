@@ -87,7 +87,7 @@ def _seed_masters(db: Session) -> dict:
         ("Freight Charges", ExpenseCategoryKind.expense, False),
         ("Rent", ExpenseCategoryKind.expense, False),
         ("Capital Increase", ExpenseCategoryKind.income, False),
-        ("Cash <-> Bank Transfer", ExpenseCategoryKind.transfer, True),
+        ("Transfer", ExpenseCategoryKind.transfer, True),
     }
     out_cats: dict[str, ExpenseCategory] = {}
     for name, kind, is_system in cats:
@@ -121,7 +121,7 @@ def _seed_masters(db: Session) -> dict:
         "freight": out_cats["Freight Charges"],
         "rent": out_cats["Rent"],
         "capital": out_cats["Capital Increase"],
-        "transfer": out_cats["Cash <-> Bank Transfer"],
+        "transfer": out_cats["Transfer"],
         "bank_default": bank_default,
         "bank_secondary": bank_secondary,
     }
@@ -210,6 +210,38 @@ class BankAccountServiceTests(unittest.TestCase):
         self.assertTrue(second.is_default)
         defaults = list(self.db.scalars(select(BankAccount).where(BankAccount.is_default.is_(True))))
         self.assertEqual(len(defaults), 1)
+
+    def test_default_bank_can_exist_per_company(self):
+        company2 = Company(name="Other Co", is_active=True)
+        self.db.add(company2)
+        self.db.flush()
+        c2_default = create_bank_account(
+            self.db,
+            company_id=company2.id,
+            name="Company2 Default",
+            account_number_last4=None,
+            ifsc=None,
+            opening_balance=Decimal("0"),
+            is_default=True,
+        )
+        self.assertTrue(c2_default.is_default)
+        c1_defaults = list(
+            self.db.scalars(
+                select(BankAccount).where(
+                    BankAccount.company_id == 1, BankAccount.is_default.is_(True)
+                )
+            )
+        )
+        c2_defaults = list(
+            self.db.scalars(
+                select(BankAccount).where(
+                    BankAccount.company_id == company2.id, BankAccount.is_default.is_(True)
+                )
+            )
+        )
+        self.assertEqual(len(c1_defaults), 1)
+        self.assertEqual(len(c2_defaults), 1)
+        self.assertEqual(c2_defaults[0].id, c2_default.id)
 
     def test_cannot_delete_bank_used_by_payment(self):
         bill = _make_sales_bill(self.db, self.m, grand_total=Decimal("1000"))

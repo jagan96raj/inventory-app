@@ -134,6 +134,7 @@ def _apply_batch(
     single_allocation_owner_type: str | None = None,
     single_allocation_customer_id: int | None = None,
 ) -> ProcessingBatch:
+    job_company_id = int(getattr(job, "company_id", 1))
     if not batch_has_content(
         input_lines=input_lines,
         output_lines=output_lines,
@@ -158,7 +159,7 @@ def _apply_batch(
         if value < 0:
             raise ValueError(f"{field_name} cannot be negative")
 
-    _validate_no_powder_output_lines(db, output_lines, company_id=getattr(job, "company_id", 1))
+    _validate_no_powder_output_lines(db, output_lines, company_id=job_company_id)
 
     op_at = utc_now()
     batch = ProcessingBatch(
@@ -232,7 +233,7 @@ def _apply_batch(
                 Decimal(line["loose_kg"]),
                 owner_type=owner_type,
                 customer_id=customer_id,
-                company_id=getattr(job, "company_id", 1),
+                company_id=job_company_id,
             )
         except ValueError as exc:
             if _is_balance_reprocess(line.get("input_source")) and str(exc) == "Insufficient stock":
@@ -275,7 +276,7 @@ def _apply_batch(
                 loose,
                 owner_type=owner_type,
                 customer_id=customer_id,
-                company_id=getattr(job, "company_id", 1),
+                company_id=job_company_id,
             )
             db.add(
                 ProcessingOutputLine(
@@ -323,7 +324,7 @@ def _apply_batch(
                 loose,
                 owner_type=owner_type,
                 customer_id=customer_id,
-                company_id=getattr(job, "company_id", 1),
+                company_id=job_company_id,
             )
             db.add(
                 ProcessingBalanceReturnLine(
@@ -387,11 +388,12 @@ def submit_batch(
     job = _processing.load_processing_job(db, job_id, company_id=company_id)
     if job.status != ProcessingJobStatus.open:
         raise ValueError("Processing job is not open")
+    job_company_id = int(getattr(job, "company_id", 1))
     resolved_powder_kg, powder_line_data = _resolve_powder_for_batch(
         db,
         powder_line=powder_line,
         powder_kg_legacy=powder_kg,
-        company_id=getattr(job, "company_id", 1),
+        company_id=job_company_id,
     )
     try:
         validate_balance_reprocess(job, input_lines, db)
@@ -452,11 +454,12 @@ def complete_job(
     job = _processing.load_processing_job(db, job_id, company_id=company_id)
     if job.status != ProcessingJobStatus.open:
         raise ValueError("Processing job is not open")
+    job_company_id = int(getattr(job, "company_id", 1))
     resolved_powder_kg, powder_line_data = _resolve_powder_for_batch(
         db,
         powder_line=powder_line,
         powder_kg_legacy=powder_kg,
-        company_id=getattr(job, "company_id", 1),
+        company_id=job_company_id,
     )
     has_body = batch_has_content(
         input_lines=input_lines,
@@ -519,7 +522,7 @@ def complete_job(
         raise
     return _processing.load_processing_job(db, job_id)
 
-def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch) -> None:
+def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch, *, company_id: int) -> None:
     if batch.powder_kg <= 0:
         return
     product_id, brand_id, location_id, bag_type_id, bt = _batch_powder_inventory_tuple(db, batch)
@@ -550,7 +553,7 @@ def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch) -> Non
             loose_kg,
             owner_type=owner_type,
             customer_id=customer_id,
-            company_id=getattr(batch.job, "company_id", 1) if batch.job else 1,
+            company_id=company_id,
         )
 
 def _reconcile_job_after_batch_void(db: Session, job: ProcessingJob) -> None:
@@ -664,9 +667,9 @@ def void_processing_batch(
                     )
                 )
 
-    lock_inventory_rows(db, lock_keys)
+    lock_inventory_rows(db, job.company_id, lock_keys)
 
-    _void_powder_inventory_for_batch(db, batch)
+    _void_powder_inventory_for_batch(db, batch, company_id=job.company_id)
 
     for line in batch.output_lines:
         ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
@@ -680,7 +683,7 @@ def void_processing_batch(
             line.loose_kg,
             owner_type=ot,
             customer_id=cid,
-            company_id=getattr(job, "company_id", 1),
+            company_id=job.company_id,
         )
 
     for line in batch.balance_return_lines:
@@ -695,7 +698,7 @@ def void_processing_batch(
             line.loose_kg,
             owner_type=ot,
             customer_id=cid,
-            company_id=getattr(job, "company_id", 1),
+            company_id=job.company_id,
         )
 
     for line in batch.input_lines:
@@ -710,7 +713,7 @@ def void_processing_batch(
             line.loose_kg,
             owner_type=ot,
             customer_id=cid,
-            company_id=getattr(job, "company_id", 1),
+            company_id=job.company_id,
         )
 
     batch.voided_at = utc_now()

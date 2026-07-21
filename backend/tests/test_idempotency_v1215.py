@@ -134,6 +134,18 @@ class IdempotencyServiceV1215Tests(unittest.TestCase):
         self.assertIsNone(assert_idempotent_request(self.db, 1, "key-a", route, h))
         self.assertIsNone(assert_idempotent_request(self.db, 1, "key-b", route, h))
 
+    def test_same_key_different_void_routes_do_not_cross_contaminate(self):
+        key = "same-key"
+        body_hash = canonical_request_hash(None)
+        route_a = "POST /api/operations/bag-change/5/void"
+        route_b = "POST /api/operations/product-transfer/5/void"
+        store_idempotent_response(self.db, 1, key, route_a, body_hash, 200, {"route": "bag"})
+        store_idempotent_response(self.db, 1, key, route_b, body_hash, 200, {"route": "transfer"})
+        cached_a = assert_idempotent_request(self.db, 1, key, route_a, body_hash)
+        cached_b = assert_idempotent_request(self.db, 1, key, route_b, body_hash)
+        self.assertEqual(cached_a["body"]["route"], "bag")
+        self.assertEqual(cached_b["body"]["route"], "transfer")
+
 
 class IdempotencyApiV1215Tests(unittest.TestCase):
     def setUp(self):

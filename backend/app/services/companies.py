@@ -18,6 +18,7 @@ from app.models.entities import (
     User,
     UserRole,
 )
+from app.services.expense_categories import seed_default_expense_categories
 from app.utils.time import business_today
 
 DEFAULT_COMPANY_ID = 1
@@ -112,6 +113,7 @@ def _seed_tenant_defaults(
     db.add(BillNumberCounter(company_id=company.id, bill_type=BillType.sales, last_number=0))
     db.add(BillNumberCounter(company_id=company.id, bill_type=BillType.purchase, last_number=0))
     db.add(JWNumberCounter(company_id=company.id, last_number=0))
+    seed_default_expense_categories(db, company.id)
     db.flush()
 
 
