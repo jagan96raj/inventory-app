@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.entities import (
     BankAccount,
+    BankAccountKind,
     Bill,
     BillStatus,
     BillType,
@@ -422,7 +423,10 @@ def list_bank_account_balances(
 ) -> list[tuple[BankAccount, Decimal]]:
     q = (
         select(BankAccount)
-        .where(BankAccount.company_id == company_id)
+        .where(
+            BankAccount.company_id == company_id,
+            BankAccount.kind == BankAccountKind.bank,
+        )
         .order_by(
             BankAccount.is_default.desc(), BankAccount.is_active.desc(), BankAccount.name
         )

@@ -75,6 +75,13 @@ class CashBookSourceMode(str, enum.Enum):
     bank = "bank"
 
 
+class BankAccountKind(str, enum.Enum):
+    """Spec v17.2.0 — unified money accounts Phase 1 (cash | bank rows in bank_accounts)."""
+
+    cash = "cash"
+    bank = "bank"
+
+
 class FulfillmentType(str, enum.Enum):
     deliver = "deliver"
     return_ = "return"
@@ -1034,7 +1041,7 @@ class LoginEvent(Base):
 
 
 class BankAccount(Base):
-    """Spec v12.21 — bank account master used by payments and cash book entries."""
+    """Spec v12.21 / v17.2.0 — money account master (kind=bank|cash). Phase 1 keeps cash UI on book_settings."""
 
     __tablename__ = "bank_accounts"
 
@@ -1046,6 +1053,15 @@ class BankAccount(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    kind: Mapped[BankAccountKind] = mapped_column(
+        Enum(
+            BankAccountKind,
+            name="bank_account_kind_enum",
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=BankAccountKind.bank,
+        nullable=False,
+    )
     account_number_last4: Mapped[str | None] = mapped_column(String(4))
     ifsc: Mapped[str | None] = mapped_column(String(32))
     opening_balance: Mapped[Decimal] = mapped_column(MONEY, default=0, nullable=False)
@@ -1062,6 +1078,13 @@ class BankAccount(Base):
             unique=True,
             sqlite_where=text("is_default = 1"),
             postgresql_where=text("is_default = TRUE"),
+        ),
+        Index(
+            "uq_bank_accounts_one_cash",
+            "company_id",
+            unique=True,
+            sqlite_where=text("kind = 'cash'"),
+            postgresql_where=text("kind = 'cash'"),
         ),
         CheckConstraint("opening_balance >= 0", name="ck_bank_accounts_opening_non_negative"),
     )
