@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 23 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.2.1** (Unified money accounts Phase 2); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.2.2** (Unified money accounts Phase 3); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.2.2** — Unified money accounts Phase 3 (Option B): cash/bank balances via `get_account_balance` on `bank_accounts` (opening + movements by `account_id` / cash-book source|dest, with legacy mode/bank FK fallback). Dashboard field names unchanged. See **Spec v17.2.2** below.
 - **v17.2.1** — Unified money accounts Phase 2 (Option B): nullable `source_account_id` / `dest_account_id` on cash book and `account_id` on payments (FK → `bank_accounts`); backfill from legacy mode + bank ids; dual-write on create/edit. Frontend pickers unchanged. See **Spec v17.2.1** below.
 - **v17.2.0** — Unified money accounts Phase 1 (Option B): `bank_accounts.kind` (`cash`|`bank`); existing rows backfilled as `bank`; each company gets a `Cash` row seeded from `book_settings` opening; new company registration seeds Cash (opening 0). Bank list/default/balances still expose `kind=bank` only — payment/cashbook UI unchanged. See **Spec v17.2.0** below.
 - **v17.0.6** — UI/data polish to match current app behavior: Processing job snapshot simplified (removed reprocess/output/allowance rows; replaced net unclean with latest balance return; powder hover aligned and powder location block removed), Fulfillment bills now support product + brand filters, and Bill form layout/line-item UX updates (customer row placement, no numbered field labels, quantity before rate, unified field sizing, and products-billed counter between line items and totals). See **Spec v17.0.6** below.
@@ -3564,5 +3565,19 @@ npm run build
 **Out of scope:** frontend picker changes; dropping old columns; balance-engine rewrite (Phase 3).
 
 **Files changed:** `backend/alembic/versions/059_spec_v1721_money_account_ids.py`, `backend/app/models/entities.py`, `backend/app/services/bank_accounts.py`, `backend/app/services/cash_book.py`, `backend/app/services/payments.py`, `backend/tests/test_money_account_ids_v1721.py`, `inventory-app-SPEC.md.txt`.
+
+## Spec v17.2.2 — Unified money accounts Phase 3 (Option B)
+
+**Problem:** Phase 2 dual-wrote unified account FKs, but dashboard cash/bank totals still used legacy mode + `bank_account_id` math (and cash opening only from `book_settings`).
+
+**Solution (Phase 3 only):**
+- `get_account_balance(db, account_id)`: `opening_balance` + sales payments − purchase payments + cash-book income − expense + transfer in − transfer out, matching rows via `account_id` / `source_account_id` / `dest_account_id`, with legacy mode + bank FK fallback when the unified FK is null.
+- `get_cash_balance` = sum of balances for `kind=cash` (Cash opening kept aligned with `book_settings` until Phase 4 UI); `get_bank_account_balance` / list / `total_bank_balance` use the same helper for `kind=bank` only.
+- Accounts summary and bank-account list APIs keep the same JSON field names (`cash_balance`, `total_bank_balance`, `balance`, etc.).
+- No new migration.
+
+**Out of scope:** frontend picker redesign (Phase 4); dropping legacy columns.
+
+**Files changed:** `backend/app/services/accounts.py`, `backend/tests/test_money_account_balances_v1722.py`, `inventory-app-SPEC.md.txt`.
 
 
