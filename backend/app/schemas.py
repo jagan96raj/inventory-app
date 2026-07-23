@@ -15,6 +15,7 @@ def _business_date_not_future(v: date | None) -> date | None:
     return v
 from app.core.password_policy import validate_new_password_field
 from app.models.entities import (
+    BankAccountKind,
     BillType,
     CashBookEntryType,
     CashBookSourceMode,
@@ -1448,6 +1449,7 @@ class FulfillmentAuditPageOut(PageOut[FulfillmentAuditOut]):
 
 class BankAccountCreate(BaseModel):
     name: str
+    kind: BankAccountKind = BankAccountKind.bank
     account_number_last4: str | None = None
     ifsc: str | None = None
     opening_balance: Decimal = Field(default=Decimal("0"), ge=0)
@@ -1478,11 +1480,21 @@ class BankAccountCreate(BaseModel):
         s = v.strip()
         return s or None
 
+    @model_validator(mode="after")
+    def validate_kind_fields(self) -> "BankAccountCreate":
+        if self.kind == BankAccountKind.cash:
+            if self.account_number_last4 is not None or self.ifsc is not None:
+                raise ValueError("Cash accounts do not use account number or IFSC")
+            if self.is_default:
+                raise ValueError("Cash account cannot be the default bank")
+        return self
+
 
 class BankAccountUpdate(BaseModel):
     name: str | None = None
     account_number_last4: str | None = None
     ifsc: str | None = None
+    opening_balance: Decimal | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
     @field_validator("name")
@@ -1519,6 +1531,7 @@ class BankAccountUpdate(BaseModel):
 class BankAccountOut(BaseModel):
     id: int
     name: str
+    kind: BankAccountKind = BankAccountKind.bank
     account_number_last4: str | None = None
     ifsc: str | None = None
     opening_balance: Decimal
@@ -1622,17 +1635,15 @@ class CashBookEntryCreate(BaseModel):
             if self.source_payment_mode is None or self.dest_payment_mode is None:
                 raise ValueError("transfer requires source_payment_mode and dest_payment_mode")
             if (
-                self.source_payment_mode == self.dest_payment_mode == CashBookSourceMode.cash
-            ):
-                raise ValueError("Cash to cash transfer is not allowed")
-            if (
                 self.source_payment_mode == CashBookSourceMode.bank
                 and self.dest_payment_mode == CashBookSourceMode.bank
                 and self.source_bank_account_id is not None
                 and self.dest_bank_account_id is not None
                 and self.source_bank_account_id == self.dest_bank_account_id
             ):
-                raise ValueError("Source and destination bank accounts must differ")
+                raise ValueError("Source and destination accounts must differ")
+            # Cash→cash allowed when both sides are cash (same wallet is a no-op and rejected
+            # only when unified account ids match at the service/UI layer).
         if self.source_payment_mode == CashBookSourceMode.bank and self.source_bank_account_id is None:
             raise ValueError("source_bank_account_id is required when source is bank")
         if self.source_payment_mode == CashBookSourceMode.cash and self.source_bank_account_id is not None:

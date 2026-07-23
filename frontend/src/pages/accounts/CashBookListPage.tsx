@@ -20,6 +20,7 @@ import {
   DEFAULT_PAGE_LIMIT,
   newIdempotencyKey,
 } from "../../api/client";
+import { accountsByKind } from "../../lib/moneyAccounts";
 import { formatDate, formatInr } from "../../lib/format";
 import { usePermissions } from "../../lib/permissions";
 import PageHeader from "../../components/ui/PageHeader";
@@ -78,14 +79,16 @@ export default function CashBookListPage() {
     voided: "false",
   });
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
-  const [banks, setBanks] = useState<BankAccountBalance[]>([]);
+  const [accounts, setAccounts] = useState<BankAccountBalance[]>([]);
+
+  const groupedAccounts = useMemo(() => accountsByKind(accounts), [accounts]);
 
   const hasActiveFilters = useMemo(
     () =>
       Boolean(
         filters.entry_type ||
           filters.category_id ||
-          filters.source_bank_account_id ||
+          filters.account_id ||
           filters.date_from ||
           filters.date_to ||
           (filters.voided && filters.voided !== "false")
@@ -99,8 +102,8 @@ export default function CashBookListPage() {
       .then((p) => setCategories(p.items))
       .catch(() => {});
     bankAccountsApi
-      .list({ limit: 200, active: "all" })
-      .then((p) => setBanks(p.items))
+      .list({ limit: 200, active: "all", kind: "all" })
+      .then((p) => setAccounts(p.items))
       .catch(() => {});
   }, []);
 
@@ -325,24 +328,37 @@ export default function CashBookListPage() {
                 </Select>
               )}
             </FormField>
-            <FormField label="Bank">
+            <FormField label="Account">
               {({ id }) => (
                 <Select
                   id={id}
-                  value={filters.source_bank_account_id ?? ""}
+                  value={filters.account_id ?? ""}
                   onChange={(e) =>
                     setFilters({
                       ...filters,
-                      source_bank_account_id: e.target.value ? Number(e.target.value) : undefined,
+                      account_id: e.target.value ? Number(e.target.value) : undefined,
                     })
                   }
                 >
-                  <option value="">All banks</option>
-                  {banks.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
+                  <option value="">All accounts</option>
+                  {groupedAccounts.cash.length > 0 && (
+                    <optgroup label="Cash">
+                      {groupedAccounts.cash.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {groupedAccounts.bank.length > 0 && (
+                    <optgroup label="Bank">
+                      {groupedAccounts.bank.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </Select>
               )}
             </FormField>

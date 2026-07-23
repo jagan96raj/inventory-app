@@ -1,6 +1,6 @@
-"""Spec v12.21 — bank accounts router."""
+"""Spec v12.21 / v17.2.3 — bank / money accounts router."""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -48,24 +48,30 @@ def _to_balance_out(b: BankAccount, db: Session) -> BankAccountBalanceOut:
 @router.get("", response_model=BankAccountPageOut)
 def list_bank_accounts(
     active: str = Query("true", pattern="^(true|false|all)$"),
+    kind: str = Query("bank", pattern="^(bank|cash|all)$"),
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """List money accounts. Default ``kind=bank`` keeps legacy callers bank-only."""
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     company_id = company_id_for_user(user)
     q = (
         select(BankAccount)
-        .where(
-            BankAccount.company_id == company_id,
-            BankAccount.kind == BankAccountKind.bank,
-        )
+        .where(BankAccount.company_id == company_id)
         .order_by(
-            BankAccount.is_default.desc(), BankAccount.is_active.desc(), BankAccount.name
+            case((BankAccount.kind == BankAccountKind.cash, 0), else_=1),
+            BankAccount.is_default.desc(),
+            BankAccount.is_active.desc(),
+            BankAccount.name,
         )
     )
+    if kind == "bank":
+        q = q.where(BankAccount.kind == BankAccountKind.bank)
+    elif kind == "cash":
+        q = q.where(BankAccount.kind == BankAccountKind.cash)
     if active == "true":
         q = q.where(BankAccount.is_active.is_(True))
     elif active == "false":
@@ -91,6 +97,7 @@ def post_bank_account(
                 db,
                 company_id=company_id_for_user(user),
                 name=body.name,
+                kind=body.kind,
                 account_number_last4=body.account_number_last4,
                 ifsc=body.ifsc,
                 opening_balance=body.opening_balance,
@@ -124,6 +131,7 @@ def patch_bank_account(
                 account_number_last4=body.account_number_last4,
                 ifsc=body.ifsc,
                 is_active=body.is_active,
+                opening_balance=body.opening_balance,
             )
         except ValueError as e:
             msg = str(e)

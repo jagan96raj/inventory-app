@@ -295,7 +295,7 @@ export default function AccountsDashboardPage() {
 
           <Card className="overflow-hidden">
             <CardHeader
-              title="Bank accounts"
+              title="Accounts"
               subtitle="Opening and closing balance per account."
               actions={
                 <Link to="/accounts/bank-accounts">

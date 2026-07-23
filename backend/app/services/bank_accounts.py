@@ -167,14 +167,30 @@ def seed_company_cash_account(
 
 
 def list_bank_accounts(
-    db: Session, *, company_id: int | None = None, active: str = "true"
+    db: Session,
+    *,
+    company_id: int | None = None,
+    active: str = "true",
+    kind: str = "bank",
 ) -> list[BankAccount]:
-    # Phase 1: only expose kind=bank so Cash stays out of bank master/pickers.
-    q = (
-        select(BankAccount)
-        .where(BankAccount.kind == BankAccountKind.bank)
-        .order_by(BankAccount.is_default.desc(), BankAccount.name)
+    """
+    List money accounts.
+
+    kind: ``bank`` (default, backward compatible), ``cash``, or ``all``.
+    """
+    from sqlalchemy import case
+
+    q = select(BankAccount).order_by(
+        case((BankAccount.kind == BankAccountKind.cash, 0), else_=1),
+        BankAccount.is_default.desc(),
+        BankAccount.name,
     )
+    if kind == "bank":
+        q = q.where(BankAccount.kind == BankAccountKind.bank)
+    elif kind == "cash":
+        q = q.where(BankAccount.kind == BankAccountKind.cash)
+    elif kind != "all":
+        raise ValueError("kind must be bank, cash, or all")
     if company_id is not None:
         q = q.where(BankAccount.company_id == company_id)
     if active == "true":
@@ -205,12 +221,42 @@ def create_bank_account(
     ifsc: str | None,
     opening_balance: Decimal,
     is_default: bool,
+    kind: BankAccountKind | str = BankAccountKind.bank,
 ) -> BankAccount:
     name = _normalize_name(name)
     if not name:
         raise ValueError(BANK_NAME_REQUIRED_MSG)
     if _name_exists(db, name, company_id):
         raise ValueError(BANK_NAME_DUPLICATE_MSG)
+
+    kind_value = kind if isinstance(kind, BankAccountKind) else BankAccountKind(str(kind))
+    if kind_value == BankAccountKind.cash:
+        if get_company_cash_account(db, company_id) is not None:
+            raise ValueError("Cash account already exists for this company")
+        if is_default:
+            raise ValueError("Cash account cannot be the default bank")
+        if account_number_last4 or ifsc:
+            raise ValueError("Cash accounts do not use account number or IFSC")
+        record = BankAccount(
+            company_id=company_id,
+            name=name,
+            kind=BankAccountKind.cash,
+            account_number_last4=None,
+            ifsc=None,
+            opening_balance=opening_balance or Decimal("0"),
+            opening_balance_at=business_today(),
+            is_default=False,
+            is_active=True,
+        )
+        db.add(record)
+        db.flush()
+        _sync_cash_opening_to_book_settings(
+            db, company_id, record.opening_balance, record.opening_balance_at
+        )
+        db.commit()
+        db.refresh(record)
+        return record
+
     # Auto-default only when no bank-kind accounts exist yet (Cash does not count).
     any_bank = db.scalar(
         select(func.count(BankAccount.id)).where(
@@ -239,6 +285,16 @@ def create_bank_account(
     return record
 
 
+def _sync_cash_opening_to_book_settings(
+    db: Session, company_id: int, opening: Decimal, opening_at: date
+) -> None:
+    from app.services.accounts import get_book_settings
+
+    settings = get_book_settings(db, company_id)
+    settings.cash_opening_balance = opening
+    settings.cash_opening_balance_at = opening_at
+
+
 def edit_bank_account(
     db: Session,
     bank_id: int,
@@ -248,9 +304,10 @@ def edit_bank_account(
     account_number_last4: str | None,
     ifsc: str | None,
     is_active: bool | None,
+    opening_balance: Decimal | None = None,
 ) -> BankAccount:
     record = db.get(BankAccount, bank_id)
-    if not record or record.kind != BankAccountKind.bank:
+    if not record:
         raise ValueError(BANK_NOT_FOUND_MSG)
     if company_id is not None and int(record.company_id) != int(company_id):
         raise ValueError(BANK_NOT_FOUND_MSG)
@@ -261,14 +318,30 @@ def edit_bank_account(
         if _name_exists(db, clean, record.company_id, exclude_id=bank_id):
             raise ValueError(BANK_NAME_DUPLICATE_MSG)
         record.name = clean
-    if account_number_last4 is not None:
-        record.account_number_last4 = account_number_last4 or None
-    if ifsc is not None:
-        record.ifsc = ifsc or None
-    if is_active is not None:
-        if not is_active and record.is_default:
-            raise ValueError("Cannot deactivate the default bank account")
-        record.is_active = is_active
+    if record.kind == BankAccountKind.cash:
+        if account_number_last4 is not None or ifsc is not None:
+            raise ValueError("Cash accounts do not use account number or IFSC")
+        if opening_balance is not None:
+            record.opening_balance = Decimal(opening_balance)
+            record.opening_balance_at = business_today()
+            _sync_cash_opening_to_book_settings(
+                db, record.company_id, record.opening_balance, record.opening_balance_at
+            )
+        if is_active is not None:
+            if not is_active:
+                raise ValueError("Cannot deactivate the Cash account")
+            record.is_active = is_active
+    else:
+        if account_number_last4 is not None:
+            record.account_number_last4 = account_number_last4 or None
+        if ifsc is not None:
+            record.ifsc = ifsc or None
+        if opening_balance is not None:
+            raise ValueError("Bank opening balance cannot be changed after creation")
+        if is_active is not None:
+            if not is_active and record.is_default:
+                raise ValueError("Cannot deactivate the default bank account")
+            record.is_active = is_active
     db.commit()
     db.refresh(record)
     return record
@@ -293,12 +366,16 @@ def make_default_bank_account(
 
 def assert_bank_account_deletable(db: Session, bank_id: int) -> None:
     payment_used = db.scalar(
-        select(func.count(Payment.id)).where(Payment.bank_account_id == bank_id)
+        select(func.count(Payment.id)).where(
+            (Payment.bank_account_id == bank_id) | (Payment.account_id == bank_id)
+        )
     ) or 0
     cb_used = db.scalar(
         select(func.count(CashBookEntry.id)).where(
             (CashBookEntry.source_bank_account_id == bank_id)
             | (CashBookEntry.dest_bank_account_id == bank_id)
+            | (CashBookEntry.source_account_id == bank_id)
+            | (CashBookEntry.dest_account_id == bank_id)
         )
     ) or 0
     if payment_used or cb_used:
@@ -309,9 +386,13 @@ def assert_bank_account_deletable(db: Session, bank_id: int) -> None:
 
 def delete_bank_account(db: Session, bank_id: int, *, company_id: int | None = None) -> None:
     record = db.get(BankAccount, bank_id)
-    if not record or record.kind != BankAccountKind.bank:
+    if not record:
         raise ValueError(BANK_NOT_FOUND_MSG)
     if company_id is not None and int(record.company_id) != int(company_id):
+        raise ValueError(BANK_NOT_FOUND_MSG)
+    if record.kind == BankAccountKind.cash:
+        raise ValueError("Cannot delete the Cash account")
+    if record.kind != BankAccountKind.bank:
         raise ValueError(BANK_NOT_FOUND_MSG)
     assert_bank_account_deletable(db, bank_id)
     if record.is_default:

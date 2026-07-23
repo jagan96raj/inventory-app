@@ -94,7 +94,7 @@ const NAV: NavGroup[] = [
       { to: "/accounts", label: "Dashboard", icon: Wallet, permission: "accounts_view" },
       { to: "/accounts/cashbook", label: "Cash book", icon: BookOpen, permission: "cashbook_manage" },
       { to: "/accounts/customers", label: "Customer balances", icon: HandCoins, permission: "accounts_view" },
-      { to: "/accounts/bank-accounts", label: "Bank accounts", icon: Banknote, permission: "bank_accounts_manage" },
+      { to: "/accounts/bank-accounts", label: "Accounts", icon: Banknote, permission: "bank_accounts_manage" },
       { to: "/accounts/expense-categories", label: "Expense categories", icon: ReceiptText, permission: "expense_categories_manage" },
       { to: "/accounts/setup", label: "Book settings", icon: Settings, permission: "book_settings_view" },
     ],

@@ -1,7 +1,17 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, IndianRupee } from "lucide-react";
-import { api, bankAccountsApi, idempotencyHeadersOptionalAuth, newIdempotencyKey, type BankAccount, type Bill, type Payment, type SetoffPreview } from "../api/client";
+import {
+  api,
+  bankAccountsApi,
+  idempotencyHeadersOptionalAuth,
+  newIdempotencyKey,
+  type BankAccount,
+  type Bill,
+  type Payment,
+  type SetoffPreview,
+} from "../api/client";
+import { accountsByKind, legacyFieldsFromAccount, pickDefaultMoneyAccountId } from "../lib/moneyAccounts";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import { billDueAmount } from "../lib/billAmounts";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
@@ -21,6 +31,9 @@ import { toast } from "../components/ui/Toaster";
 import { cn } from "../lib/cn";
 
 type Props = { billType?: "sales" | "purchase" };
+
+const SETOFF_DEBIT = "__debit__";
+const SETOFF_CREDIT = "__credit__";
 
 function isBalanceMode(billType: string, mode: string): boolean {
   return (billType === "purchase" && mode === "debit") || (billType === "sales" && mode === "credit");
@@ -43,6 +56,18 @@ function autoFillAmount(
   return "";
 }
 
+function sourceToPaymentFields(
+  source: string,
+  accounts: BankAccount[]
+): { payment_mode: string; bank_account_id: number | null } | null {
+  if (source === SETOFF_DEBIT) return { payment_mode: "debit", bank_account_id: null };
+  if (source === SETOFF_CREDIT) return { payment_mode: "credit", bank_account_id: null };
+  const account = accounts.find((a) => String(a.id) === source);
+  if (!account) return null;
+  const legacy = legacyFieldsFromAccount(account);
+  return { payment_mode: legacy.mode, bank_account_id: legacy.bank_account_id };
+}
+
 export default function PaymentPage({ billType: billTypeProp }: Props) {
   const { id: routeId } = useParams();
   const [searchParams] = useSearchParams();
@@ -54,8 +79,12 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   const [error, setError] = useState("");
   const { submitting, guardedSubmit, submitDisabled } = useSubmitGuard();
   const idemKeyRef = useRef<string | null>(null);
-  const [form, setForm] = useState({ amount: "", payment_mode: "cash", bank_account_id: "" as number | "", paid_date: localIsoDate() });
-  const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [form, setForm] = useState({
+    amount: "",
+    source: "" as string,
+    paid_date: localIsoDate(),
+  });
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
   const [backdateAuthError, setBackdateAuthError] = useState("");
   const [billLoading, setBillLoading] = useState(false);
@@ -65,6 +94,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
 
   const billType = billTypeProp ?? bill?.bill_type ?? "sales";
   const listPath = billType === "sales" ? "/sales-bills" : "/purchase-bills";
+  const grouped = useMemo(() => accountsByKind(accounts), [accounts]);
 
   useEffect(() => {
     if (!billId) {
@@ -81,7 +111,11 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
       .then((b) => {
         if (billRequestIdRef.current !== requestId) return;
         setBill(b);
-        setForm({ amount: "", payment_mode: "cash", bank_account_id: "", paid_date: localIsoDate() });
+        setForm((f) => ({
+          amount: "",
+          source: f.source,
+          paid_date: localIsoDate(),
+        }));
       })
       .catch((e) => {
         if (billRequestIdRef.current !== requestId) return;
@@ -95,16 +129,16 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
 
   useEffect(() => {
     bankAccountsApi
-      .list({ limit: 200, active: "true" })
+      .list({ limit: 200, active: "true", kind: "all" })
       .then((p) => {
-        setBanks(p.items);
+        setAccounts(p.items);
         setForm((f) => {
-          if (f.bank_account_id !== "") return f;
-          const def = p.items.find((b) => b.is_default);
-          return def ? { ...f, bank_account_id: def.id } : f;
+          if (f.source !== "") return f;
+          const def = pickDefaultMoneyAccountId(p.items);
+          return def !== "" ? { ...f, source: String(def) } : f;
         });
       })
-      .catch(() => setBanks([]));
+      .catch(() => setAccounts([]));
   }, []);
 
   const creditBal = Number(bill?.customer_credit_balance ?? 0);
@@ -112,37 +146,12 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   const oppositeDue = Number(bill?.opposite_due_total ?? 0);
   const due = bill ? billDueAmount(bill) : 0;
 
-  const modes = useMemo(() => {
-    if (!bill) return [] as { value: string; label: string }[];
-    if (bill.bill_type === "purchase") {
-      const m = [
-        { value: "cash", label: "Cash" },
-        { value: "bank", label: "Bank" },
-      ];
-      if (debitBal > 0 && oppositeDue > 0) m.push({ value: "debit", label: "Debit balance" });
-      return m;
-    }
-    const m = [
-      { value: "cash", label: "Cash" },
-      { value: "bank", label: "Bank" },
-    ];
-    if (creditBal > 0 && oppositeDue > 0) m.push({ value: "credit", label: "Credit balance" });
-    return m;
-  }, [bill, creditBal, debitBal, oppositeDue]);
-
-  useEffect(() => {
-    if (!bill || !modes.length) return;
-    if (!modes.some((m) => m.value === form.payment_mode)) {
-      const nextMode = modes[0].value;
-      setForm((f) => ({
-        ...f,
-        payment_mode: nextMode,
-        amount: autoFillAmount(bill.bill_type, nextMode, debitBal, creditBal, due, oppositeDue),
-      }));
-    }
-  }, [modes, bill, debitBal, creditBal, due, oppositeDue, form.payment_mode]);
-
-  const balanceMode = bill ? isBalanceMode(bill.bill_type, form.payment_mode) : false;
+  const paymentFields = useMemo(
+    () => (form.source ? sourceToPaymentFields(form.source, accounts) : null),
+    [form.source, accounts]
+  );
+  const paymentMode = paymentFields?.payment_mode ?? "";
+  const balanceMode = bill ? isBalanceMode(bill.bill_type, paymentMode) : false;
   const amountReadOnly = balanceMode;
 
   useEffect(() => {
@@ -155,7 +164,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
     const params = new URLSearchParams({
       bill_id: String(bill.id),
       amount: String(amt > 0 ? amt : 0),
-      payment_mode: form.payment_mode,
+      payment_mode: paymentMode,
     });
     api
       .get<SetoffPreview>(`/api/payments/setoff-preview?${params}`)
@@ -167,27 +176,29 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
         if (previewRequestIdRef.current !== requestId) return;
         setSetoffPreview(null);
       });
-  }, [bill, balanceMode, form.amount, form.payment_mode]);
+  }, [bill, balanceMode, form.amount, paymentMode]);
 
-  const onModeChange = (mode: string) => {
+  const onSourceChange = (source: string) => {
     if (!bill) return;
+    const fields = sourceToPaymentFields(source, accounts);
+    const mode = fields?.payment_mode ?? "cash";
     setForm((f) => ({
       ...f,
-      payment_mode: mode,
+      source,
       amount: autoFillAmount(bill.bill_type, mode, debitBal, creditBal, due, oppositeDue),
     }));
   };
 
   const postPayment = async (authorizationPassword?: string) => {
-    if (!bill || !idemKeyRef.current) return;
+    if (!bill || !idemKeyRef.current || !paymentFields) return;
     const amt = Number(form.amount);
     await api.post<Payment>(
       "/api/payments",
       {
         bill_id: bill.id,
         amount: amt,
-        payment_mode: form.payment_mode,
-        bank_account_id: form.payment_mode === "bank" ? form.bank_account_id : null,
+        payment_mode: paymentFields.payment_mode,
+        bank_account_id: paymentFields.bank_account_id,
         expected_version: bill.version,
         paid_date: form.paid_date,
       },
@@ -213,6 +224,11 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
       idemKeyRef.current = null;
       return;
     }
+    if (!paymentFields) {
+      setError("Choose an account for this payment");
+      idemKeyRef.current = null;
+      return;
+    }
     if (balanceMode) {
       const maxSetoff = Math.min(
         bill.bill_type === "purchase" ? debitBal : creditBal,
@@ -224,11 +240,6 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
         idemKeyRef.current = null;
         return;
       }
-    }
-    if (form.payment_mode === "bank" && form.bank_account_id === "") {
-      setError("Choose a bank account for bank payments");
-      idemKeyRef.current = null;
-      return;
     }
     const dateError = validateDateNotFuture(form.paid_date);
     if (dateError) {
@@ -274,35 +285,19 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
     });
   };
 
-  if (!billId) {
-    return (
-      <Banner tone="warning">Open this page from a bill (Record payment).</Banner>
-    );
-  }
+  const showDebit = Boolean(bill && bill.bill_type === "purchase" && debitBal > 0 && oppositeDue > 0);
+  const showCredit = Boolean(bill && bill.bill_type === "sales" && creditBal > 0 && oppositeDue > 0);
 
   return (
     <>
       <PageHeader
-        eyebrow="Payment"
+        eyebrow={billType === "sales" ? "Sales" : "Purchase"}
         title="Record payment"
-        subtitle={
-          bill ? (
-            <span className="inline-flex items-center gap-2">
-              <span className="v2-mono font-medium">{bill.bill_number}</span>
-              <span>·</span>
-              <span>{bill.customer_name}</span>
-              <PaymentPill status={bill.payment_status} />
-            </span>
-          ) : (
-            "Loading bill…"
-          )
-        }
+        subtitle={bill ? `Bill ${bill.bill_number}` : "Loading…"}
         actions={
-          <Link to={listPath}>
-            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
-              Back to bills
-            </Button>
-          </Link>
+          <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate(listPath)}>
+            Back to bills
+          </Button>
         }
       />
 
@@ -317,30 +312,32 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
         </Banner>
       )}
 
-      {billLoading ? (
-        <Card>
-          <CardBody>
-            <p className="text-sm text-ink-muted">Loading bill…</p>
-          </CardBody>
-        </Card>
-      ) : bill ? (
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+      {bill && !billLoading ? (
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
           <Card>
-            <CardHeader title="Bill snapshot" subtitle="Read-only summary of money on this bill" />
-            <CardBody className="grid grid-cols-2 gap-3 pt-0 sm:grid-cols-3">
-              {[
-                ["Final payable", formatInr(bill.final_payable ?? bill.grand_total)],
-                ["Amount paid", formatInr(bill.amount_paid)],
-                ["Amount due", formatInr(due)],
-                ...(bill.bill_type === "purchase" && debitBal > 0 ? [["Customer debit balance", formatInr(debitBal)] as const] : []),
-                ...(bill.bill_type === "sales" && creditBal > 0 ? [["Customer credit balance", formatInr(creditBal)] as const] : []),
-                ...(oppositeDue > 0 ? [["Opposite bills due", formatInr(oppositeDue)] as const] : []),
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-line bg-surface-subtle px-3 py-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">{label}</p>
-                  <p className="mt-0.5 v2-mono text-sm font-semibold text-ink">{value}</p>
-                </div>
-              ))}
+            <CardHeader title="Bill summary" />
+            <CardBody className="space-y-2 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-ink-muted">Customer</span>
+                <span className="font-medium text-ink">{bill.customer_name ?? "—"}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-ink-muted">Grand total</span>
+                <span className="v2-mono font-semibold">{formatInr(bill.grand_total)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-ink-muted">Amount due</span>
+                <span className="v2-mono font-semibold text-primary-700 dark:text-primary-200">{formatInr(due)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-ink-muted">Status</span>
+                <PaymentPill status={bill.payment_status} />
+              </div>
+              <p className="pt-2 text-xs text-ink-subtle">
+                <Link className="text-primary-600 hover:underline" to={`${listPath}/${bill.id}`}>
+                  Open bill detail
+                </Link>
+              </p>
             </CardBody>
           </Card>
 
@@ -356,48 +353,45 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
             </Card>
           ) : (
             <Card>
-              <CardHeader title="New payment" subtitle="Backend validates set-off rules and limits." />
+              <CardHeader title="New payment" subtitle="Pick the Cash or Bank account (or a set-off balance)." />
               <CardBody>
                 <form onSubmit={submit} className="space-y-4">
                   <BusinessDateField
                     value={form.paid_date}
                     onChange={(paid_date) => setForm((f) => ({ ...f, paid_date }))}
                   />
-                  <FormField label="Payment mode" required>
+                  <FormField label="Paid from" required>
                     {({ id }) => (
-                      <Select
-                        id={id}
-                        value={form.payment_mode}
-                        onChange={(e) => onModeChange(e.target.value)}
-                        required
-                      >
-                        {modes.map((m) => (
-                          <option key={m.value} value={m.value}>
-                            {m.label}
-                          </option>
-                        ))}
+                      <Select id={id} value={form.source} onChange={(e) => onSourceChange(e.target.value)} required>
+                        <option value="">Select account…</option>
+                        {grouped.cash.length > 0 && (
+                          <optgroup label="Cash">
+                            {grouped.cash.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {grouped.bank.length > 0 && (
+                          <optgroup label="Bank">
+                            {grouped.bank.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.name}
+                                {a.is_default ? " (default)" : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {(showDebit || showCredit) && (
+                          <optgroup label="Set-off">
+                            {showDebit && <option value={SETOFF_DEBIT}>Debit balance</option>}
+                            {showCredit && <option value={SETOFF_CREDIT}>Credit balance</option>}
+                          </optgroup>
+                        )}
                       </Select>
                     )}
                   </FormField>
-                  {form.payment_mode === "bank" && (
-                    <FormField label="Bank account" required>
-                      <Select
-                        value={form.bank_account_id === "" ? "" : String(form.bank_account_id)}
-                        onChange={(e) =>
-                          setForm({ ...form, bank_account_id: e.target.value ? Number(e.target.value) : "" })
-                        }
-                        required
-                      >
-                        <option value="">Select bank…</option>
-                        {banks.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                            {b.is_default ? " (default)" : ""}
-                          </option>
-                        ))}
-                      </Select>
-                    </FormField>
-                  )}
                   <FormField
                     label={`Amount (max ${formatInr(due)})`}
                     required
@@ -425,8 +419,14 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
                   </FormField>
 
                   {balanceMode && setoffPreview && setoffPreview.allocations.length > 0 && (
-                    <div className={cn("rounded-xl border border-primary-200 bg-primary-50 p-3 dark:border-primary-800/60 dark:bg-primary-900/30")}>
-                      <p className="text-xs font-semibold text-primary-700 dark:text-primary-200">Set-off allocation (FIFO)</p>
+                    <div
+                      className={cn(
+                        "rounded-xl border border-primary-200 bg-primary-50 p-3 dark:border-primary-800/60 dark:bg-primary-900/30"
+                      )}
+                    >
+                      <p className="text-xs font-semibold text-primary-700 dark:text-primary-200">
+                        Set-off allocation (FIFO)
+                      </p>
                       <ul className="mt-2 space-y-1 text-sm">
                         {setoffPreview.allocations.map((row) => (
                           <li key={row.bill_id} className="flex items-center justify-between">
@@ -440,7 +440,14 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
                     </div>
                   )}
 
-                  <Button type="submit" size="lg" block loading={submitting} disabled={submitDisabled} leftIcon={<IndianRupee className="h-4 w-4" />}>
+                  <Button
+                    type="submit"
+                    size="lg"
+                    block
+                    loading={submitting}
+                    disabled={submitDisabled}
+                    leftIcon={<IndianRupee className="h-4 w-4" />}
+                  >
                     {submitting ? "Saving…" : "Submit payment"}
                   </Button>
                 </form>

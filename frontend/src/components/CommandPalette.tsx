@@ -60,7 +60,7 @@ const NAV_ITEMS: Item[] = [
   { id: "nav:accounts", label: "Accounts dashboard", to: "/accounts", icon: Wallet, section: "Accounts" },
   { id: "nav:cashbook", label: "Cash book", to: "/accounts/cashbook", icon: BookOpen, section: "Accounts" },
   { id: "nav:cust-balances", label: "Customer balances", to: "/accounts/customers", icon: HandCoins, section: "Accounts" },
-  { id: "nav:bank-accounts", label: "Bank accounts", to: "/accounts/bank-accounts", icon: Banknote, section: "Accounts" },
+  { id: "nav:bank-accounts", label: "Accounts", to: "/accounts/bank-accounts", icon: Banknote, section: "Accounts" },
   { id: "nav:expense-categories", label: "Expense categories", to: "/accounts/expense-categories", icon: ReceiptText, section: "Accounts" },
   { id: "nav:book-settings", label: "Book settings", to: "/accounts/setup", icon: Wallet, section: "Accounts" },
   { id: "nav:products", label: "Products", to: "/products", icon: Wheat, section: "Masters" },

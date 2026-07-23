@@ -810,9 +810,12 @@ export const loginHistoryApi = {
 
 export const EXPECTED_CASH_BOOK_VERSION_HEADER = "X-Expected-Cash-Book-Version";
 
+export type BankAccountKind = "cash" | "bank";
+
 export type BankAccount = {
   id: number;
   name: string;
+  kind: BankAccountKind;
   account_number_last4: string | null;
   ifsc: string | null;
   opening_balance: string;
@@ -826,6 +829,7 @@ export type BankAccountBalance = BankAccount & { balance: string };
 
 export type BankAccountIn = {
   name: string;
+  kind?: BankAccountKind;
   account_number_last4?: string | null;
   ifsc?: string | null;
   opening_balance?: string | number;
@@ -836,6 +840,7 @@ export type BankAccountUpdateIn = {
   name?: string;
   account_number_last4?: string | null;
   ifsc?: string | null;
+  opening_balance?: string | number;
   is_active?: boolean;
 };
 
@@ -1012,8 +1017,15 @@ type ListParams = {
 };
 
 export const bankAccountsApi = {
-  list: (p: ListParams & { active?: "true" | "false" | "all" } = {}) =>
-    api.get<PageOut<BankAccountBalance>>(`/api/bank-accounts${qs({ limit: p.limit ?? DEFAULT_PAGE_LIMIT, offset: p.offset ?? 0, active: p.active ?? "true" })}`),
+  list: (p: ListParams & { active?: "true" | "false" | "all"; kind?: "bank" | "cash" | "all" } = {}) =>
+    api.get<PageOut<BankAccountBalance>>(
+      `/api/bank-accounts${qs({
+        limit: p.limit ?? DEFAULT_PAGE_LIMIT,
+        offset: p.offset ?? 0,
+        active: p.active ?? "true",
+        kind: p.kind ?? "bank",
+      })}`
+    ),
   create: (body: BankAccountIn, key: string) =>
     api.post<BankAccount>("/api/bank-accounts", body, { headers: idempotencyHeaders(key) }),
   update: (id: number, body: BankAccountUpdateIn, key: string) =>
@@ -1040,6 +1052,7 @@ export type CashBookListParams = ListParams & {
   category_id?: number;
   source_payment_mode?: CashBookSourceMode;
   source_bank_account_id?: number;
+  account_id?: number;
   bill_id?: number;
   voided?: "false" | "true" | "any";
   date_from?: string;
@@ -1057,6 +1070,7 @@ export const cashBookApi = {
         category_id: p.category_id,
         source_payment_mode: p.source_payment_mode,
         source_bank_account_id: p.source_bank_account_id,
+        account_id: p.account_id,
         bill_id: p.bill_id,
         voided: p.voided ?? "false",
         date_from: p.date_from,

@@ -276,6 +276,7 @@ def list_cash_book(
     category_id: int | None = None,
     source_payment_mode: CashBookSourceMode | None = None,
     source_bank_account_id: int | None = None,
+    account_id: int | None = None,
     bill_id: int | None = None,
     voided: str = "false",
     date_from: date | None = None,
@@ -307,6 +308,38 @@ def list_cash_book(
             (CashBookEntry.source_bank_account_id == source_bank_account_id)
             | (CashBookEntry.dest_bank_account_id == source_bank_account_id)
         )
+    if account_id is not None:
+        from sqlalchemy import and_
+
+        account = db.get(BankAccount, account_id)
+        if account is None or (
+            company_id is not None and int(account.company_id) != int(company_id)
+        ):
+            q = q.where(CashBookEntry.id == -1)
+        elif account.kind == BankAccountKind.cash:
+            q = q.where(
+                or_(
+                    CashBookEntry.source_account_id == account_id,
+                    CashBookEntry.dest_account_id == account_id,
+                    and_(
+                        CashBookEntry.source_account_id.is_(None),
+                        CashBookEntry.source_payment_mode == CashBookSourceMode.cash,
+                    ),
+                    and_(
+                        CashBookEntry.dest_account_id.is_(None),
+                        CashBookEntry.dest_payment_mode == CashBookSourceMode.cash,
+                    ),
+                )
+            )
+        else:
+            q = q.where(
+                or_(
+                    CashBookEntry.source_account_id == account_id,
+                    CashBookEntry.dest_account_id == account_id,
+                    CashBookEntry.source_bank_account_id == account_id,
+                    CashBookEntry.dest_bank_account_id == account_id,
+                )
+            )
     if bill_id is not None:
         q = q.where(CashBookEntry.bill_id == bill_id)
     if voided == "false":

@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 23 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.2.2** (Unified money accounts Phase 3); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.2.3** (Unified money accounts Phase 4); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.2.3** — Unified money accounts Phase 4 (Option B): Accounts master (cash|bank); payment/cash-book pickers use From/To accounts; Book Settings cash opening moved to Cash account; dual-write legacy columns kept. See **Spec v17.2.3** below.
 - **v17.2.2** — Unified money accounts Phase 3 (Option B): cash/bank balances via `get_account_balance` on `bank_accounts` (opening + movements by `account_id` / cash-book source|dest, with legacy mode/bank FK fallback). Dashboard field names unchanged. See **Spec v17.2.2** below.
 - **v17.2.1** — Unified money accounts Phase 2 (Option B): nullable `source_account_id` / `dest_account_id` on cash book and `account_id` on payments (FK → `bank_accounts`); backfill from legacy mode + bank ids; dual-write on create/edit. Frontend pickers unchanged. See **Spec v17.2.1** below.
 - **v17.2.0** — Unified money accounts Phase 1 (Option B): `bank_accounts.kind` (`cash`|`bank`); existing rows backfilled as `bank`; each company gets a `Cash` row seeded from `book_settings` opening; new company registration seeds Cash (opening 0). Bank list/default/balances still expose `kind=bank` only — payment/cashbook UI unchanged. See **Spec v17.2.0** below.
@@ -3579,5 +3580,19 @@ npm run build
 **Out of scope:** frontend picker redesign (Phase 4); dropping legacy columns.
 
 **Files changed:** `backend/app/services/accounts.py`, `backend/tests/test_money_account_balances_v1722.py`, `inventory-app-SPEC.md.txt`.
+
+## Spec v17.2.3 — Unified money accounts Phase 4 (Option B)
+
+**Problem:** Staff still picked cash vs bank + a bank dropdown, and cash opening lived on Book Settings, while money already lived as `bank_accounts` rows (`kind=cash|bank`).
+
+**Solution (Phase 4 only):**
+- Bank-accounts API exposes `kind` on create/list/out; optional `?kind=bank|cash|all` (default `bank` for backward compatibility). Create Cash (one per company) or Bank; edit Cash opening (syncs `book_settings`); cannot delete/deactivate Cash or make it default.
+- Frontend Accounts master lists Type; payment page “Paid from” account picker (Cash/Bank optgroups + set-off); cash book From/To account pickers (cash→cash allowed; same bank id rejected); cash book list filter by `account_id`; Book Settings cash opening is read-only with a link to Accounts.
+- Saves still send legacy `payment_mode` / `source_payment_mode` + bank ids; backend dual-write fills unified account FKs.
+- No new migration; legacy columns retained (Phase 5).
+
+**Out of scope:** dropping legacy DB columns (Phase 5).
+
+**Files changed:** `backend/app/schemas.py`, `backend/app/services/bank_accounts.py`, `backend/app/routers/bank_accounts.py`, `backend/app/services/cash_book.py`, `backend/app/routers/cash_book.py`, `backend/tests/test_money_accounts_v1723.py`, `frontend/src/api/client.ts`, `frontend/src/lib/moneyAccounts.ts`, `frontend/src/pages/accounts/BankAccountsMasterPage.tsx`, `frontend/src/pages/PaymentPage.tsx`, `frontend/src/pages/accounts/CashBookEntryFormPage.tsx`, `frontend/src/pages/accounts/CashBookListPage.tsx`, `frontend/src/pages/accounts/BookSettingsPage.tsx`, `frontend/src/pages/accounts/AccountsDashboardPage.tsx`, `frontend/src/components/Sidebar.tsx`, `frontend/src/components/Topbar.tsx`, `frontend/src/components/CommandPalette.tsx`, `inventory-app-SPEC.md.txt`.
 
 
