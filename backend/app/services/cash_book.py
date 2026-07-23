@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.entities import (
     BankAccount,
+    BankAccountKind,
     Bill,
     CashBookEntry,
     CashBookEntryType,
@@ -18,6 +19,7 @@ from app.models.entities import (
     User,
 )
 from app.core.tenant import assert_entity_company
+from app.services.bank_accounts import resolve_money_account_id
 from app.utils.time import resolve_business_entry, utc_now
 
 
@@ -63,6 +65,8 @@ def _validate_bank_refs(
         if not bank or not bank.is_active:
             raise ValueError(f"{side.capitalize()} bank account not found or inactive")
         assert_entity_company(bank, company_id, f"{side.capitalize()} bank account")
+        if bank.kind != BankAccountKind.bank:
+            raise ValueError(f"{side.capitalize()} bank account not found or inactive")
     # consistency checks already performed in pydantic; recheck cheap rules
     if source_mode == CashBookSourceMode.cash and source_bank_id is not None:
         raise ValueError("source bank id must be null when source is cash")
@@ -127,6 +131,12 @@ def create_cash_book_entry(
     )
     _validate_bill(db, bill_id, company_id)
     resolved_date, entry_at = resolve_business_entry(entry_date)
+    source_account_id = resolve_money_account_id(
+        db, company_id, mode=src_mode, bank_account_id=src_bank
+    )
+    dest_account_id = resolve_money_account_id(
+        db, company_id, mode=dst_mode, bank_account_id=dst_bank
+    )
     entry = CashBookEntry(
         company_id=company_id,
         entry_type=entry_type,
@@ -139,6 +149,8 @@ def create_cash_book_entry(
         source_bank_account_id=src_bank,
         dest_payment_mode=dst_mode,
         dest_bank_account_id=dst_bank,
+        source_account_id=source_account_id,
+        dest_account_id=dest_account_id,
         entry_date=resolved_date,
         entry_at=entry_at,
         version=1,
@@ -205,6 +217,12 @@ def edit_cash_book_entry(
     entry.source_bank_account_id = src_bank
     entry.dest_payment_mode = dst_mode
     entry.dest_bank_account_id = dst_bank
+    entry.source_account_id = resolve_money_account_id(
+        db, entry.company_id, mode=src_mode, bank_account_id=src_bank
+    )
+    entry.dest_account_id = resolve_money_account_id(
+        db, entry.company_id, mode=dst_mode, bank_account_id=dst_bank
+    )
     entry.version = entry.version + 1
     db.commit()
     db.refresh(entry)

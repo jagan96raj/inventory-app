@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models.entities import (
     BankAccount,
+    BankAccountKind,
     Bill,
     BillStatus,
     BillType,
@@ -15,6 +16,7 @@ from app.models.entities import (
     PaymentStatus,
     User,
 )
+from app.services.bank_accounts import resolve_money_account_id
 from app.services.bill_lock import lock_bill_for_update, lock_bills_for_update
 from app.services.bill_concurrency import (
     assert_bill_version,
@@ -408,7 +410,9 @@ def _resolve_bank_account(
         if bank_account_id is None:
             # Try to fall back to the default bank for convenience (UI typically passes one)
             q = select(BankAccount).where(
-                BankAccount.is_default.is_(True), BankAccount.is_active.is_(True)
+                BankAccount.is_default.is_(True),
+                BankAccount.is_active.is_(True),
+                BankAccount.kind == BankAccountKind.bank,
             )
             if company_id is not None:
                 q = q.where(BankAccount.company_id == company_id)
@@ -416,7 +420,10 @@ def _resolve_bank_account(
             if default_bank is None:
                 raise ValueError(PAYMENT_BANK_ID_REQUIRED_MSG)
             return default_bank.id
-        q = select(BankAccount).where(BankAccount.id == bank_account_id)
+        q = select(BankAccount).where(
+            BankAccount.id == bank_account_id,
+            BankAccount.kind == BankAccountKind.bank,
+        )
         if company_id is not None:
             q = q.where(BankAccount.company_id == company_id)
         bank = db.scalar(q)
@@ -554,11 +561,20 @@ def create_payment(
 
         raise ValueError("Unknown bill type")
 
+    money_company_id = int(
+        getattr(bill, "company_id", None) or company_id or 1
+    )
     payment = Payment(
         bill_id=bill_id,
         amount=amount,
         payment_mode=payment_mode,
         bank_account_id=resolved_bank_id,
+        account_id=resolve_money_account_id(
+            db,
+            money_company_id,
+            mode=payment_mode,
+            bank_account_id=resolved_bank_id,
+        ),
         paid_at=paid_at,
     )
 

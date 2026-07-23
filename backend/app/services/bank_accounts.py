@@ -7,7 +7,14 @@ from decimal import Decimal
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models.entities import BankAccount, BankAccountKind, CashBookEntry, Payment, PaymentMode
+from app.models.entities import (
+    BankAccount,
+    BankAccountKind,
+    CashBookEntry,
+    CashBookSourceMode,
+    Payment,
+    PaymentMode,
+)
 from app.utils.time import business_today
 
 
@@ -16,6 +23,7 @@ BANK_NAME_DUPLICATE_MSG = "Bank account name already exists"
 BANK_NOT_FOUND_MSG = "Bank account not found"
 BANK_IN_USE_MSG = "Bank account is in use and cannot be deleted"
 CASH_ACCOUNT_NAME = "Cash"
+CASH_ACCOUNT_MISSING_MSG = "Cash account is not configured for this company"
 
 
 def _normalize_name(name: str) -> str:
@@ -45,6 +53,54 @@ def _clear_other_defaults(db: Session, keep_id: int | None, *, company_id: int) 
     if keep_id is not None:
         stmt = stmt.where(BankAccount.id != keep_id)
     db.execute(stmt)
+
+
+def get_company_cash_account(db: Session, company_id: int) -> BankAccount | None:
+    return db.scalar(
+        select(BankAccount).where(
+            BankAccount.company_id == company_id,
+            BankAccount.kind == BankAccountKind.cash,
+        )
+    )
+
+
+def require_company_cash_account(db: Session, company_id: int) -> BankAccount:
+    cash = get_company_cash_account(db, company_id)
+    if cash is None:
+        # Defensive: Phase 1 seeds Cash; recreate if missing (e.g. in-memory tests).
+        cash = seed_company_cash_account(db, company_id, opening_balance=Decimal("0"))
+    return cash
+
+
+def resolve_money_account_id(
+    db: Session,
+    company_id: int,
+    *,
+    mode: PaymentMode | CashBookSourceMode | str | None,
+    bank_account_id: int | None = None,
+) -> int | None:
+    """
+    Map legacy (mode, bank_account_id) → unified bank_accounts.id.
+
+    cash → company Cash row; bank → bank_account_id; other modes → None.
+    """
+    if mode is None:
+        return None
+    mode_value = mode.value if hasattr(mode, "value") else str(mode)
+    if mode_value == "cash":
+        return require_company_cash_account(db, company_id).id
+    if mode_value == "bank":
+        return bank_account_id
+    return None
+
+
+def money_mode_from_account(account: BankAccount | None) -> CashBookSourceMode | None:
+    """Reverse helper: account kind → cash/bank mode (None if missing)."""
+    if account is None:
+        return None
+    if account.kind == BankAccountKind.cash:
+        return CashBookSourceMode.cash
+    return CashBookSourceMode.bank
 
 
 def seed_company_cash_account(

@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 23 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.2.0** (Unified money accounts Phase 1); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.2.1** (Unified money accounts Phase 2); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.2.1** — Unified money accounts Phase 2 (Option B): nullable `source_account_id` / `dest_account_id` on cash book and `account_id` on payments (FK → `bank_accounts`); backfill from legacy mode + bank ids; dual-write on create/edit. Frontend pickers unchanged. See **Spec v17.2.1** below.
 - **v17.2.0** — Unified money accounts Phase 1 (Option B): `bank_accounts.kind` (`cash`|`bank`); existing rows backfilled as `bank`; each company gets a `Cash` row seeded from `book_settings` opening; new company registration seeds Cash (opening 0). Bank list/default/balances still expose `kind=bank` only — payment/cashbook UI unchanged. See **Spec v17.2.0** below.
 - **v17.0.6** — UI/data polish to match current app behavior: Processing job snapshot simplified (removed reprocess/output/allowance rows; replaced net unclean with latest balance return; powder hover aligned and powder location block removed), Fulfillment bills now support product + brand filters, and Bill form layout/line-item UX updates (customer row placement, no numbered field labels, quantity before rate, unified field sizing, and products-billed counter between line items and totals). See **Spec v17.0.6** below.
 - **v17.0.5** — Profile page at `/profile`: logged-in person (view) + company details; company editable by owner only via `PATCH /api/companies/me`; syncs `book_settings` company_* for bill print. Removed company header from Book Settings UI (cash opening + powder unchanged). Topbar Profile no longer goes to Home. See **Spec v17.0.5** below.
@@ -168,6 +169,7 @@
 | 043 | v16.0.7 | `users.is_active` (disable user / soft ban) |
 | 044 | v16.0.9 | `book_settings` company header (bill print) |
 | 058 | v17.2.0 | `bank_accounts.kind` (`cash`|`bank`); seed per-company Cash from book_settings |
+| 059 | v17.2.1 | cash_book/payments unified `*_account_id`; backfill + dual-write (legacy columns kept) |
 
 ## API surface (summary)
 
@@ -3548,5 +3550,19 @@ npm run build
 **Out of scope (later phases):** payment/cashbook pickers using `account_id`, dual columns, Book Settings UI change, merging cash balance math onto the Cash row as source of truth.
 
 **Files changed:** `backend/alembic/versions/058_spec_v1720_bank_account_kind_cash.py`, `backend/app/models/entities.py`, `backend/app/services/bank_accounts.py`, `backend/app/services/companies.py`, `backend/app/services/accounts.py`, `backend/app/routers/bank_accounts.py`, `backend/tests/test_unified_money_accounts_v1720.py`, `backend/tests/test_companies_v1704.py`, `inventory-app-SPEC.md.txt`.
+
+## Spec v17.2.1 — Unified money accounts Phase 2 (Option B)
+
+**Problem:** Phase 1 added Cash as a `bank_accounts` row, but payments and cash book still only store legacy `payment_mode` / `source_payment_mode` + optional `bank_account_id`. Phase 3 will need a single account FK for balances.
+
+**Solution (Phase 2 only):**
+- Migration `059_spec_v1721_money_account_ids`: add nullable FKs `cash_book_entries.source_account_id`, `cash_book_entries.dest_account_id`, `payments.account_id` → `bank_accounts.id`, with indexes. Keep all legacy mode / bank columns.
+- Backfill: bank mode → copy legacy bank FK; cash mode → that company's `kind=cash` account (same for dest on transfers). Credit/debit/setoff payments leave `account_id` null.
+- Dual-write on cash book create/edit and payment create: continue writing legacy fields; also set unified account ids via `resolve_money_account_id`.
+- Helpers: `resolve_money_account_id`, `money_mode_from_account`, `get_company_cash_account` / `require_company_cash_account`.
+
+**Out of scope:** frontend picker changes; dropping old columns; balance-engine rewrite (Phase 3).
+
+**Files changed:** `backend/alembic/versions/059_spec_v1721_money_account_ids.py`, `backend/app/models/entities.py`, `backend/app/services/bank_accounts.py`, `backend/app/services/cash_book.py`, `backend/app/services/payments.py`, `backend/tests/test_money_account_ids_v1721.py`, `inventory-app-SPEC.md.txt`.
 
 
