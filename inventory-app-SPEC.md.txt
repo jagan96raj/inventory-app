@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 17 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.0.6** (Processing snapshot + fulfillment filters + bill form polish); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 23 Jul 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.2.0** (Unified money accounts Phase 1); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.2.0** — Unified money accounts Phase 1 (Option B): `bank_accounts.kind` (`cash`|`bank`); existing rows backfilled as `bank`; each company gets a `Cash` row seeded from `book_settings` opening; new company registration seeds Cash (opening 0). Bank list/default/balances still expose `kind=bank` only — payment/cashbook UI unchanged. See **Spec v17.2.0** below.
 - **v17.0.6** — UI/data polish to match current app behavior: Processing job snapshot simplified (removed reprocess/output/allowance rows; replaced net unclean with latest balance return; powder hover aligned and powder location block removed), Fulfillment bills now support product + brand filters, and Bill form layout/line-item UX updates (customer row placement, no numbered field labels, quantity before rate, unified field sizing, and products-billed counter between line items and totals). See **Spec v17.0.6** below.
 - **v17.0.5** — Profile page at `/profile`: logged-in person (view) + company details; company editable by owner only via `PATCH /api/companies/me`; syncs `book_settings` company_* for bill print. Removed company header from Book Settings UI (cash opening + powder unchanged). Topbar Profile no longer goes to Home. See **Spec v17.0.5** below.
 - **v17.0.4** — Multi-tenant Phase 5: `POST /api/companies/register` creates company + owner (`role=owner`) atomically; seeds per-company book settings + bill/JW counters; feature flag `ALLOW_COMPANY_REGISTRATION` (default false); `/register` UI. Existing staff allowlist (`ALLOWED_EMAILS`) unchanged for Raj Agro lockdown. See **Spec v17.0.4** below.
@@ -166,6 +167,7 @@
 | 042 | v16.0.6 | `login_events` (login history) |
 | 043 | v16.0.7 | `users.is_active` (disable user / soft ban) |
 | 044 | v16.0.9 | `book_settings` company header (bill print) |
+| 058 | v17.2.0 | `bank_accounts.kind` (`cash`|`bank`); seed per-company Cash from book_settings |
 
 ## API surface (summary)
 
@@ -3532,5 +3534,19 @@ npm run build
 **Out of scope:** Deploy automation, production DB access, E2E browser tests.
 
 **Files changed:** `.github/workflows/ci.yml`, `README.md`.
+
+## Spec v17.2.0 — Unified money accounts Phase 1 (Option B)
+
+**Problem:** Cash opening lives only on `book_settings`, while banks live on `bank_accounts`. Later phases will treat cash as a first-class money account; Phase 1 prepares the schema without changing payment/cashbook UX.
+
+**Solution (Phase 1 only):**
+- Migration `058_spec_v1720_bank_account_kind_cash`: add `bank_accounts.kind` (`cash`|`bank`); backfill existing rows as `bank`; seed one `Cash` row per company from that company's `book_settings.cash_opening_balance` / `cash_opening_balance_at` (idempotent; if a row named Cash already exists, convert it to `kind=cash` and keep a bank default when needed).
+- Partial unique `uq_bank_accounts_one_cash` on `(company_id) WHERE kind = 'cash'`. Existing `uq_bank_accounts_one_default` unchanged.
+- New company registration (`_seed_tenant_defaults`) also seeds Cash with opening 0.
+- Bank list / default / balances / CRUD still expose **`kind=bank` only** so masters and pickers stay identical.
+
+**Out of scope (later phases):** payment/cashbook pickers using `account_id`, dual columns, Book Settings UI change, merging cash balance math onto the Cash row as source of truth.
+
+**Files changed:** `backend/alembic/versions/058_spec_v1720_bank_account_kind_cash.py`, `backend/app/models/entities.py`, `backend/app/services/bank_accounts.py`, `backend/app/services/companies.py`, `backend/app/services/accounts.py`, `backend/app/routers/bank_accounts.py`, `backend/tests/test_unified_money_accounts_v1720.py`, `backend/tests/test_companies_v1704.py`, `inventory-app-SPEC.md.txt`.
 
 

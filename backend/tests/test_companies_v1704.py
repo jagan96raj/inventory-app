@@ -12,6 +12,8 @@ from app.core.auth import get_current_user
 from app.database import Base, get_db
 from app.main import app
 from app.models.entities import (
+    BankAccount,
+    BankAccountKind,
     BillNumberCounter,
     BillType,
     BookSettings,
@@ -142,6 +144,16 @@ class CompaniesV1704Tests(unittest.TestCase):
         self.assertIsNone(settings_row.company_address_line)
         self.assertIsNone(settings_row.company_phone)
         self.assertEqual(Decimal(str(settings_row.cash_opening_balance)), Decimal("0"))
+
+        cash = self.db.scalar(
+            select(BankAccount).where(
+                BankAccount.company_id == company_id,
+                BankAccount.kind == BankAccountKind.cash,
+            )
+        )
+        self.assertIsNotNone(cash)
+        self.assertEqual(cash.name, "Cash")
+        self.assertFalse(cash.is_default)
 
         # API isolation: list products as new owner
         app.dependency_overrides[get_current_user] = lambda: user

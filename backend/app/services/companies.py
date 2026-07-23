@@ -18,6 +18,7 @@ from app.models.entities import (
     User,
     UserRole,
 )
+from app.services.bank_accounts import seed_company_cash_account
 from app.services.expense_categories import seed_default_expense_categories
 from app.utils.time import business_today
 
@@ -102,7 +103,7 @@ def _seed_tenant_defaults(
     *,
     company: Company,
 ) -> None:
-    """Book settings + bill/JW counters for a new company (no mid-transaction commit)."""
+    """Book settings + bill/JW counters + Cash account for a new company (no mid-transaction commit)."""
     db.add(
         BookSettings(
             company_id=company.id,
@@ -114,6 +115,12 @@ def _seed_tenant_defaults(
     db.add(BillNumberCounter(company_id=company.id, bill_type=BillType.purchase, last_number=0))
     db.add(JWNumberCounter(company_id=company.id, last_number=0))
     seed_default_expense_categories(db, company.id)
+    seed_company_cash_account(
+        db,
+        company.id,
+        opening_balance=Decimal("0"),
+        opening_balance_at=business_today(),
+    )
     db.flush()
 
 

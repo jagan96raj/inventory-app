@@ -8,7 +8,7 @@ from app.core.idempotency import require_idempotency_key, run_idempotent_mutatio
 from app.core.permissions import Permission, require_permission
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.database import get_db
-from app.models.entities import BankAccount, User
+from app.models.entities import BankAccount, BankAccountKind, User
 from app.schemas import (
     BankAccountBalanceOut,
     BankAccountCreate,
@@ -58,7 +58,10 @@ def list_bank_accounts(
     company_id = company_id_for_user(user)
     q = (
         select(BankAccount)
-        .where(BankAccount.company_id == company_id)
+        .where(
+            BankAccount.company_id == company_id,
+            BankAccount.kind == BankAccountKind.bank,
+        )
         .order_by(
             BankAccount.is_default.desc(), BankAccount.is_active.desc(), BankAccount.name
         )
