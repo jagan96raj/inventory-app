@@ -1,5 +1,6 @@
 """Spec v15.9 — conditional bill void (go-live drawback #19)."""
 import unittest
+from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
@@ -14,13 +15,14 @@ from app.database import Base, get_db
 from app.main import app
 from app.models.entities import (
     BagType,
+    BankAccount,
+    BankAccountKind,
     Bill,
     BillStatus,
     BillType,
     BookSettings,
     Brand,
     CashBookEntryType,
-    CashBookSourceMode,
     Customer,
     ExpenseCategory,
     ExpenseCategoryKind,
@@ -72,7 +74,12 @@ def _seed(db: Session) -> dict:
 
         db.add(BookSettings(id=1, company_id=1, cash_opening_balance=Decimal("0"), cash_opening_balance_at=date.today()))
     freight = ExpenseCategory(name="Freight", kind=ExpenseCategoryKind.expense, is_system=False, is_active=True)
-    db.add(freight)
+    cash_account = BankAccount(
+        name="Cash", kind=BankAccountKind.cash,
+        opening_balance=Decimal("0"), opening_balance_at=date.today(),
+        is_default=False, is_active=True,
+    )
+    db.add_all([freight, cash_account])
     db.commit()
     return {
         "product": product,
@@ -81,6 +88,7 @@ def _seed(db: Session) -> dict:
         "bag_type": bag_type,
         "customer": customer,
         "freight": freight,
+        "cash_account": cash_account,
     }
 
 
@@ -202,10 +210,7 @@ class BillVoidV159Tests(unittest.TestCase):
             description="Freight",
             reference_no=None,
             bill_id=bill.id,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         bill = self.db.get(Bill, bill.id)
         assert bill is not None

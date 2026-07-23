@@ -300,7 +300,12 @@ export type Payment = {
   bill_id: number;
   amount: string;
   payment_mode: string;
+  account_id?: number | null;
+  account_name?: string | null;
+  account_kind?: BankAccountKind | null;
+  /** @deprecated compat alias — use account_id */
   bank_account_id?: number | null;
+  /** @deprecated compat alias — use account_name */
   bank_account_name?: string | null;
   paid_at: string;
   voided_at?: string | null;
@@ -879,10 +884,20 @@ export type CashBookEntry = {
   reference_no: string | null;
   bill_id: number | null;
   bill_number: string | null;
+  source_account_id: number | null;
+  source_account_name: string | null;
+  source_account_kind: BankAccountKind | null;
+  dest_account_id: number | null;
+  dest_account_name: string | null;
+  dest_account_kind: BankAccountKind | null;
+  /** @deprecated compat — derived from source_account */
   source_payment_mode: CashBookSourceMode | null;
+  /** @deprecated compat — derived from source_account */
   source_bank_account_id: number | null;
   source_bank_account_name: string | null;
+  /** @deprecated compat — derived from dest_account */
   dest_payment_mode: CashBookSourceMode | null;
+  /** @deprecated compat — derived from dest_account */
   dest_bank_account_id: number | null;
   dest_bank_account_name: string | null;
   entry_date: string;
@@ -899,10 +914,8 @@ export type CashBookEntryIn = {
   description?: string | null;
   reference_no?: string | null;
   bill_id?: number | null;
-  source_payment_mode?: CashBookSourceMode | null;
-  source_bank_account_id?: number | null;
-  dest_payment_mode?: CashBookSourceMode | null;
-  dest_bank_account_id?: number | null;
+  source_account_id: number;
+  dest_account_id?: number | null;
   entry_date?: string | null;
 };
 
@@ -1050,8 +1063,6 @@ export const expenseCategoriesApi = {
 export type CashBookListParams = ListParams & {
   entry_type?: CashBookEntryType;
   category_id?: number;
-  source_payment_mode?: CashBookSourceMode;
-  source_bank_account_id?: number;
   account_id?: number;
   bill_id?: number;
   voided?: "false" | "true" | "any";
@@ -1068,8 +1079,6 @@ export const cashBookApi = {
         offset: p.offset ?? 0,
         entry_type: p.entry_type,
         category_id: p.category_id,
-        source_payment_mode: p.source_payment_mode,
-        source_bank_account_id: p.source_bank_account_id,
         account_id: p.account_id,
         bill_id: p.bill_id,
         voided: p.voided ?? "false",

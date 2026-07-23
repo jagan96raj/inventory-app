@@ -201,52 +201,15 @@ def update_book_settings(db: Session, company_id: int, updates: dict) -> BookSet
 
 
 def _payment_linked_to_account(account: BankAccount):
-    """Match unified account_id, or legacy mode/bank columns when account_id is null."""
-    by_id = Payment.account_id == account.id
-    if account.kind == BankAccountKind.cash:
-        legacy = and_(
-            Payment.account_id.is_(None),
-            Payment.payment_mode == PaymentMode.cash,
-        )
-    else:
-        legacy = and_(
-            Payment.account_id.is_(None),
-            Payment.payment_mode == PaymentMode.bank,
-            Payment.bank_account_id == account.id,
-        )
-    return or_(by_id, legacy)
+    return Payment.account_id == account.id
 
 
 def _cash_book_source_linked(account: BankAccount):
-    by_id = CashBookEntry.source_account_id == account.id
-    if account.kind == BankAccountKind.cash:
-        legacy = and_(
-            CashBookEntry.source_account_id.is_(None),
-            CashBookEntry.source_payment_mode == CashBookSourceMode.cash,
-        )
-    else:
-        legacy = and_(
-            CashBookEntry.source_account_id.is_(None),
-            CashBookEntry.source_payment_mode == CashBookSourceMode.bank,
-            CashBookEntry.source_bank_account_id == account.id,
-        )
-    return or_(by_id, legacy)
+    return CashBookEntry.source_account_id == account.id
 
 
 def _cash_book_dest_linked(account: BankAccount):
-    by_id = CashBookEntry.dest_account_id == account.id
-    if account.kind == BankAccountKind.cash:
-        legacy = and_(
-            CashBookEntry.dest_account_id.is_(None),
-            CashBookEntry.dest_payment_mode == CashBookSourceMode.cash,
-        )
-    else:
-        legacy = and_(
-            CashBookEntry.dest_account_id.is_(None),
-            CashBookEntry.dest_payment_mode == CashBookSourceMode.bank,
-            CashBookEntry.dest_bank_account_id == account.id,
-        )
-    return or_(by_id, legacy)
+    return CashBookEntry.dest_account_id == account.id
 
 
 def get_account_balance(
@@ -263,8 +226,8 @@ def get_account_balance(
       + transfer in (dest)
       − transfer out (source)
 
-    Movements match ``account_id`` / source|dest_account_id, with legacy
-    mode + bank_account_id fallback when the unified FK is null.
+    Movements match ``account_id`` on payments and
+    ``source_account_id`` / ``dest_account_id`` on cash-book entries.
     """
     account = db.get(BankAccount, account_id)
     if account is None:
@@ -483,8 +446,8 @@ def get_accounts_summary(db: Session, *, company_id: int = 1, recent_limit: int 
         .options(
             joinedload(CashBookEntry.category),
             joinedload(CashBookEntry.bill),
-            joinedload(CashBookEntry.source_bank_account),
-            joinedload(CashBookEntry.dest_bank_account),
+            joinedload(CashBookEntry.source_account),
+            joinedload(CashBookEntry.dest_account),
         )
         .where(
             CashBookEntry.voided_at.is_(None),
@@ -711,8 +674,8 @@ def list_linked_cash_book_entries_query(db: Session, bill_id: int):
         .options(
             joinedload(CashBookEntry.category),
             joinedload(CashBookEntry.bill),
-            joinedload(CashBookEntry.source_bank_account),
-            joinedload(CashBookEntry.dest_bank_account),
+            joinedload(CashBookEntry.source_account),
+            joinedload(CashBookEntry.dest_account),
         )
         .where(CashBookEntry.bill_id == bill_id)
         .order_by(CashBookEntry.entry_date.desc(), CashBookEntry.id.desc())

@@ -11,7 +11,7 @@ import {
   type Payment,
   type SetoffPreview,
 } from "../api/client";
-import { accountsByKind, legacyFieldsFromAccount, pickDefaultMoneyAccountId } from "../lib/moneyAccounts";
+import { accountsByKind, pickDefaultMoneyAccountId } from "../lib/moneyAccounts";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import { billDueAmount } from "../lib/billAmounts";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
@@ -59,13 +59,13 @@ function autoFillAmount(
 function sourceToPaymentFields(
   source: string,
   accounts: BankAccount[]
-): { payment_mode: string; bank_account_id: number | null } | null {
-  if (source === SETOFF_DEBIT) return { payment_mode: "debit", bank_account_id: null };
-  if (source === SETOFF_CREDIT) return { payment_mode: "credit", bank_account_id: null };
+): { payment_mode: string; account_id: number | null } | null {
+  if (source === SETOFF_DEBIT) return { payment_mode: "debit", account_id: null };
+  if (source === SETOFF_CREDIT) return { payment_mode: "credit", account_id: null };
   const account = accounts.find((a) => String(a.id) === source);
   if (!account) return null;
-  const legacy = legacyFieldsFromAccount(account);
-  return { payment_mode: legacy.mode, bank_account_id: legacy.bank_account_id };
+  const payment_mode = account.kind === "cash" ? "cash" : "bank";
+  return { payment_mode, account_id: account.id };
 }
 
 export default function PaymentPage({ billType: billTypeProp }: Props) {
@@ -198,7 +198,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
         bill_id: bill.id,
         amount: amt,
         payment_mode: paymentFields.payment_mode,
-        bank_account_id: paymentFields.bank_account_id,
+        account_id: paymentFields.account_id,
         expected_version: bill.version,
         paid_date: form.paid_date,
       },

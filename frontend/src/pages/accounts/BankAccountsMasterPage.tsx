@@ -254,16 +254,16 @@ export default function BankAccountsMasterPage() {
           </CardBody>
         ) : (
           <div className="overflow-x-auto">
-            <table className="v2-data-table w-full text-base">
+            <table className="v2-data-table w-full min-w-[68rem] text-base">
               <thead className="bg-surface-muted/70 text-base font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-5 py-3.5 text-left">Name</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-left">Type</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-left">A/C ending</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-left">IFSC</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Opening balance</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Closing balance</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Opening date</th>
+                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Opening</th>
+                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Closing</th>
+                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Opened</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-left">Status</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-right">Actions</th>
                 </tr>

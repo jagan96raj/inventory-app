@@ -1,30 +1,4 @@
-import type { BankAccount, BankAccountKind, CashBookSourceMode } from "../api/client";
-
-/** Map a money account to legacy payment/cash-book mode + bank id for dual-write payloads. */
-export function legacyFieldsFromAccount(account: BankAccount): {
-  mode: CashBookSourceMode;
-  bank_account_id: number | null;
-} {
-  if (account.kind === "cash") {
-    return { mode: "cash", bank_account_id: null };
-  }
-  return { mode: "bank", bank_account_id: account.id };
-}
-
-export function resolveAccountIdFromLegacy(
-  accounts: BankAccount[],
-  mode: CashBookSourceMode | null | undefined,
-  bankAccountId: number | null | undefined
-): number | "" {
-  if (mode === "cash") {
-    const cash = accounts.find((a) => a.kind === "cash");
-    return cash ? cash.id : "";
-  }
-  if (mode === "bank" && bankAccountId != null) {
-    return bankAccountId;
-  }
-  return "";
-}
+import type { BankAccount, BankAccountKind } from "../api/client";
 
 export function pickDefaultMoneyAccountId(accounts: BankAccount[]): number | "" {
   const cash = accounts.find((a) => a.kind === "cash" && a.is_active);

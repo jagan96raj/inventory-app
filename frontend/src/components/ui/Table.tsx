@@ -50,7 +50,7 @@ export default function Table<T>({
 
   return (
     <div className={cn("overflow-x-auto rounded-2xl border border-line/80 bg-surface-subtle/70", className)}>
-      <table className="v2-data-table w-full text-base">
+      <table className="v2-data-table w-full min-w-[40rem] text-base">
         {caption && <caption className="sr-only">{caption}</caption>}
         <colgroup>
           {columns.map((c) => (
@@ -59,8 +59,8 @@ export default function Table<T>({
         </colgroup>
         <thead
           className={cn(
-            "bg-surface-muted/80 text-base font-semibold uppercase tracking-wide text-indigo-700/90 dark:text-indigo-200/90",
-            stickyHeader && "sticky top-0 z-10",
+            "bg-surface-muted text-base font-semibold uppercase tracking-wide text-indigo-700/90 dark:bg-surface-muted dark:text-indigo-200/90",
+            stickyHeader && "sticky top-16 z-10",
             headerClassName
           )}
         >

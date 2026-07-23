@@ -16,7 +16,6 @@ from app.models.entities import (
     PaymentStatus,
     User,
 )
-from app.services.bank_accounts import resolve_money_account_id
 from app.services.bill_lock import lock_bill_for_update, lock_bills_for_update
 from app.services.bill_concurrency import (
     assert_bill_version,
@@ -394,52 +393,59 @@ def preview_setoff_allocation(
 
 
 
-PAYMENT_BANK_ID_REQUIRED_MSG = "bank_account_id is required for bank payments"
-PAYMENT_BANK_ID_FORBIDDEN_MSG = "bank_account_id is only allowed when payment_mode is bank"
-PAYMENT_BANK_INACTIVE_MSG = "Bank account is inactive"
-PAYMENT_BANK_NOT_FOUND_MSG = "Bank account not found"
+PAYMENT_ACCOUNT_REQUIRED_MSG = "account_id is required for cash and bank payments"
+PAYMENT_ACCOUNT_FORBIDDEN_MSG = "account_id is only allowed when payment_mode is cash or bank"
+PAYMENT_ACCOUNT_INACTIVE_MSG = "Money account is inactive"
+PAYMENT_ACCOUNT_NOT_FOUND_MSG = "Money account not found"
+PAYMENT_ACCOUNT_KIND_MISMATCH_MSG = "account_id does not match payment_mode"
 
 
-def _resolve_bank_account(
+def _resolve_money_account_id(
     db: Session,
     payment_mode: PaymentMode,
-    bank_account_id: int | None,
+    account_id: int | None,
     company_id: int | None = None,
 ) -> int | None:
-    if payment_mode == PaymentMode.bank:
-        if bank_account_id is None:
-            # Try to fall back to the default bank for convenience (UI typically passes one)
-            q = select(BankAccount).where(
-                BankAccount.is_default.is_(True),
-                BankAccount.is_active.is_(True),
-                BankAccount.kind == BankAccountKind.bank,
-            )
-            if company_id is not None:
-                q = q.where(BankAccount.company_id == company_id)
-            default_bank = db.scalar(q)
-            if default_bank is None:
-                raise ValueError(PAYMENT_BANK_ID_REQUIRED_MSG)
-            return default_bank.id
-        q = select(BankAccount).where(
-            BankAccount.id == bank_account_id,
-            BankAccount.kind == BankAccountKind.bank,
-        )
+    """Resolve account_id for cash|bank payments; None for credit/debit."""
+    if payment_mode in (PaymentMode.cash, PaymentMode.bank):
+        if account_id is None:
+            if payment_mode == PaymentMode.cash and company_id is not None:
+                from app.services.bank_accounts import require_company_cash_account
+
+                return require_company_cash_account(db, company_id).id
+            if payment_mode == PaymentMode.bank:
+                q = select(BankAccount).where(
+                    BankAccount.is_default.is_(True),
+                    BankAccount.is_active.is_(True),
+                    BankAccount.kind == BankAccountKind.bank,
+                )
+                if company_id is not None:
+                    q = q.where(BankAccount.company_id == company_id)
+                default_bank = db.scalar(q)
+                if default_bank is None:
+                    raise ValueError(PAYMENT_ACCOUNT_REQUIRED_MSG)
+                return default_bank.id
+            raise ValueError(PAYMENT_ACCOUNT_REQUIRED_MSG)
+        q = select(BankAccount).where(BankAccount.id == account_id)
         if company_id is not None:
             q = q.where(BankAccount.company_id == company_id)
-        bank = db.scalar(q)
-        if not bank:
-            raise ValueError(PAYMENT_BANK_NOT_FOUND_MSG)
-        if not bank.is_active:
-            raise ValueError(PAYMENT_BANK_INACTIVE_MSG)
-        return bank.id
-    if bank_account_id is not None:
-        raise ValueError(PAYMENT_BANK_ID_FORBIDDEN_MSG)
+        account = db.scalar(q)
+        if not account:
+            raise ValueError(PAYMENT_ACCOUNT_NOT_FOUND_MSG)
+        if not account.is_active:
+            raise ValueError(PAYMENT_ACCOUNT_INACTIVE_MSG)
+        expected = BankAccountKind.cash if payment_mode == PaymentMode.cash else BankAccountKind.bank
+        if account.kind != expected:
+            raise ValueError(PAYMENT_ACCOUNT_KIND_MISMATCH_MSG)
+        return account.id
+    if account_id is not None:
+        raise ValueError(PAYMENT_ACCOUNT_FORBIDDEN_MSG)
     return None
 
 
 def create_payment(
     db: Session, bill_id: int, amount: Decimal, payment_mode: PaymentMode,
-    *, expected_version: int | None, bank_account_id: int | None = None,
+    *, expected_version: int | None, account_id: int | None = None,
     paid_date: date | None = None,
     company_id: int | None = None,
 ) -> Payment:
@@ -448,10 +454,6 @@ def create_payment(
     if payment_mode == PaymentMode.setoff:
 
         raise ValueError("Set-off payments cannot be created directly")
-
-    resolved_bank_id = _resolve_bank_account(db, payment_mode, bank_account_id, company_id=company_id)
-
-
 
     locked_bill = lock_bill_for_update(db, bill_id)
     if not locked_bill:
@@ -472,6 +474,11 @@ def create_payment(
     if not bill:
 
         raise ValueError("Bill not found")
+
+    money_company_id = int(getattr(bill, "company_id", None) or company_id or 1)
+    resolved_account_id = _resolve_money_account_id(
+        db, payment_mode, account_id, company_id=money_company_id
+    )
 
     if bill.status != BillStatus.finalized:
 
@@ -561,20 +568,11 @@ def create_payment(
 
         raise ValueError("Unknown bill type")
 
-    money_company_id = int(
-        getattr(bill, "company_id", None) or company_id or 1
-    )
     payment = Payment(
         bill_id=bill_id,
         amount=amount,
         payment_mode=payment_mode,
-        bank_account_id=resolved_bank_id,
-        account_id=resolve_money_account_id(
-            db,
-            money_company_id,
-            mode=payment_mode,
-            bank_account_id=resolved_bank_id,
-        ),
+        account_id=resolved_account_id,
         paid_at=paid_at,
     )
 

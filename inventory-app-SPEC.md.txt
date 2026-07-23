@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 23 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.2.3** (Unified money accounts Phase 4); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.2.4** (Unified money accounts Phase 5); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.2.4** — Unified money accounts Phase 5 (Option B): `account_id` / cash-book `source_account_id`|`dest_account_id` are source of truth; migration `060` drops legacy cash/bank mode columns; keep `payments.payment_mode` for credit/debit/setoff. See **Spec v17.2.4** below.
 - **v17.2.3** — Unified money accounts Phase 4 (Option B): Accounts master (cash|bank); payment/cash-book pickers use From/To accounts; Book Settings cash opening moved to Cash account; dual-write legacy columns kept. See **Spec v17.2.3** below.
 - **v17.2.2** — Unified money accounts Phase 3 (Option B): cash/bank balances via `get_account_balance` on `bank_accounts` (opening + movements by `account_id` / cash-book source|dest, with legacy mode/bank FK fallback). Dashboard field names unchanged. See **Spec v17.2.2** below.
 - **v17.2.1** — Unified money accounts Phase 2 (Option B): nullable `source_account_id` / `dest_account_id` on cash book and `account_id` on payments (FK → `bank_accounts`); backfill from legacy mode + bank ids; dual-write on create/edit. Frontend pickers unchanged. See **Spec v17.2.1** below.
@@ -3594,5 +3595,23 @@ npm run build
 **Out of scope:** dropping legacy DB columns (Phase 5).
 
 **Files changed:** `backend/app/schemas.py`, `backend/app/services/bank_accounts.py`, `backend/app/routers/bank_accounts.py`, `backend/app/services/cash_book.py`, `backend/app/routers/cash_book.py`, `backend/tests/test_money_accounts_v1723.py`, `frontend/src/api/client.ts`, `frontend/src/lib/moneyAccounts.ts`, `frontend/src/pages/accounts/BankAccountsMasterPage.tsx`, `frontend/src/pages/PaymentPage.tsx`, `frontend/src/pages/accounts/CashBookEntryFormPage.tsx`, `frontend/src/pages/accounts/CashBookListPage.tsx`, `frontend/src/pages/accounts/BookSettingsPage.tsx`, `frontend/src/pages/accounts/AccountsDashboardPage.tsx`, `frontend/src/components/Sidebar.tsx`, `frontend/src/components/Topbar.tsx`, `frontend/src/components/CommandPalette.tsx`, `inventory-app-SPEC.md.txt`.
+
+## Spec v17.2.4 — Unified money accounts Phase 5 (Option B)
+
+**Problem:** Phase 2–4 dual-wrote legacy cash/bank mode columns alongside unified account FKs. Account ids are now the only money-source truth; legacy columns are redundant and unsafe to keep writing.
+
+**Solution (Phase 5 only):**
+- Migration `060_spec_v1724_drop_legacy_money_modes`: re-backfill any missing `source_account_id` / `dest_account_id` / `payments.account_id` (same rules as 059); fail if a company that needs Cash lacks a `kind=cash` row; set `cash_book_entries.source_account_id` NOT NULL; drop cash-book `source_payment_mode`, `dest_payment_mode`, `source_bank_account_id`, `dest_bank_account_id`; drop `payments.bank_account_id`.
+- **Keep** `payments.payment_mode` — still required for credit / debit / setoff (and cash|bank labeling). Cash/bank payments store `account_id` (nullable only for credit/debit/setoff).
+- **Keep** `cash_book_entries.dest_account_id` nullable (required for transfers in service/schema).
+- API create/edit: cash book takes `source_account_id` / `dest_account_id`; payments take `account_id` (+ `payment_mode`). Response may still derive display compat fields (`source_payment_mode`, bank name aliases) from `account.kind`.
+- Removed dual-write / legacy payload helpers (`resolve_money_account_id`, frontend `legacyFieldsFromAccount`).
+- Frontend posts account ids only (no `bank_account_id` / mode columns on cash book).
+
+**Residual legacy columns (intentional):** `payments.payment_mode` — semantic discriminator for credit/debit/setoff vs cash|bank; not replaced by account kind alone.
+
+**Out of scope:** redesign of unrelated pages; further cleanup of response compat aliases.
+
+**Files changed:** `backend/alembic/versions/060_spec_v1724_drop_legacy_money_modes.py`, `backend/app/models/entities.py`, `backend/app/schemas.py`, `backend/app/services/cash_book.py`, `backend/app/services/payments.py`, `backend/app/services/accounts.py`, `backend/app/services/bank_accounts.py`, `backend/app/routers/cash_book.py`, `backend/app/routers/payments.py`, `backend/tests/test_money_account_ids_v1721.py`, `backend/tests/test_money_account_balances_v1722.py`, `backend/tests/test_accounts_v1221.py`, `frontend/src/api/client.ts`, `frontend/src/lib/moneyAccounts.ts`, `frontend/src/pages/PaymentPage.tsx`, `frontend/src/pages/accounts/CashBookEntryFormPage.tsx`, `inventory-app-SPEC.md.txt`.
 
 

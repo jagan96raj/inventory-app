@@ -16,12 +16,13 @@ from app.database import Base, get_db
 from app.main import app
 from app.models.entities import (
     BagType,
+    BankAccount,
+    BankAccountKind,
     Bill,
     BillLine,
     BillType,
     Brand,
     CashBookEntryType,
-    CashBookSourceMode,
     Customer,
     ExpenseCategory,
     ExpenseCategoryKind,
@@ -57,7 +58,12 @@ def _seed_masters(db: Session) -> dict:
     bag_50 = BagType(name="50kg", weight_per_bag_kg=Decimal("50"), is_loose=False)
     customer = Customer(name="Backdate Co")
     category = ExpenseCategory(name="Misc", kind=ExpenseCategoryKind.expense, is_active=True)
-    db.add_all([product, brand, location, bag_50, customer, category])
+    cash_account = BankAccount(
+        name="Cash", kind=BankAccountKind.cash,
+        opening_balance=Decimal("0"), opening_balance_at=date.today(),
+        is_default=False, is_active=True,
+    )
+    db.add_all([product, brand, location, bag_50, customer, category, cash_account])
     db.flush()
     inv = Inventory(
         product_id=product.id,
@@ -77,6 +83,7 @@ def _seed_masters(db: Session) -> dict:
         "bag_50": bag_50,
         "customer": customer,
         "category": category,
+        "cash_account": cash_account,
     }
 
 
@@ -191,10 +198,7 @@ class BackdateServiceV16019Tests(unittest.TestCase):
             description="Backdated",
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
             entry_date=date(2026, 6, 1),
         )
         self.assertEqual(entry.entry_date, date(2026, 6, 1))

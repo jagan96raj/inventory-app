@@ -1,4 +1,4 @@
-"""Spec v12.21 — cash book router."""
+"""Spec v12.21 / v17.2.4 — cash book router (account_id primary)."""
 from datetime import date
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -10,7 +10,7 @@ from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, 
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.database import get_db
-from app.models.entities import CashBookEntry, CashBookEntryType, CashBookSourceMode, User
+from app.models.entities import CashBookEntry, CashBookEntryType, User
 from app.schemas import (
     CashBookEntryCreate,
     CashBookEntryEdit,
@@ -57,8 +57,6 @@ def _http_for_value_error(exc: ValueError) -> HTTPException:
 def list_cash_book_endpoint(
     entry_type: CashBookEntryType | None = None,
     category_id: int | None = None,
-    source_payment_mode: CashBookSourceMode | None = None,
-    source_bank_account_id: int | None = None,
     account_id: int | None = None,
     bill_id: int | None = None,
     voided: str = Query("false", pattern="^(false|true|any)$"),
@@ -77,8 +75,6 @@ def list_cash_book_endpoint(
         company_id=company_id_for_user(user),
         entry_type=entry_type,
         category_id=category_id,
-        source_payment_mode=source_payment_mode,
-        source_bank_account_id=source_bank_account_id,
         account_id=account_id,
         bill_id=bill_id,
         voided=voided,
@@ -126,10 +122,8 @@ def post_cash_book_entry(
                 description=body.description,
                 reference_no=body.reference_no,
                 bill_id=body.bill_id,
-                source_payment_mode=body.source_payment_mode,
-                source_bank_account_id=body.source_bank_account_id,
-                dest_payment_mode=body.dest_payment_mode,
-                dest_bank_account_id=body.dest_bank_account_id,
+                source_account_id=body.source_account_id,
+                dest_account_id=body.dest_account_id,
                 entry_date=body.entry_date,
             )
         except ValueError as e:
@@ -163,10 +157,8 @@ def patch_cash_book_entry(
                 description=body.description,
                 reference_no=body.reference_no,
                 bill_id=body.bill_id,
-                source_payment_mode=body.source_payment_mode,
-                source_bank_account_id=body.source_bank_account_id,
-                dest_payment_mode=body.dest_payment_mode,
-                dest_bank_account_id=body.dest_bank_account_id,
+                source_account_id=body.source_account_id,
+                dest_account_id=body.dest_account_id,
             )
         except ValueError as e:
             raise _http_for_value_error(e) from e

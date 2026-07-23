@@ -20,9 +20,7 @@ import { formatDateTime, formatInr, localIsoDate, validateDateNotFuture } from "
 import { isAuthPasswordError, isBackdatedDate } from "../../lib/backdateAuth";
 import {
   accountsByKind,
-  legacyFieldsFromAccount,
   pickDefaultMoneyAccountId,
-  resolveAccountIdFromLegacy,
 } from "../../lib/moneyAccounts";
 import BusinessDateField from "../../components/ui/BusinessDateField";
 import BackdateAuthDialog from "../../components/ui/BackdateAuthDialog";
@@ -269,14 +267,10 @@ export default function CashBookEntryFormPage() {
     hydratedFromEntryRef.current = true;
     setState((prev) => ({
       ...prev,
-      source_account_id: resolveAccountIdFromLegacy(
-        accounts,
-        original.source_payment_mode,
-        original.source_bank_account_id
-      ),
+      source_account_id: original.source_account_id ?? "",
       dest_account_id:
-        original.entry_type === "transfer"
-          ? resolveAccountIdFromLegacy(accounts, original.dest_payment_mode, original.dest_bank_account_id)
+        original.entry_type === "transfer" && original.dest_account_id
+          ? original.dest_account_id
           : "",
     }));
   }, [original, accounts]);
@@ -330,6 +324,9 @@ export default function CashBookEntryFormPage() {
     if (state.category_id === "" || !state.amount) return null;
     const amount = Number(state.amount);
     if (!isFinite(amount) || amount <= 0) return null;
+    if (state.source_account_id === "") return null;
+    const src = accounts.find((a) => a.id === state.source_account_id);
+    if (!src) return null;
     const base: CashBookEntryIn = {
       entry_type: state.entry_type,
       category_id: Number(state.category_id),
@@ -338,27 +335,14 @@ export default function CashBookEntryFormPage() {
       reference_no: state.reference_no.trim() || null,
       bill_id:
         showBillLink && state.bill_id !== "" ? Number(state.bill_id) : null,
+      source_account_id: Number(state.source_account_id),
     };
     if (state.entry_type === "transfer") {
-      if (state.source_account_id === "" || state.dest_account_id === "") return null;
-      const src = accounts.find((a) => a.id === state.source_account_id);
+      if (state.dest_account_id === "") return null;
       const dst = accounts.find((a) => a.id === state.dest_account_id);
-      if (!src || !dst) return null;
-      // Same id is only invalid for bank (single Cash wallet may share id for cash→cash).
+      if (!dst) return null;
       if (state.source_account_id === state.dest_account_id && src.kind === "bank") return null;
-      const srcLegacy = legacyFieldsFromAccount(src);
-      const dstLegacy = legacyFieldsFromAccount(dst);
-      base.source_payment_mode = srcLegacy.mode;
-      base.source_bank_account_id = srcLegacy.bank_account_id;
-      base.dest_payment_mode = dstLegacy.mode;
-      base.dest_bank_account_id = dstLegacy.bank_account_id;
-    } else {
-      if (state.source_account_id === "") return null;
-      const src = accounts.find((a) => a.id === state.source_account_id);
-      if (!src) return null;
-      const srcLegacy = legacyFieldsFromAccount(src);
-      base.source_payment_mode = srcLegacy.mode;
-      base.source_bank_account_id = srcLegacy.bank_account_id;
+      base.dest_account_id = Number(state.dest_account_id);
     }
     if (!editing) {
       base.entry_date = state.entry_date;

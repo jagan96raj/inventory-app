@@ -1,9 +1,9 @@
-"""Spec v17.2.1 Phase 2 — money account_id dual-write + backfill helpers."""
+"""Spec v17.2.4 Phase 5 — money account_id is the primary FK on Payment and CashBookEntry."""
 import unittest
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -16,7 +16,6 @@ from app.models.entities import (
     BillType,
     CashBookEntry,
     CashBookEntryType,
-    CashBookSourceMode,
     Customer,
     ExpenseCategory,
     ExpenseCategoryKind,
@@ -26,10 +25,7 @@ from app.models.entities import (
     PaymentStatus,
 )
 from app.utils.time import utc_now
-from app.services.bank_accounts import (
-    resolve_money_account_id,
-    seed_company_cash_account,
-)
+from app.services.bank_accounts import seed_company_cash_account
 from app.services.cash_book import create_cash_book_entry, edit_cash_book_entry
 from app.services.payments import create_payment
 from tests.idempotency_helpers import ensure_test_user
@@ -99,20 +95,7 @@ class MoneyAccountIdsV1721Tests(unittest.TestCase):
     def tearDown(self):
         self.db.close()
 
-    def test_resolve_cash_and_bank(self):
-        self.assertEqual(
-            resolve_money_account_id(self.db, 1, mode=CashBookSourceMode.cash),
-            self.cash.id,
-        )
-        self.assertEqual(
-            resolve_money_account_id(
-                self.db, 1, mode=CashBookSourceMode.bank, bank_account_id=self.bank.id
-            ),
-            self.bank.id,
-        )
-        self.assertIsNone(resolve_money_account_id(self.db, 1, mode=PaymentMode.credit))
-
-    def test_cash_book_dual_write_expense_cash(self):
+    def test_cash_book_expense_cash_sets_source_account_id(self):
         entry = create_cash_book_entry(
             self.db,
             company_id=1,
@@ -122,17 +105,12 @@ class MoneyAccountIdsV1721Tests(unittest.TestCase):
             description="Rent",
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.cash.id,
         )
-        self.assertEqual(entry.source_payment_mode, CashBookSourceMode.cash)
-        self.assertIsNone(entry.source_bank_account_id)
         self.assertEqual(entry.source_account_id, self.cash.id)
         self.assertIsNone(entry.dest_account_id)
 
-    def test_cash_book_dual_write_transfer_and_edit(self):
+    def test_cash_book_transfer_and_edit(self):
         entry = create_cash_book_entry(
             self.db,
             company_id=1,
@@ -142,10 +120,8 @@ class MoneyAccountIdsV1721Tests(unittest.TestCase):
             description="Move",
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=CashBookSourceMode.bank,
-            dest_bank_account_id=self.bank.id,
+            source_account_id=self.cash.id,
+            dest_account_id=self.bank.id,
         )
         self.assertEqual(entry.source_account_id, self.cash.id)
         self.assertEqual(entry.dest_account_id, self.bank.id)
@@ -161,16 +137,13 @@ class MoneyAccountIdsV1721Tests(unittest.TestCase):
             description="Move2",
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.bank,
-            source_bank_account_id=self.bank.id,
-            dest_payment_mode=CashBookSourceMode.cash,
-            dest_bank_account_id=None,
+            source_account_id=self.bank.id,
+            dest_account_id=self.cash.id,
         )
         self.assertEqual(edited.source_account_id, self.bank.id)
         self.assertEqual(edited.dest_account_id, self.cash.id)
-        self.assertEqual(edited.source_bank_account_id, self.bank.id)
 
-    def test_payment_dual_write_cash_and_bank(self):
+    def test_payment_cash_and_bank_account_id(self):
         cash_pay = create_payment(
             self.db,
             self.bill.id,
@@ -179,7 +152,6 @@ class MoneyAccountIdsV1721Tests(unittest.TestCase):
             expected_version=1,
             company_id=1,
         )
-        self.assertIsNone(cash_pay.bank_account_id)
         self.assertEqual(cash_pay.account_id, self.cash.id)
 
         self.db.refresh(self.bill)
@@ -189,86 +161,55 @@ class MoneyAccountIdsV1721Tests(unittest.TestCase):
             Decimal("200"),
             PaymentMode.bank,
             expected_version=self.bill.version,
-            bank_account_id=self.bank.id,
+            account_id=self.bank.id,
             company_id=1,
         )
-        self.assertEqual(bank_pay.bank_account_id, self.bank.id)
         self.assertEqual(bank_pay.account_id, self.bank.id)
 
-    def test_backfill_sql_rules_on_sqlite(self):
-        """Simulate migration backfill rules against SQLite rows written without account_id."""
-        legacy = CashBookEntry(
-            company_id=1,
-            entry_type=CashBookEntryType.expense,
-            category_id=self.rent.id,
-            amount=Decimal("10"),
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            entry_date=date(2026, 1, 1),
-            entry_at=date(2026, 1, 1).isoformat(),
-            version=1,
-        )
-        legacy.entry_at = utc_now()
-        self.db.add(legacy)
-        legacy_bank = CashBookEntry(
+    def test_cash_book_expense_bank_sets_source_account_id(self):
+        entry = create_cash_book_entry(
+            self.db,
             company_id=1,
             entry_type=CashBookEntryType.expense,
             category_id=self.rent.id,
             amount=Decimal("15"),
-            source_payment_mode=CashBookSourceMode.bank,
-            source_bank_account_id=self.bank.id,
-            entry_date=date(2026, 1, 2),
-            entry_at=utc_now(),
-            version=1,
+            description="Bank expense",
+            reference_no=None,
+            bill_id=None,
+            source_account_id=self.bank.id,
         )
-        self.db.add(legacy_bank)
-        legacy_pay = Payment(
-            bill_id=self.bill.id,
-            amount=Decimal("5"),
-            payment_mode=PaymentMode.cash,
-            paid_at=utc_now(),
-        )
-        self.db.add(legacy_pay)
-        self.db.commit()
+        self.assertEqual(entry.source_account_id, self.bank.id)
+        self.assertIsNone(entry.dest_account_id)
 
-        self.db.execute(
-            text(
-                "UPDATE cash_book_entries "
-                "SET source_account_id = source_bank_account_id "
-                "WHERE source_payment_mode = 'bank' AND source_bank_account_id IS NOT NULL"
+    def test_transfer_rejects_same_bank_account(self):
+        with self.assertRaises(ValueError):
+            create_cash_book_entry(
+                self.db,
+                company_id=1,
+                entry_type=CashBookEntryType.transfer,
+                category_id=self.transfer.id,
+                amount=Decimal("10"),
+                description="Same",
+                reference_no=None,
+                bill_id=None,
+                source_account_id=self.bank.id,
+                dest_account_id=self.bank.id,
             )
-        )
-        self.db.execute(
-            text(
-                "UPDATE cash_book_entries "
-                "SET source_account_id = ("
-                "  SELECT ba.id FROM bank_accounts ba "
-                "  WHERE ba.company_id = cash_book_entries.company_id AND ba.kind = 'cash' "
-                "  LIMIT 1"
-                ") "
-                "WHERE source_payment_mode = 'cash' AND source_account_id IS NULL"
-            )
-        )
-        self.db.execute(
-            text(
-                "UPDATE payments "
-                "SET account_id = ("
-                "  SELECT ba.id FROM bank_accounts ba "
-                "  JOIN bills b ON b.id = payments.bill_id "
-                "  WHERE ba.company_id = b.company_id AND ba.kind = 'cash' "
-                "  LIMIT 1"
-                ") "
-                "WHERE payment_mode = 'cash' AND account_id IS NULL"
-            )
-        )
-        self.db.commit()
 
-        self.db.refresh(legacy)
-        self.db.refresh(legacy_bank)
-        self.db.refresh(legacy_pay)
-        self.assertEqual(legacy.source_account_id, self.cash.id)
-        self.assertEqual(legacy_bank.source_account_id, self.bank.id)
-        self.assertEqual(legacy_pay.account_id, self.cash.id)
+    def test_expense_rejects_dest_account(self):
+        with self.assertRaises(ValueError):
+            create_cash_book_entry(
+                self.db,
+                company_id=1,
+                entry_type=CashBookEntryType.expense,
+                category_id=self.rent.id,
+                amount=Decimal("10"),
+                description="Bad",
+                reference_no=None,
+                bill_id=None,
+                source_account_id=self.cash.id,
+                dest_account_id=self.bank.id,
+            )
 
 
 if __name__ == "__main__":

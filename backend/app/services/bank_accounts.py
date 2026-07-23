@@ -13,7 +13,6 @@ from app.models.entities import (
     CashBookEntry,
     CashBookSourceMode,
     Payment,
-    PaymentMode,
 )
 from app.utils.time import business_today
 
@@ -70,28 +69,6 @@ def require_company_cash_account(db: Session, company_id: int) -> BankAccount:
         # Defensive: Phase 1 seeds Cash; recreate if missing (e.g. in-memory tests).
         cash = seed_company_cash_account(db, company_id, opening_balance=Decimal("0"))
     return cash
-
-
-def resolve_money_account_id(
-    db: Session,
-    company_id: int,
-    *,
-    mode: PaymentMode | CashBookSourceMode | str | None,
-    bank_account_id: int | None = None,
-) -> int | None:
-    """
-    Map legacy (mode, bank_account_id) → unified bank_accounts.id.
-
-    cash → company Cash row; bank → bank_account_id; other modes → None.
-    """
-    if mode is None:
-        return None
-    mode_value = mode.value if hasattr(mode, "value") else str(mode)
-    if mode_value == "cash":
-        return require_company_cash_account(db, company_id).id
-    if mode_value == "bank":
-        return bank_account_id
-    return None
 
 
 def money_mode_from_account(account: BankAccount | None) -> CashBookSourceMode | None:
@@ -366,15 +343,11 @@ def make_default_bank_account(
 
 def assert_bank_account_deletable(db: Session, bank_id: int) -> None:
     payment_used = db.scalar(
-        select(func.count(Payment.id)).where(
-            (Payment.bank_account_id == bank_id) | (Payment.account_id == bank_id)
-        )
+        select(func.count(Payment.id)).where(Payment.account_id == bank_id)
     ) or 0
     cb_used = db.scalar(
         select(func.count(CashBookEntry.id)).where(
-            (CashBookEntry.source_bank_account_id == bank_id)
-            | (CashBookEntry.dest_bank_account_id == bank_id)
-            | (CashBookEntry.source_account_id == bank_id)
+            (CashBookEntry.source_account_id == bank_id)
             | (CashBookEntry.dest_account_id == bank_id)
         )
     ) or 0
