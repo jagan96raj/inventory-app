@@ -1,7 +1,7 @@
 """Spec v12.21 / v17.2.4 — cash book router (account_id primary)."""
 from datetime import date
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -55,6 +55,7 @@ def _http_for_value_error(exc: ValueError) -> HTTPException:
 
 @router.get("", response_model=CashBookEntryPageOut)
 def list_cash_book_endpoint(
+    response: Response,
     entry_type: CashBookEntryType | None = None,
     category_id: int | None = None,
     account_id: int | None = None,
@@ -68,6 +69,8 @@ def list_cash_book_endpoint(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     q = list_cash_book(

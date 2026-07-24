@@ -52,14 +52,11 @@ import UsersPage from "./pages/UsersPage";
 import CompanyRegisterPage from "./pages/CompanyRegisterPage";
 import ProfilePage from "./pages/ProfilePage";
 
-/** Remount cash book list after create/edit navigate with refreshAt state. */
+/** Remount when landing with ?created= so a fresh list always mounts. */
 function CashBookListRoute() {
-  const { state } = useLocation();
-  const refreshAt =
-    state && typeof state === "object" && "refreshAt" in state
-      ? Number((state as { refreshAt?: number }).refreshAt)
-      : 0;
-  return <CashBookListPage key={refreshAt || "cashbook"} />;
+  const { search } = useLocation();
+  const created = new URLSearchParams(search).get("created") ?? "list";
+  return <CashBookListPage key={created} />;
 }
 
 export default function App() {

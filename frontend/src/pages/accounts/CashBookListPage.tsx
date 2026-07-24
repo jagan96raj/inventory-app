@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   ArrowDownLeft,
@@ -21,6 +21,10 @@ import {
   newIdempotencyKey,
 } from "../../api/client";
 import { accountsByKind } from "../../lib/moneyAccounts";
+import {
+  clearRememberedCashBookCreated,
+  readRememberedCashBookCreated,
+} from "../../lib/cashBookCreated";
 import { formatDate, formatInr } from "../../lib/format";
 import { usePermissions } from "../../lib/permissions";
 import PageHeader from "../../components/ui/PageHeader";
@@ -63,21 +67,53 @@ function modeLabel(entry: CashBookEntry): string {
   return "Cash";
 }
 
+function resolveSeed(
+  locState: { seedEntry?: CashBookEntry } | null,
+  createdParam: string | null
+): CashBookEntry | null {
+  if (locState?.seedEntry && typeof locState.seedEntry.id === "number") {
+    return locState.seedEntry;
+  }
+  const remembered = readRememberedCashBookCreated();
+  if (!remembered) return null;
+  if (createdParam && remembered.id !== Number(createdParam)) return null;
+  return remembered;
+}
+
+function sameEntryId(a: number | string | null | undefined, b: number | string | null | undefined): boolean {
+  if (a == null || b == null) return false;
+  return Number(a) === Number(b);
+}
+
+function prependUnique(entry: CashBookEntry, items: CashBookEntry[]): CashBookEntry[] {
+  if (items.some((r) => sameEntryId(r.id, entry.id))) {
+    return items.map((r) => (sameEntryId(r.id, entry.id) ? entry : r));
+  }
+  return [entry, ...items];
+}
+
 export default function CashBookListPage() {
   const { canVoid } = usePermissions();
   const location = useLocation();
-  const refreshAt =
-    location.state && typeof location.state === "object" && "refreshAt" in location.state
-      ? Number((location.state as { refreshAt?: number }).refreshAt)
-      : undefined;
-  const [rows, setRows] = useState<CashBookEntry[]>([]);
-  const [total, setTotal] = useState(0);
+  const createdParam = new URLSearchParams(location.search).get("created");
+  const createdId =
+    createdParam && Number.isFinite(Number(createdParam)) ? Number(createdParam) : null;
+
+  const [rows, setRows] = useState<CashBookEntry[]>(() => {
+    const remembered = resolveSeed(null, createdParam);
+    return remembered ? [remembered] : [];
+  });
+  const [total, setTotal] = useState(() => (resolveSeed(null, createdParam) ? 1 : 0));
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState("");
   const [voidAuthError, setVoidAuthError] = useState("");
   const [pending, setPending] = useState<CashBookEntry | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [highlightedId, setHighlightedId] = useState<number | null>(createdId);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const idemRef = useRef<string | null>(null);
+  const loadGenRef = useRef(0);
   const limit = DEFAULT_PAGE_LIMIT;
 
   const [filters, setFilters] = useState<CashBookListParams>({
@@ -112,40 +148,84 @@ export default function CashBookListPage() {
       .catch(() => {});
   }, []);
 
-  const load = useCallback(() => {
-    cashBookApi
-      .list({ ...filters, limit, offset })
-      .then((page) => {
-        setRows(page.items);
-        setTotal(page.total);
-      })
-      .catch((e) => setError(e.message));
-  }, [filters, limit, offset]);
-
-  useEffect(() => {
-    load();
-  }, [load, refreshAt]);
-
-  useEffect(() => {
-    const onFocus = () => load();
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") load();
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [load]);
-
   useEffect(() => {
     setOffset(0);
   }, [filters]);
 
+  // Single sequential loader: GET created id first (authoritative), then list, always keep created on top.
+  useEffect(() => {
+    const gen = ++loadGenRef.current;
+    let cancelled = false;
+    const remembered = resolveSeed(null, createdParam);
+
+    (async () => {
+      setLoading(true);
+      setError("");
+
+      let createdEntry: CashBookEntry | null = remembered;
+      if (createdId != null) {
+        try {
+          createdEntry = await cashBookApi.get(createdId);
+          if (cancelled || gen !== loadGenRef.current) return;
+          setHighlightedId(createdEntry.id);
+          setRows([createdEntry]);
+          setTotal(1);
+        } catch (e) {
+          if (cancelled || gen !== loadGenRef.current) return;
+          const msg = e instanceof Error ? e.message : String(e);
+          setError(`Could not load new entry #${createdId}: ${msg}`);
+          toast.error(msg);
+        }
+      }
+
+      try {
+        const page = await cashBookApi.list({ ...filters, limit, offset });
+        if (cancelled || gen !== loadGenRef.current) return;
+        const items = createdEntry ? prependUnique(createdEntry, page.items ?? []) : (page.items ?? []);
+        setRows(items);
+        setTotal(
+          createdEntry && !(page.items ?? []).some((r) => sameEntryId(r.id, createdEntry!.id))
+            ? Math.max((page.total ?? 0) + 1, items.length)
+            : (page.total ?? 0)
+        );
+        if (createdEntry && (page.items ?? []).some((r) => sameEntryId(r.id, createdEntry!.id))) {
+          clearRememberedCashBookCreated(createdEntry.id);
+        }
+      } catch (e) {
+        if (cancelled || gen !== loadGenRef.current) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!createdEntry) {
+          setRows([]);
+          setTotal(0);
+        }
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        if (!cancelled && gen === loadGenRef.current) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createdId, createdParam, filters, limit, offset, reloadNonce]);
+
   const clearFilters = () => {
     setFilters({ voided: "false" });
   };
+
+  const reload = () => setReloadNonce((n) => n + 1);
+
+  const highlightedEntry = useMemo(
+    () => (highlightedId == null ? null : rows.find((r) => sameEntryId(r.id, highlightedId)) ?? null),
+    [rows, highlightedId]
+  );
+
+  /** Always pin the just-created row to the top for display. */
+  const displayRows = useMemo(() => {
+    if (!highlightedEntry) return rows;
+    return [highlightedEntry, ...rows.filter((r) => !sameEntryId(r.id, highlightedEntry.id))];
+  }, [rows, highlightedEntry]);
 
   const voidEntry = async (authorizationPassword: string) => {
     if (!pending) return;
@@ -156,7 +236,7 @@ export default function CashBookListPage() {
       await cashBookApi.void(pending.id, pending.version, idemRef.current, authorizationPassword);
       toast.success("Entry voided");
       setPending(null);
-      load();
+      reload();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not void entry";
       if (msg.toLowerCase().includes("authorization") || msg.toLowerCase().includes("password")) {
@@ -304,6 +384,102 @@ export default function CashBookListPage() {
         </Banner>
       )}
 
+      {highlightedEntry && (
+        <Card className="mb-4 border-emerald-300/80 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-950/40">
+          <CardBody className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                Just recorded
+              </p>
+              <p className="text-2xl font-bold tabular-nums text-ink">
+                {formatInr(highlightedEntry.amount)}
+                <span className="ml-2 text-base font-medium text-ink-muted">
+                  {highlightedEntry.category_name ?? highlightedEntry.entry_type}
+                </span>
+              </p>
+              <p className="text-sm text-ink-muted">
+                #{highlightedEntry.id} · {formatDate(highlightedEntry.entry_date)} · {modeLabel(highlightedEntry)}
+                {highlightedEntry.description ? ` · ${highlightedEntry.description}` : ""}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link to={`/accounts/cashbook/${highlightedEntry.id}/edit`}>
+                <Button variant="secondary">Open entry</Button>
+              </Link>
+              {canVoid && !highlightedEntry.voided_at && (
+                <Button
+                  variant="outline"
+                  className="border-rose-200 text-rose-700"
+                  onClick={() => {
+                    idemRef.current = null;
+                    setPending(highlightedEntry);
+                  }}
+                >
+                  Void
+                </Button>
+              )}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {loading && displayRows.length === 0 ? (
+        <Table
+          columns={columns}
+          rows={[]}
+          rowKey={(r) => r.id}
+          caption="Cash book entries"
+          loading
+          zebra
+          compact
+          stickyHeader={false}
+          className="mb-4"
+        />
+      ) : displayRows.length === 0 ? (
+        <Card className="mb-4">
+          <CardBody>
+            <EmptyState
+              icon={<ReceiptText />}
+              title={error ? "Could not load cash book" : "No cash-book entries"}
+              description={
+                error
+                  ? error
+                  : "Record an expense, income, or transfer to see it here."
+              }
+              action={
+                error ? (
+                  <Button variant="secondary" onClick={reload}>
+                    Retry
+                  </Button>
+                ) : (
+                  <Link to="/accounts/cashbook/new">
+                    <Button leftIcon={<Plus className="h-4 w-4" />}>New entry</Button>
+                  </Link>
+                )
+              }
+            />
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="mb-4">
+          <Table
+            columns={columns}
+            rows={displayRows}
+            rowKey={(r) => `cashbook-${r.id}`}
+            caption="Cash book entries"
+            zebra
+            compact
+            stickyHeader={false}
+            rowClassName={(r) =>
+              highlightedEntry && sameEntryId(r.id, highlightedEntry.id)
+                ? "bg-emerald-50/90 dark:bg-emerald-950/40"
+                : undefined
+            }
+          />
+          <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
+        </div>
+      )}
+
       <Card className="mb-4">
         <CardBody className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -430,35 +606,6 @@ export default function CashBookListPage() {
           </div>
         </CardBody>
       </Card>
-
-      {rows.length === 0 && total === 0 ? (
-        <Card>
-          <CardBody>
-            <EmptyState
-              icon={<ReceiptText />}
-              title="No cash-book entries"
-              description="Record an expense, income, or transfer to see it here."
-              action={
-                <Link to="/accounts/cashbook/new">
-                  <Button leftIcon={<Plus className="h-4 w-4" />}>New entry</Button>
-                </Link>
-              }
-            />
-          </CardBody>
-        </Card>
-      ) : (
-        <>
-          <Table
-            columns={columns}
-            rows={rows}
-            rowKey={(r) => r.id}
-            caption="Cash book entries"
-            zebra
-            compact
-          />
-          <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
-        </>
-      )}
 
       <VoidConfirmDialog
         open={!!pending}

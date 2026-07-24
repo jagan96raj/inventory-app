@@ -121,10 +121,13 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
   try {
     res = await fetch(`${API}${path}`, {
       credentials: "include",
-      cache: "no-store",
       ...rest,
+      // Force no HTTP cache (Electron/Chromium otherwise can serve stale GETs).
+      cache: "no-store",
       headers: {
         "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        Pragma: "no-cache",
         ...extraHeaders,
       },
     });
@@ -1086,6 +1089,8 @@ export const cashBookApi = {
         date_from: p.date_from,
         date_to: p.date_to,
         search: p.search,
+        // Unique query each call — defeats Electron/Chromium stale GET reuse.
+        _: Date.now(),
       })}`
     ),
   create: (body: CashBookEntryIn, key: string, authorizationPassword?: string) =>
@@ -1103,7 +1108,8 @@ export const cashBookApi = {
 };
 
 export const accountsApi = {
-  summary: () => api.get<AccountsSummary>("/api/accounts/summary"),
+  summary: () =>
+    api.get<AccountsSummary>(`/api/accounts/summary${qs({ _: Date.now() })}`),
   customers: (p: ListParams & { has_balance?: "any" | "positive" | "zero" } = {}) =>
     api.get<PageOut<CustomerBalanceRow>>(
       `/api/accounts/customers${qs({

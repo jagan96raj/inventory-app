@@ -22,6 +22,7 @@ import {
   accountsByKind,
   pickDefaultMoneyAccountId,
 } from "../../lib/moneyAccounts";
+import { rememberCashBookCreated } from "../../lib/cashBookCreated";
 import BusinessDateField from "../../components/ui/BusinessDateField";
 import BackdateAuthDialog from "../../components/ui/BackdateAuthDialog";
 import PageHeader from "../../components/ui/PageHeader";
@@ -354,21 +355,21 @@ export default function CashBookEntryFormPage() {
     if (!payload) return;
     if (!idemRef.current) idemRef.current = newIdempotencyKey();
     try {
+      let saved: CashBookEntry;
       if (editing && original) {
-        await cashBookApi.update(
+        saved = await cashBookApi.update(
           original.id,
           { ...payload, expected_version: original.version },
           idemRef.current
         );
         toast.success("Entry updated");
       } else {
-        await cashBookApi.create(payload, idemRef.current, authorizationPassword);
+        saved = await cashBookApi.create(payload, idemRef.current, authorizationPassword);
         toast.success("Entry recorded");
       }
-      navigate("/accounts/cashbook", {
-        replace: true,
-        state: { refreshAt: Date.now() },
-      });
+      // Full document navigation — Electron SPA soft-nav was keeping a stale list view.
+      rememberCashBookCreated(saved);
+      window.location.assign(`/accounts/cashbook?created=${saved.id}`);
     } finally {
       // Clear after every completed attempt so a later different entry never reuses the key.
       idemRef.current = null;
