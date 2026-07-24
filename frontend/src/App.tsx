@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import AppShell from "./components/AppShell";
 import RequireAuth from "./components/RequireAuth";
@@ -51,6 +51,16 @@ import PendingAccessPage from "./pages/PendingAccessPage";
 import UsersPage from "./pages/UsersPage";
 import CompanyRegisterPage from "./pages/CompanyRegisterPage";
 import ProfilePage from "./pages/ProfilePage";
+
+/** Remount cash book list after create/edit navigate with refreshAt state. */
+function CashBookListRoute() {
+  const { state } = useLocation();
+  const refreshAt =
+    state && typeof state === "object" && "refreshAt" in state
+      ? Number((state as { refreshAt?: number }).refreshAt)
+      : 0;
+  return <CashBookListPage key={refreshAt || "cashbook"} />;
+}
 
 export default function App() {
   return (
@@ -142,7 +152,7 @@ export default function App() {
             <Route path="/accounts/customers/:id" element={<CustomerStatementPage />} />
           </Route>
           <Route element={<RequireRole permission="cashbook_manage" />}>
-            <Route path="/accounts/cashbook" element={<CashBookListPage />} />
+            <Route path="/accounts/cashbook" element={<CashBookListRoute />} />
             <Route path="/accounts/cashbook/new" element={<CashBookEntryFormPage />} />
             <Route path="/accounts/cashbook/:id/edit" element={<CashBookEntryFormPage />} />
           </Route>

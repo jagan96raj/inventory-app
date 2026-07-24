@@ -353,19 +353,26 @@ export default function CashBookEntryFormPage() {
   const saveEntry = async (authorizationPassword?: string) => {
     if (!payload) return;
     if (!idemRef.current) idemRef.current = newIdempotencyKey();
-    if (editing && original) {
-      await cashBookApi.update(
-        original.id,
-        { ...payload, expected_version: original.version },
-        idemRef.current
-      );
-      toast.success("Entry updated");
-    } else {
-      await cashBookApi.create(payload, idemRef.current, authorizationPassword);
-      toast.success("Entry recorded");
+    try {
+      if (editing && original) {
+        await cashBookApi.update(
+          original.id,
+          { ...payload, expected_version: original.version },
+          idemRef.current
+        );
+        toast.success("Entry updated");
+      } else {
+        await cashBookApi.create(payload, idemRef.current, authorizationPassword);
+        toast.success("Entry recorded");
+      }
+      navigate("/accounts/cashbook", {
+        replace: true,
+        state: { refreshAt: Date.now() },
+      });
+    } finally {
+      // Clear after every completed attempt so a later different entry never reuses the key.
+      idemRef.current = null;
     }
-    idemRef.current = null;
-    navigate("/accounts/cashbook");
   };
 
   const onSubmit = async () => {
@@ -386,7 +393,6 @@ export default function CashBookEntryFormPage() {
       setBackdateAuthOpen(true);
       return;
     }
-    if (!idemRef.current) idemRef.current = newIdempotencyKey();
     await guardedSubmit(async () => {
       try {
         await saveEntry();
@@ -433,7 +439,6 @@ export default function CashBookEntryFormPage() {
         voidIdemRef.current,
         authorizationPassword
       );
-      voidIdemRef.current = null;
       setOriginal(voided);
       setVoidOpen(false);
       toast.success("Entry voided — cash and bank balances have been reversed.");
@@ -447,6 +452,7 @@ export default function CashBookEntryFormPage() {
       }
       throw err;
     } finally {
+      voidIdemRef.current = null;
       setVoidBusy(false);
     }
   };

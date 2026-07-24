@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
@@ -65,6 +65,11 @@ function modeLabel(entry: CashBookEntry): string {
 
 export default function CashBookListPage() {
   const { canVoid } = usePermissions();
+  const location = useLocation();
+  const refreshAt =
+    location.state && typeof location.state === "object" && "refreshAt" in location.state
+      ? Number((location.state as { refreshAt?: number }).refreshAt)
+      : undefined;
   const [rows, setRows] = useState<CashBookEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -119,6 +124,19 @@ export default function CashBookListPage() {
 
   useEffect(() => {
     load();
+  }, [load, refreshAt]);
+
+  useEffect(() => {
+    const onFocus = () => load();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   useEffect(() => {
@@ -136,7 +154,6 @@ export default function CashBookListPage() {
     setVoidAuthError("");
     try {
       await cashBookApi.void(pending.id, pending.version, idemRef.current, authorizationPassword);
-      idemRef.current = null;
       toast.success("Entry voided");
       setPending(null);
       load();
@@ -150,6 +167,8 @@ export default function CashBookListPage() {
       }
       throw err;
     } finally {
+      // Always rotate key after a completed attempt so retries / next voids never reuse it.
+      idemRef.current = null;
       setBusy(false);
     }
   };

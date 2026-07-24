@@ -121,6 +121,7 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
   try {
     res = await fetch(`${API}${path}`, {
       credentials: "include",
+      cache: "no-store",
       ...rest,
       headers: {
         "Content-Type": "application/json",
