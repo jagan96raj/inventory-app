@@ -3443,7 +3443,7 @@ function LogDateGroup({
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-line/60 bg-surface/80">
+    <div className="rounded-xl border border-line/60 bg-surface/80">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/50 bg-surface-muted/40 px-3 py-2">
         <p className="text-sm font-semibold text-ink">{label}</p>
         <span className="v2-mono text-xs font-semibold text-ink-muted">{formatQtyKg(totalKg)}</span>
@@ -3620,6 +3620,7 @@ function ProcessingInputLog({
             rowKey={(r) => r.id}
             caption={`Input log ${day.label}`}
             compact
+            stickyHeader={false}
           />
         </LogDateGroup>
       ))}
@@ -3655,6 +3656,7 @@ function ProcessingOutputLog({
             rowKey={(r) => r.id}
             caption={`Output log ${day.label}`}
             compact
+            stickyHeader={false}
           />
         </LogDateGroup>
       ))}
@@ -3686,6 +3688,7 @@ function ProcessingWasteLog({ batches }: { batches: ProcessingBatch[] }) {
             rowKey={(r) => r.id}
             caption={`Waste log ${day.label}`}
             compact
+            stickyHeader={false}
           />
         </LogDateGroup>
       ))}
