@@ -11,7 +11,7 @@ from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, 
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.database import get_db
-from app.models.entities import Bill, Customer, Payment, PaymentMode, User, BankAccount
+from app.models.entities import Bill, Customer, Payment, PaymentMode, User, BankAccountKind
 from app.services.idempotency import hash_empty_body, hash_pydantic_body
 from app.schemas import PaymentCreate, PaymentOut, PaymentPageOut, SetoffPreviewOut
 from app.services.payments import create_payment, preview_setoff_allocation, void_payment
@@ -31,14 +31,19 @@ def payment_to_out(p: Payment, bill: Bill | None, include_linked: bool = False) 
         for child in p.linked_payments:
             child_bill = child.bill
             linked.append(payment_to_out(child, child_bill, include_linked=False))
-    bank = getattr(p, "bank_account", None)
+    account = getattr(p, "account", None)
+    bank_id = account.id if account and account.kind == BankAccountKind.bank else None
+    bank_name = account.name if account and account.kind == BankAccountKind.bank else None
     return PaymentOut(
         id=p.id,
         bill_id=p.bill_id,
         amount=p.amount,
         payment_mode=p.payment_mode,
-        bank_account_id=p.bank_account_id,
-        bank_account_name=bank.name if bank else None,
+        account_id=p.account_id,
+        account_name=account.name if account else None,
+        account_kind=account.kind if account else None,
+        bank_account_id=bank_id,
+        bank_account_name=bank_name,
         paid_at=p.paid_at,
         voided_at=p.voided_at,
         linked_payment_id=p.linked_payment_id,
@@ -71,7 +76,7 @@ def list_payments(
         .outerjoin(Bill.customer)
         .options(
             joinedload(Payment.bill).joinedload(Bill.customer),
-            joinedload(Payment.bank_account),
+            joinedload(Payment.account),
         )
         .order_by(Payment.id.desc())
     )
@@ -126,7 +131,7 @@ def add_payment(
                 body.amount,
                 body.payment_mode,
                 expected_version=body.expected_version,
-                bank_account_id=body.bank_account_id,
+                account_id=body.account_id,
                 paid_date=body.paid_date,
                 company_id=company_id,
             )
@@ -142,7 +147,7 @@ def add_payment(
             .where(Payment.id == p.id)
             .options(
                 joinedload(Payment.bill).joinedload(Bill.customer),
-                joinedload(Payment.bank_account),
+                joinedload(Payment.account),
                 joinedload(Payment.linked_payments).joinedload(Payment.bill).joinedload(Bill.customer),
             )
         )
@@ -187,7 +192,7 @@ def void_payment_endpoint(
             .where(Payment.id == p.id)
             .options(
                 joinedload(Payment.bill).joinedload(Bill.customer),
-                joinedload(Payment.bank_account),
+                joinedload(Payment.account),
                 joinedload(Payment.linked_payments).joinedload(Payment.bill).joinedload(Bill.customer),
             )
         )

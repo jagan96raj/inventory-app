@@ -18,6 +18,11 @@ import { useSubmitGuard } from "../../hooks/useSubmitGuard";
 import { usePermissions } from "../../lib/permissions";
 import { formatDateTime, formatInr, localIsoDate, validateDateNotFuture } from "../../lib/format";
 import { isAuthPasswordError, isBackdatedDate } from "../../lib/backdateAuth";
+import {
+  accountsByKind,
+  pickDefaultMoneyAccountId,
+} from "../../lib/moneyAccounts";
+import { rememberCashBookCreated } from "../../lib/cashBookCreated";
 import BusinessDateField from "../../components/ui/BusinessDateField";
 import BackdateAuthDialog from "../../components/ui/BackdateAuthDialog";
 import PageHeader from "../../components/ui/PageHeader";
@@ -33,9 +38,6 @@ import SegmentedControl from "../../components/ui/SegmentedControl";
 import Textarea from "../../components/ui/Textarea";
 import VoidConfirmDialog from "../../components/ui/VoidConfirmDialog";
 import { toast } from "../../components/ui/Toaster";
-
-type Mode = "cash" | "bank";
-type PaymentMode = Mode | "";
 
 const FREIGHT_CATEGORY_NAME = "Freight Charges";
 
@@ -56,6 +58,19 @@ function isFreightExpense(entryType: CashBookEntryType, category: ExpenseCategor
   return entryType === "expense" && category?.name.toLowerCase() === FREIGHT_CATEGORY_NAME.toLowerCase();
 }
 
+function pickDefaultBankId(accounts: BankAccount[]): number | "" {
+  const banks = accounts.filter((a) => a.kind === "bank");
+  const def = banks.find((b) => b.is_default && b.is_active);
+  if (def) return def.id;
+  const first = banks.find((b) => b.is_active);
+  return first ? first.id : "";
+}
+
+function pickCashAccountId(accounts: BankAccount[]): number | "" {
+  const cash = accounts.find((a) => a.kind === "cash" && a.is_active) ?? accounts.find((a) => a.kind === "cash");
+  return cash ? cash.id : "";
+}
+
 type FormState = {
   entry_type: CashBookEntryType;
   category_id: number | "";
@@ -63,10 +78,8 @@ type FormState = {
   description: string;
   reference_no: string;
   bill_id: number | "";
-  source_mode: PaymentMode;
-  source_bank_id: number | "";
-  dest_mode: PaymentMode;
-  dest_bank_id: number | "";
+  source_account_id: number | "";
+  dest_account_id: number | "";
   entry_date: string;
 };
 
@@ -78,20 +91,46 @@ function blankState(initial?: Partial<FormState>): FormState {
     description: "",
     reference_no: "",
     bill_id: "",
-    source_mode: "",
-    source_bank_id: "",
-    dest_mode: "bank",
-    dest_bank_id: "",
+    source_account_id: "",
+    dest_account_id: "",
     entry_date: localIsoDate(),
     ...initial,
   };
 }
 
-function pickDefaultBank(banks: BankAccount[]): number | "" {
-  const def = banks.find((b) => b.is_default && b.is_active);
-  if (def) return def.id;
-  const first = banks.find((b) => b.is_active);
-  return first ? first.id : "";
+function AccountOptGroups({
+  accounts,
+  includeInactiveId,
+}: {
+  accounts: BankAccount[];
+  includeInactiveId?: number | "";
+}) {
+  const grouped = accountsByKind(
+    accounts.filter((a) => a.is_active || a.id === includeInactiveId)
+  );
+  return (
+    <>
+      {grouped.cash.length > 0 && (
+        <optgroup label="Cash">
+          {grouped.cash.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {grouped.bank.length > 0 && (
+        <optgroup label="Bank">
+          {grouped.bank.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+              {a.is_default ? " (default)" : ""}
+            </option>
+          ))}
+        </optgroup>
+      )}
+    </>
+  );
 }
 
 export default function CashBookEntryFormPage() {
@@ -107,7 +146,7 @@ export default function CashBookEntryFormPage() {
   const categoryParam = searchParams.get("category");
 
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
-  const [banks, setBanks] = useState<BankAccount[]>([]);
+  const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [billSearch, setBillSearch] = useState("");
   const [billOptions, setBillOptions] = useState<BillPickerItem[]>([]);
   const [selectedBillLabel, setSelectedBillLabel] = useState("");
@@ -120,6 +159,7 @@ export default function CashBookEntryFormPage() {
   const { submitting: busy, guardedSubmit, submitDisabled } = useSubmitGuard();
   const [original, setOriginal] = useState<CashBookEntry | null>(null);
   const voidIdemRef = useRef<string | null>(null);
+  const hydratedFromEntryRef = useRef(false);
 
   const [state, setState] = useState<FormState>(() =>
     blankState({
@@ -132,17 +172,23 @@ export default function CashBookEntryFormPage() {
   // Load masters
   useEffect(() => {
     bankAccountsApi
-      .list({ limit: 200, active: "all" })
+      .list({ limit: 200, active: "all", kind: "all" })
       .then((p) => {
-        setBanks(p.items);
+        setAccounts(p.items);
         setState((prev) => {
-          if (prev.entry_type !== "transfer") return prev;
-          const next = { ...prev };
-          if (next.source_mode === "bank" && next.source_bank_id === "") {
-            next.source_bank_id = pickDefaultBank(p.items);
+          if (prev.entry_type !== "transfer") {
+            if (prev.source_account_id === "") {
+              const def = pickDefaultMoneyAccountId(p.items);
+              return def !== "" ? { ...prev, source_account_id: def } : prev;
+            }
+            return prev;
           }
-          if (next.dest_mode === "bank" && next.dest_bank_id === "") {
-            next.dest_bank_id = pickDefaultBank(p.items);
+          const next = { ...prev };
+          if (next.source_account_id === "") {
+            next.source_account_id = pickCashAccountId(p.items);
+          }
+          if (next.dest_account_id === "") {
+            next.dest_account_id = pickDefaultBankId(p.items);
           }
           return next;
         });
@@ -194,6 +240,7 @@ export default function CashBookEntryFormPage() {
 
   useEffect(() => {
     if (!editing || entryId == null) return;
+    hydratedFromEntryRef.current = false;
     cashBookApi
       .get(entryId)
       .then((entry) => {
@@ -205,10 +252,9 @@ export default function CashBookEntryFormPage() {
           description: entry.description ?? "",
           reference_no: entry.reference_no ?? "",
           bill_id: entry.bill_id ?? "",
-          source_mode: (entry.source_payment_mode ?? "cash") as Mode,
-          source_bank_id: entry.source_bank_account_id ?? "",
-          dest_mode: (entry.dest_payment_mode ?? "bank") as Mode,
-          dest_bank_id: entry.dest_bank_account_id ?? "",
+          source_account_id: "",
+          dest_account_id: "",
+          entry_date: entry.entry_date,
         });
         if (entry.bill_id && entry.bill_number) {
           setSelectedBillLabel(entry.bill_number);
@@ -216,6 +262,19 @@ export default function CashBookEntryFormPage() {
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [editing, entryId]);
+
+  useEffect(() => {
+    if (!original || accounts.length === 0 || hydratedFromEntryRef.current) return;
+    hydratedFromEntryRef.current = true;
+    setState((prev) => ({
+      ...prev,
+      source_account_id: original.source_account_id ?? "",
+      dest_account_id:
+        original.entry_type === "transfer" && original.dest_account_id
+          ? original.dest_account_id
+          : "",
+    }));
+  }, [original, accounts]);
 
   // Bill picker live search
   useEffect(() => {
@@ -240,18 +299,19 @@ export default function CashBookEntryFormPage() {
           amount: prev.amount,
           bill_id: "",
           category_id: "",
-          source_mode: "",
-          source_bank_id: "",
+          source_account_id: "",
+          dest_account_id: "",
         });
         if (t === "transfer") {
-          next.source_mode = "cash";
-          next.dest_mode = "bank";
-          next.dest_bank_id = pickDefaultBank(banks);
+          next.source_account_id = pickCashAccountId(accounts);
+          next.dest_account_id = pickDefaultBankId(accounts);
+        } else {
+          next.source_account_id = pickDefaultMoneyAccountId(accounts);
         }
         return next;
       });
     },
-    [banks]
+    [accounts]
   );
 
   const selectedCategory = useMemo(
@@ -265,6 +325,9 @@ export default function CashBookEntryFormPage() {
     if (state.category_id === "" || !state.amount) return null;
     const amount = Number(state.amount);
     if (!isFinite(amount) || amount <= 0) return null;
+    if (state.source_account_id === "") return null;
+    const src = accounts.find((a) => a.id === state.source_account_id);
+    if (!src) return null;
     const base: CashBookEntryIn = {
       entry_type: state.entry_type,
       category_id: Number(state.category_id),
@@ -273,52 +336,44 @@ export default function CashBookEntryFormPage() {
       reference_no: state.reference_no.trim() || null,
       bill_id:
         showBillLink && state.bill_id !== "" ? Number(state.bill_id) : null,
+      source_account_id: Number(state.source_account_id),
     };
     if (state.entry_type === "transfer") {
-      base.source_payment_mode = state.source_mode;
-      base.source_bank_account_id = state.source_mode === "bank" ? (state.source_bank_id === "" ? null : Number(state.source_bank_id)) : null;
-      base.dest_payment_mode = state.dest_mode;
-      base.dest_bank_account_id = state.dest_mode === "bank" ? (state.dest_bank_id === "" ? null : Number(state.dest_bank_id)) : null;
-      const sameCash = state.source_mode === "cash" && state.dest_mode === "cash";
-      const sameBank =
-        state.source_mode === "bank" &&
-        state.dest_mode === "bank" &&
-        state.source_bank_id === state.dest_bank_id &&
-        state.source_bank_id !== "";
-      if (sameCash || sameBank) return null;
-    } else {
-      if (state.source_mode === "") return null;
-      base.source_payment_mode = state.source_mode;
-      base.source_bank_account_id =
-        state.source_mode === "bank"
-          ? state.source_bank_id === ""
-            ? null
-            : Number(state.source_bank_id)
-          : null;
-      if (state.source_mode === "bank" && base.source_bank_account_id == null) return null;
+      if (state.dest_account_id === "") return null;
+      const dst = accounts.find((a) => a.id === state.dest_account_id);
+      if (!dst) return null;
+      if (state.source_account_id === state.dest_account_id && src.kind === "bank") return null;
+      base.dest_account_id = Number(state.dest_account_id);
     }
     if (!editing) {
       base.entry_date = state.entry_date;
     }
     return base;
-  }, [state, showBillLink, editing]);
+  }, [state, showBillLink, editing, accounts]);
 
   const saveEntry = async (authorizationPassword?: string) => {
     if (!payload) return;
     if (!idemRef.current) idemRef.current = newIdempotencyKey();
-    if (editing && original) {
-      await cashBookApi.update(
-        original.id,
-        { ...payload, expected_version: original.version },
-        idemRef.current
-      );
-      toast.success("Entry updated");
-    } else {
-      await cashBookApi.create(payload, idemRef.current, authorizationPassword);
-      toast.success("Entry recorded");
+    try {
+      let saved: CashBookEntry;
+      if (editing && original) {
+        saved = await cashBookApi.update(
+          original.id,
+          { ...payload, expected_version: original.version },
+          idemRef.current
+        );
+        toast.success("Entry updated");
+      } else {
+        saved = await cashBookApi.create(payload, idemRef.current, authorizationPassword);
+        toast.success("Entry recorded");
+      }
+      // Full document navigation — Electron SPA soft-nav was keeping a stale list view.
+      rememberCashBookCreated(saved);
+      window.location.assign(`/accounts/cashbook?created=${saved.id}`);
+    } finally {
+      // Clear after every completed attempt so a later different entry never reuses the key.
+      idemRef.current = null;
     }
-    idemRef.current = null;
-    navigate("/accounts/cashbook");
   };
 
   const onSubmit = async () => {
@@ -339,7 +394,6 @@ export default function CashBookEntryFormPage() {
       setBackdateAuthOpen(true);
       return;
     }
-    if (!idemRef.current) idemRef.current = newIdempotencyKey();
     await guardedSubmit(async () => {
       try {
         await saveEntry();
@@ -386,7 +440,6 @@ export default function CashBookEntryFormPage() {
         voidIdemRef.current,
         authorizationPassword
       );
-      voidIdemRef.current = null;
       setOriginal(voided);
       setVoidOpen(false);
       toast.success("Entry voided — cash and bank balances have been reversed.");
@@ -400,6 +453,7 @@ export default function CashBookEntryFormPage() {
       }
       throw err;
     } finally {
+      voidIdemRef.current = null;
       setVoidBusy(false);
     }
   };
@@ -466,7 +520,7 @@ export default function CashBookEntryFormPage() {
               options={[
                 { value: "expense", label: "Expense", hint: "Money out" },
                 { value: "income", label: "Income", hint: "Money in" },
-                { value: "transfer", label: "Transfer", hint: "Cash ↔ Bank" },
+                { value: "transfer", label: "Transfer", hint: "Between accounts" },
               ]}
             />
           </div>
@@ -538,122 +592,55 @@ export default function CashBookEntryFormPage() {
           </div>
 
           {state.entry_type !== "transfer" ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Payment mode" required>
-                <Select
-                  value={state.source_mode}
-                  onChange={(e) => {
-                    const mode = e.target.value as PaymentMode;
-                    setState({
-                      ...state,
-                      source_mode: mode,
-                      source_bank_id: "",
-                    });
-                  }}
-                >
-                  <option value="">Select…</option>
-                  <option value="cash">Cash</option>
-                  <option value="bank">Bank</option>
-                </Select>
-              </FormField>
-              {state.source_mode === "bank" && (
-                <FormField label="Bank account" required>
-                  <Select
-                    value={state.source_bank_id === "" ? "" : String(state.source_bank_id)}
-                    onChange={(e) =>
-                      setState({ ...state, source_bank_id: e.target.value ? Number(e.target.value) : "" })
-                    }
-                  >
-                    <option value="">Select…</option>
-                    {banks
-                      .filter((b) => b.is_active || b.id === state.source_bank_id)
-                      .map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.name}
-                          {b.is_default ? " (default)" : ""}
-                        </option>
-                      ))}
-                  </Select>
-                </FormField>
-              )}
-            </div>
+            <FormField label="Account" required>
+              <Select
+                value={state.source_account_id === "" ? "" : String(state.source_account_id)}
+                onChange={(e) =>
+                  setState({
+                    ...state,
+                    source_account_id: e.target.value ? Number(e.target.value) : "",
+                  })
+                }
+              >
+                <option value="">Select…</option>
+                <AccountOptGroups accounts={accounts} includeInactiveId={state.source_account_id} />
+              </Select>
+            </FormField>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-3 rounded-xl border border-line/70 bg-surface-subtle/50 p-3">
                 <p className="text-sm font-semibold text-ink-muted">Source (debit)</p>
-                <FormField label="From">
+                <FormField label="From" required>
                   <Select
-                    value={state.source_mode}
-                    onChange={(e) => {
-                      const mode = e.target.value as Mode;
+                    value={state.source_account_id === "" ? "" : String(state.source_account_id)}
+                    onChange={(e) =>
                       setState({
                         ...state,
-                        source_mode: mode,
-                        source_bank_id: mode === "bank" ? pickDefaultBank(banks) : "",
-                      });
-                    }}
+                        source_account_id: e.target.value ? Number(e.target.value) : "",
+                      })
+                    }
                   >
-                    <option value="cash">Cash</option>
-                    <option value="bank">Bank</option>
+                    <option value="">Select…</option>
+                    <AccountOptGroups accounts={accounts} includeInactiveId={state.source_account_id} />
                   </Select>
                 </FormField>
-                {state.source_mode === "bank" && (
-                  <FormField label="From bank">
-                    <Select
-                      value={state.source_bank_id === "" ? "" : String(state.source_bank_id)}
-                      onChange={(e) =>
-                        setState({ ...state, source_bank_id: e.target.value ? Number(e.target.value) : "" })
-                      }
-                    >
-                      <option value="">Select…</option>
-                      {banks
-                        .filter((b) => b.is_active || b.id === state.source_bank_id)
-                        .map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                          </option>
-                        ))}
-                    </Select>
-                  </FormField>
-                )}
               </div>
               <div className="space-y-3 rounded-xl border border-line/70 bg-surface-subtle/50 p-3">
                 <p className="text-sm font-semibold text-ink-muted">Destination (credit)</p>
-                <FormField label="To">
+                <FormField label="To" required>
                   <Select
-                    value={state.dest_mode}
-                    onChange={(e) => {
-                      const mode = e.target.value as Mode;
+                    value={state.dest_account_id === "" ? "" : String(state.dest_account_id)}
+                    onChange={(e) =>
                       setState({
                         ...state,
-                        dest_mode: mode,
-                        dest_bank_id: mode === "bank" ? pickDefaultBank(banks) : "",
-                      });
-                    }}
+                        dest_account_id: e.target.value ? Number(e.target.value) : "",
+                      })
+                    }
                   >
-                    <option value="cash">Cash</option>
-                    <option value="bank">Bank</option>
+                    <option value="">Select…</option>
+                    <AccountOptGroups accounts={accounts} includeInactiveId={state.dest_account_id} />
                   </Select>
                 </FormField>
-                {state.dest_mode === "bank" && (
-                  <FormField label="To bank">
-                    <Select
-                      value={state.dest_bank_id === "" ? "" : String(state.dest_bank_id)}
-                      onChange={(e) =>
-                        setState({ ...state, dest_bank_id: e.target.value ? Number(e.target.value) : "" })
-                      }
-                    >
-                      <option value="">Select…</option>
-                      {banks
-                        .filter((b) => b.is_active || b.id === state.dest_bank_id)
-                        .map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                          </option>
-                        ))}
-                    </Select>
-                  </FormField>
-                )}
               </div>
             </div>
           )}

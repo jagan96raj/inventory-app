@@ -54,7 +54,7 @@ const TITLE_MAP: Record<string, string> = {
   "/accounts/cashbook": "Cash book",
   "/accounts/cashbook/new": "New cash-book entry",
   "/accounts/customers": "Customer balances",
-  "/accounts/bank-accounts": "Bank accounts",
+  "/accounts/bank-accounts": "Accounts",
   "/accounts/expense-categories": "Expense categories",
   "/accounts/setup": "Book settings",
   "/histories/processing": "Processing history",

@@ -1,7 +1,7 @@
 """Spec v12.21 — accounts dashboard + customer statement routers."""
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -32,9 +32,12 @@ router = APIRouter(
 
 @router.get("/summary", response_model=AccountsSummaryOut)
 def accounts_summary_endpoint(
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
     return get_accounts_summary(db, company_id=company_id_for_user(user))
 
 

@@ -129,6 +129,20 @@ def update_book_settings(db: Session, company_id: int, updates: dict) -> BookSet
             raise ValueError("cash_opening_balance must be >= 0")
         settings.cash_opening_balance = cash_opening_balance
         settings.cash_opening_balance_at = business_today()
+        # Spec v17.2.2 — keep Cash money-account opening aligned (Book Settings still the write UI).
+        from app.services.bank_accounts import get_company_cash_account, seed_company_cash_account
+
+        cash = get_company_cash_account(db, company_id)
+        if cash is None:
+            seed_company_cash_account(
+                db,
+                company_id,
+                opening_balance=cash_opening_balance,
+                opening_balance_at=settings.cash_opening_balance_at,
+            )
+        else:
+            cash.opening_balance = cash_opening_balance
+            cash.opening_balance_at = settings.cash_opening_balance_at
     for field, model, label in (
         ("powder_product_id", Product, "Product"),
         ("powder_brand_id", Brand, "Brand"),
@@ -182,156 +196,57 @@ def update_book_settings(db: Session, company_id: int, updates: dict) -> BookSet
 
 
 # ---------------------------------------------------------------------------
-# Cash balance
+# Money account balances (Spec v17.2.2 Phase 3)
 # ---------------------------------------------------------------------------
 
 
-def _payment_cash_delta_expr() -> tuple:
-    """Returns (sales_in_expr, purchase_out_expr) for cash payments."""
-    return (
-        case(
-            (
-                and_(
-                    Bill.bill_type == BillType.sales,
-                    Payment.payment_mode == PaymentMode.cash,
-                ),
-                Payment.amount,
-            ),
-            else_=Decimal("0"),
-        ),
-        case(
-            (
-                and_(
-                    Bill.bill_type == BillType.purchase,
-                    Payment.payment_mode == PaymentMode.cash,
-                ),
-                Payment.amount,
-            ),
-            else_=Decimal("0"),
-        ),
-    )
+def _payment_linked_to_account(account: BankAccount):
+    return Payment.account_id == account.id
 
 
-def get_cash_balance(db: Session, *, company_id: int = 1) -> Decimal:
-    settings = get_book_settings(db, company_id)
-    opening = Decimal(settings.cash_opening_balance)
-
-    # bill payments (active only): sales cash adds, purchase cash subtracts
-    sales_in_expr, purchase_out_expr = _payment_cash_delta_expr()
-    row = db.execute(
-        select(
-            func.coalesce(func.sum(sales_in_expr), 0),
-            func.coalesce(func.sum(purchase_out_expr), 0),
-        )
-        .select_from(Payment)
-        .join(Bill, Bill.id == Payment.bill_id)
-        .where(Payment.voided_at.is_(None), Bill.company_id == company_id)
-    ).one()
-    sales_in = Decimal(str(row[0] or 0))
-    purchase_out = Decimal(str(row[1] or 0))
-
-    # cash book entries
-    income_in_expr = case(
-        (
-            and_(
-                CashBookEntry.entry_type == CashBookEntryType.income,
-                CashBookEntry.source_payment_mode == CashBookSourceMode.cash,
-            ),
-            CashBookEntry.amount,
-        ),
-        else_=Decimal("0"),
-    )
-    expense_out_expr = case(
-        (
-            and_(
-                CashBookEntry.entry_type == CashBookEntryType.expense,
-                CashBookEntry.source_payment_mode == CashBookSourceMode.cash,
-            ),
-            CashBookEntry.amount,
-        ),
-        else_=Decimal("0"),
-    )
-    transfer_in_expr = case(
-        (
-            and_(
-                CashBookEntry.entry_type == CashBookEntryType.transfer,
-                CashBookEntry.dest_payment_mode == CashBookSourceMode.cash,
-            ),
-            CashBookEntry.amount,
-        ),
-        else_=Decimal("0"),
-    )
-    transfer_out_expr = case(
-        (
-            and_(
-                CashBookEntry.entry_type == CashBookEntryType.transfer,
-                CashBookEntry.source_payment_mode == CashBookSourceMode.cash,
-            ),
-            CashBookEntry.amount,
-        ),
-        else_=Decimal("0"),
-    )
-    row2 = db.execute(
-        select(
-            func.coalesce(func.sum(income_in_expr), 0),
-            func.coalesce(func.sum(expense_out_expr), 0),
-            func.coalesce(func.sum(transfer_in_expr), 0),
-            func.coalesce(func.sum(transfer_out_expr), 0),
-        ).where(CashBookEntry.voided_at.is_(None), CashBookEntry.company_id == company_id)
-    ).one()
-    income_in = Decimal(str(row2[0] or 0))
-    expense_out = Decimal(str(row2[1] or 0))
-    transfer_in = Decimal(str(row2[2] or 0))
-    transfer_out = Decimal(str(row2[3] or 0))
-
-    total = (
-        opening
-        + sales_in
-        - purchase_out
-        + income_in
-        - expense_out
-        + transfer_in
-        - transfer_out
-    )
-    return total.quantize(Decimal("0.01"))
+def _cash_book_source_linked(account: BankAccount):
+    return CashBookEntry.source_account_id == account.id
 
 
-# ---------------------------------------------------------------------------
-# Bank balances
-# ---------------------------------------------------------------------------
+def _cash_book_dest_linked(account: BankAccount):
+    return CashBookEntry.dest_account_id == account.id
 
 
-def get_bank_account_balance(
-    db: Session, bank_account_id: int, *, company_id: int | None = None
+def get_account_balance(
+    db: Session, account_id: int, *, company_id: int | None = None
 ) -> Decimal:
-    bank = db.get(BankAccount, bank_account_id)
-    if bank is None:
+    """
+    Balance for one money account (kind=cash|bank):
+
+      opening_balance
+      + sales payments linked to account
+      − purchase payments linked to account
+      + cash-book income (source)
+      − cash-book expense (source)
+      + transfer in (dest)
+      − transfer out (source)
+
+    Movements match ``account_id`` on payments and
+    ``source_account_id`` / ``dest_account_id`` on cash-book entries.
+    """
+    account = db.get(BankAccount, account_id)
+    if account is None:
         raise ValueError("Bank account not found")
-    if company_id is not None and int(bank.company_id) != int(company_id):
+    if company_id is not None and int(account.company_id) != int(company_id):
         raise ValueError("Bank account not found")
-    opening = Decimal(bank.opening_balance)
-    scoped_company_id = int(bank.company_id)
+
+    opening = Decimal(account.opening_balance)
+    scoped_company_id = int(account.company_id)
+    linked_payment = _payment_linked_to_account(account)
+    linked_source = _cash_book_source_linked(account)
+    linked_dest = _cash_book_dest_linked(account)
 
     sales_in_expr = case(
-        (
-            and_(
-                Bill.bill_type == BillType.sales,
-                Payment.payment_mode == PaymentMode.bank,
-                Payment.bank_account_id == bank_account_id,
-            ),
-            Payment.amount,
-        ),
+        (and_(Bill.bill_type == BillType.sales, linked_payment), Payment.amount),
         else_=Decimal("0"),
     )
     purchase_out_expr = case(
-        (
-            and_(
-                Bill.bill_type == BillType.purchase,
-                Payment.payment_mode == PaymentMode.bank,
-                Payment.bank_account_id == bank_account_id,
-            ),
-            Payment.amount,
-        ),
+        (and_(Bill.bill_type == BillType.purchase, linked_payment), Payment.amount),
         else_=Decimal("0"),
     )
     row = db.execute(
@@ -350,8 +265,7 @@ def get_bank_account_balance(
         (
             and_(
                 CashBookEntry.entry_type == CashBookEntryType.income,
-                CashBookEntry.source_payment_mode == CashBookSourceMode.bank,
-                CashBookEntry.source_bank_account_id == bank_account_id,
+                linked_source,
             ),
             CashBookEntry.amount,
         ),
@@ -361,8 +275,7 @@ def get_bank_account_balance(
         (
             and_(
                 CashBookEntry.entry_type == CashBookEntryType.expense,
-                CashBookEntry.source_payment_mode == CashBookSourceMode.bank,
-                CashBookEntry.source_bank_account_id == bank_account_id,
+                linked_source,
             ),
             CashBookEntry.amount,
         ),
@@ -372,8 +285,7 @@ def get_bank_account_balance(
         (
             and_(
                 CashBookEntry.entry_type == CashBookEntryType.transfer,
-                CashBookEntry.dest_payment_mode == CashBookSourceMode.bank,
-                CashBookEntry.dest_bank_account_id == bank_account_id,
+                linked_dest,
             ),
             CashBookEntry.amount,
         ),
@@ -383,8 +295,7 @@ def get_bank_account_balance(
         (
             and_(
                 CashBookEntry.entry_type == CashBookEntryType.transfer,
-                CashBookEntry.source_payment_mode == CashBookSourceMode.bank,
-                CashBookEntry.source_bank_account_id == bank_account_id,
+                linked_source,
             ),
             CashBookEntry.amount,
         ),
@@ -418,6 +329,59 @@ def get_bank_account_balance(
     return total.quantize(Decimal("0.01"))
 
 
+def _ensure_company_cash_for_balance(db: Session, company_id: int) -> BankAccount:
+    """
+    Ensure Cash money-account exists and opening mirrors book_settings.
+
+    Book Settings remains the cash-opening write path until Phase 4 UI moves
+    onto the Cash account; syncing here keeps dashboard totals identical.
+    """
+    from app.services.bank_accounts import get_company_cash_account, seed_company_cash_account
+
+    settings = get_book_settings(db, company_id)
+    opening = Decimal(settings.cash_opening_balance)
+    opening_at = settings.cash_opening_balance_at
+    cash = get_company_cash_account(db, company_id)
+    if cash is None:
+        cash = seed_company_cash_account(
+            db,
+            company_id,
+            opening_balance=opening,
+            opening_balance_at=opening_at,
+        )
+        db.flush()
+        return cash
+    if Decimal(cash.opening_balance) != opening or cash.opening_balance_at != opening_at:
+        cash.opening_balance = opening
+        cash.opening_balance_at = opening_at
+        db.flush()
+    return cash
+
+
+def get_cash_balance(db: Session, *, company_id: int = 1) -> Decimal:
+    """Sum of balances for kind=cash accounts (one Cash row per company)."""
+    _ensure_company_cash_for_balance(db, company_id)
+    cash_accounts = list(
+        db.scalars(
+            select(BankAccount).where(
+                BankAccount.company_id == company_id,
+                BankAccount.kind == BankAccountKind.cash,
+            )
+        ).all()
+    )
+    total = sum(
+        (get_account_balance(db, a.id, company_id=company_id) for a in cash_accounts),
+        Decimal("0"),
+    )
+    return total.quantize(Decimal("0.01"))
+
+
+def get_bank_account_balance(
+    db: Session, bank_account_id: int, *, company_id: int | None = None
+) -> Decimal:
+    return get_account_balance(db, bank_account_id, company_id=company_id)
+
+
 def list_bank_account_balances(
     db: Session, *, company_id: int = 1, include_inactive: bool = False
 ) -> list[tuple[BankAccount, Decimal]]:
@@ -436,7 +400,7 @@ def list_bank_account_balances(
     banks = list(db.scalars(q).all())
     out: list[tuple[BankAccount, Decimal]] = []
     for bank in banks:
-        out.append((bank, get_bank_account_balance(db, bank.id, company_id=company_id)))
+        out.append((bank, get_account_balance(db, bank.id, company_id=company_id)))
     return out
 
 
@@ -482,8 +446,8 @@ def get_accounts_summary(db: Session, *, company_id: int = 1, recent_limit: int 
         .options(
             joinedload(CashBookEntry.category),
             joinedload(CashBookEntry.bill),
-            joinedload(CashBookEntry.source_bank_account),
-            joinedload(CashBookEntry.dest_bank_account),
+            joinedload(CashBookEntry.source_account),
+            joinedload(CashBookEntry.dest_account),
         )
         .where(
             CashBookEntry.voided_at.is_(None),
@@ -710,8 +674,8 @@ def list_linked_cash_book_entries_query(db: Session, bill_id: int):
         .options(
             joinedload(CashBookEntry.category),
             joinedload(CashBookEntry.bill),
-            joinedload(CashBookEntry.source_bank_account),
-            joinedload(CashBookEntry.dest_bank_account),
+            joinedload(CashBookEntry.source_account),
+            joinedload(CashBookEntry.dest_account),
         )
         .where(CashBookEntry.bill_id == bill_id)
         .order_by(CashBookEntry.entry_date.desc(), CashBookEntry.id.desc())

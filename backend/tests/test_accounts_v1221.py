@@ -15,13 +15,13 @@ from app.main import app
 from app.models.entities import (
     BagType,
     BankAccount,
+    BankAccountKind,
     Bill,
     BillType,
     BookSettings,
     Brand,
     CashBookEntry,
     CashBookEntryType,
-    CashBookSourceMode,
     Customer,
     ExpenseCategory,
     ExpenseCategoryKind,
@@ -95,9 +95,18 @@ def _seed_masters(db: Session) -> dict:
         db.add(ec)
         db.flush()
         out_cats[name] = ec
-    # banks
+    # money accounts
+    cash_account = BankAccount(
+        name="Cash",
+        kind=BankAccountKind.cash,
+        opening_balance=Decimal("0"),
+        opening_balance_at=date.today(),
+        is_default=False,
+        is_active=True,
+    )
     bank_default = BankAccount(
         name="Default Bank",
+        kind=BankAccountKind.bank,
         opening_balance=Decimal("0"),
         opening_balance_at=date.today(),
         is_default=True,
@@ -105,12 +114,13 @@ def _seed_masters(db: Session) -> dict:
     )
     bank_secondary = BankAccount(
         name="Secondary Bank",
+        kind=BankAccountKind.bank,
         opening_balance=Decimal("0"),
         opening_balance_at=date.today(),
         is_default=False,
         is_active=True,
     )
-    db.add_all([bank_default, bank_secondary])
+    db.add_all([cash_account, bank_default, bank_secondary])
     db.commit()
     return {
         "product": product,
@@ -122,6 +132,7 @@ def _seed_masters(db: Session) -> dict:
         "rent": out_cats["Rent"],
         "capital": out_cats["Capital Increase"],
         "transfer": out_cats["Transfer"],
+        "cash_account": cash_account,
         "bank_default": bank_default,
         "bank_secondary": bank_secondary,
     }
@@ -251,7 +262,7 @@ class BankAccountServiceTests(unittest.TestCase):
             Decimal("500"),
             PaymentMode.bank,
             expected_version=bill.version,
-            bank_account_id=self.m["bank_secondary"].id,
+            account_id=self.m["bank_secondary"].id,
         )
         with self.assertRaises(ValueError) as ctx:
             delete_bank_account(self.db, self.m["bank_secondary"].id)
@@ -326,10 +337,7 @@ class ExpenseCategoryServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         with self.assertRaises(ValueError):
             delete_category(self.db, self.m["rent"].id)
@@ -365,10 +373,7 @@ class CashBookServiceTests(unittest.TestCase):
             description="Monthly rent",
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         self.assertEqual(get_cash_balance(self.db), Decimal("9000.00"))
 
@@ -381,10 +386,7 @@ class CashBookServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.bank,
-            source_bank_account_id=self.m["bank_default"].id,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["bank_default"].id,
         )
         self.assertEqual(get_cash_balance(self.db), Decimal("10000.00"))
         self.assertEqual(
@@ -403,10 +405,7 @@ class CashBookServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         self.assertEqual(get_cash_balance(self.db), Decimal("12500.00"))
 
@@ -419,10 +418,8 @@ class CashBookServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=CashBookSourceMode.bank,
-            dest_bank_account_id=self.m["bank_default"].id,
+            source_account_id=self.m["cash_account"].id,
+            dest_account_id=self.m["bank_default"].id,
         )
         self.assertEqual(get_cash_balance(self.db), Decimal("9000.00"))
         self.assertEqual(get_bank_account_balance(self.db, self.m["bank_default"].id), Decimal("6000.00"))
@@ -436,10 +433,8 @@ class CashBookServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.bank,
-            source_bank_account_id=self.m["bank_default"].id,
-            dest_payment_mode=CashBookSourceMode.bank,
-            dest_bank_account_id=self.m["bank_secondary"].id,
+            source_account_id=self.m["bank_default"].id,
+            dest_account_id=self.m["bank_secondary"].id,
         )
         self.assertEqual(get_bank_account_balance(self.db, self.m["bank_default"].id), Decimal("4000.00"))
         self.assertEqual(get_bank_account_balance(self.db, self.m["bank_secondary"].id), Decimal("4000.00"))
@@ -453,10 +448,7 @@ class CashBookServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         original_version = entry.version
         entry_id = entry.id
@@ -470,10 +462,7 @@ class CashBookServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         self.assertEqual(edited.version, original_version + 1)
         self.assertEqual(get_cash_balance(self.db), Decimal("8000.00"))
@@ -488,10 +477,7 @@ class CashBookServiceTests(unittest.TestCase):
                 description=None,
                 reference_no=None,
                 bill_id=None,
-                source_payment_mode=CashBookSourceMode.cash,
-                source_bank_account_id=None,
-                dest_payment_mode=None,
-                dest_bank_account_id=None,
+                source_account_id=self.m["cash_account"].id,
             )
 
     def test_void_reverses_balance(self):
@@ -503,10 +489,7 @@ class CashBookServiceTests(unittest.TestCase):
             description=None,
             reference_no=None,
             bill_id=None,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         self.assertEqual(get_cash_balance(self.db), Decimal("8500.00"))
         voided = void_cash_book_entry(self.db, entry.id, expected_version=entry.version)
@@ -541,7 +524,7 @@ class MultiBankPaymentTests(unittest.TestCase):
             Decimal("1000"),
             PaymentMode.bank,
             expected_version=bill.version,
-            bank_account_id=self.m["bank_secondary"].id,
+            account_id=self.m["bank_secondary"].id,
         )
         self.assertEqual(get_bank_account_balance(self.db, self.m["bank_secondary"].id), Decimal("1000.00"))
         self.assertEqual(get_bank_account_balance(self.db, self.m["bank_default"].id), Decimal("0.00"))
@@ -569,7 +552,7 @@ class MultiBankPaymentTests(unittest.TestCase):
             Decimal("1000"),
             PaymentMode.bank,
             expected_version=bill.version,
-            bank_account_id=self.m["bank_default"].id,
+            account_id=self.m["bank_default"].id,
         )
         self.assertEqual(get_bank_account_balance(self.db, self.m["bank_default"].id), Decimal("1000.00"))
         self.db.refresh(bill)
@@ -588,10 +571,10 @@ class MultiBankPaymentTests(unittest.TestCase):
                 Decimal("500"),
                 PaymentMode.bank,
                 expected_version=bill.version,
-                bank_account_id=None,
+                account_id=None,
             )
 
-    def test_reject_cash_payment_with_bank_id(self):
+    def test_reject_cash_payment_with_bank_account_id(self):
         bill = _make_sales_bill(self.db, self.m, grand_total=Decimal("1000"))
         with self.assertRaises(ValueError):
             create_payment(
@@ -600,7 +583,7 @@ class MultiBankPaymentTests(unittest.TestCase):
                 Decimal("500"),
                 PaymentMode.cash,
                 expected_version=bill.version,
-                bank_account_id=self.m["bank_default"].id,
+                account_id=self.m["bank_default"].id,
             )
 
 
@@ -631,10 +614,7 @@ class BillLinkageTests(unittest.TestCase):
             description="Lorry freight",
             reference_no="VOUCHER-1",
             bill_id=bill.id,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         self.assertEqual(entry.bill_id, bill.id)
         rows = list(
@@ -726,10 +706,7 @@ class CashBookApiTests(unittest.TestCase):
             "description": "Rent",
             "reference_no": None,
             "bill_id": None,
-            "source_payment_mode": "cash",
-            "source_bank_account_id": None,
-            "dest_payment_mode": None,
-            "dest_bank_account_id": None,
+            "source_account_id": self.m["cash_account"].id,
         }
 
     def test_post_requires_idempotency_key(self):
@@ -820,10 +797,7 @@ class BillLinkedEndpointsTests(unittest.TestCase):
             description="Freight",
             reference_no=None,
             bill_id=bill.id,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         res = self.client.get(f"/api/bills/{bill.id}/linked-entries?limit=50&offset=0")
         self.assertEqual(res.status_code, 200)
@@ -841,10 +815,7 @@ class BillLinkedEndpointsTests(unittest.TestCase):
             description="Freight",
             reference_no=None,
             bill_id=bill.id,
-            source_payment_mode=CashBookSourceMode.cash,
-            source_bank_account_id=None,
-            dest_payment_mode=None,
-            dest_bank_account_id=None,
+            source_account_id=self.m["cash_account"].id,
         )
         res = self.client.get(f"/api/bills/{bill.id}/void-precheck")
         self.assertEqual(res.status_code, 200)
@@ -896,7 +867,7 @@ class BankAccountsApiTests(unittest.TestCase):
             Decimal("500"),
             PaymentMode.bank,
             expected_version=bill.version,
-            bank_account_id=self.m["bank_secondary"].id,
+            account_id=self.m["bank_secondary"].id,
         )
         res = self.client.delete(f"/api/bank-accounts/{self.m['bank_secondary'].id}")
         self.assertEqual(res.status_code, 409)

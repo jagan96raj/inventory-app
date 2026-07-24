@@ -122,8 +122,12 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
     res = await fetch(`${API}${path}`, {
       credentials: "include",
       ...rest,
+      // Force no HTTP cache (Electron/Chromium otherwise can serve stale GETs).
+      cache: "no-store",
       headers: {
         "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        Pragma: "no-cache",
         ...extraHeaders,
       },
     });
@@ -300,7 +304,12 @@ export type Payment = {
   bill_id: number;
   amount: string;
   payment_mode: string;
+  account_id?: number | null;
+  account_name?: string | null;
+  account_kind?: BankAccountKind | null;
+  /** @deprecated compat alias — use account_id */
   bank_account_id?: number | null;
+  /** @deprecated compat alias — use account_name */
   bank_account_name?: string | null;
   paid_at: string;
   voided_at?: string | null;
@@ -810,9 +819,12 @@ export const loginHistoryApi = {
 
 export const EXPECTED_CASH_BOOK_VERSION_HEADER = "X-Expected-Cash-Book-Version";
 
+export type BankAccountKind = "cash" | "bank";
+
 export type BankAccount = {
   id: number;
   name: string;
+  kind: BankAccountKind;
   account_number_last4: string | null;
   ifsc: string | null;
   opening_balance: string;
@@ -826,6 +838,7 @@ export type BankAccountBalance = BankAccount & { balance: string };
 
 export type BankAccountIn = {
   name: string;
+  kind?: BankAccountKind;
   account_number_last4?: string | null;
   ifsc?: string | null;
   opening_balance?: string | number;
@@ -836,6 +849,7 @@ export type BankAccountUpdateIn = {
   name?: string;
   account_number_last4?: string | null;
   ifsc?: string | null;
+  opening_balance?: string | number;
   is_active?: boolean;
 };
 
@@ -874,10 +888,20 @@ export type CashBookEntry = {
   reference_no: string | null;
   bill_id: number | null;
   bill_number: string | null;
+  source_account_id: number | null;
+  source_account_name: string | null;
+  source_account_kind: BankAccountKind | null;
+  dest_account_id: number | null;
+  dest_account_name: string | null;
+  dest_account_kind: BankAccountKind | null;
+  /** @deprecated compat — derived from source_account */
   source_payment_mode: CashBookSourceMode | null;
+  /** @deprecated compat — derived from source_account */
   source_bank_account_id: number | null;
   source_bank_account_name: string | null;
+  /** @deprecated compat — derived from dest_account */
   dest_payment_mode: CashBookSourceMode | null;
+  /** @deprecated compat — derived from dest_account */
   dest_bank_account_id: number | null;
   dest_bank_account_name: string | null;
   entry_date: string;
@@ -894,10 +918,8 @@ export type CashBookEntryIn = {
   description?: string | null;
   reference_no?: string | null;
   bill_id?: number | null;
-  source_payment_mode?: CashBookSourceMode | null;
-  source_bank_account_id?: number | null;
-  dest_payment_mode?: CashBookSourceMode | null;
-  dest_bank_account_id?: number | null;
+  source_account_id: number;
+  dest_account_id?: number | null;
   entry_date?: string | null;
 };
 
@@ -1012,8 +1034,15 @@ type ListParams = {
 };
 
 export const bankAccountsApi = {
-  list: (p: ListParams & { active?: "true" | "false" | "all" } = {}) =>
-    api.get<PageOut<BankAccountBalance>>(`/api/bank-accounts${qs({ limit: p.limit ?? DEFAULT_PAGE_LIMIT, offset: p.offset ?? 0, active: p.active ?? "true" })}`),
+  list: (p: ListParams & { active?: "true" | "false" | "all"; kind?: "bank" | "cash" | "all" } = {}) =>
+    api.get<PageOut<BankAccountBalance>>(
+      `/api/bank-accounts${qs({
+        limit: p.limit ?? DEFAULT_PAGE_LIMIT,
+        offset: p.offset ?? 0,
+        active: p.active ?? "true",
+        kind: p.kind ?? "bank",
+      })}`
+    ),
   create: (body: BankAccountIn, key: string) =>
     api.post<BankAccount>("/api/bank-accounts", body, { headers: idempotencyHeaders(key) }),
   update: (id: number, body: BankAccountUpdateIn, key: string) =>
@@ -1038,8 +1067,7 @@ export const expenseCategoriesApi = {
 export type CashBookListParams = ListParams & {
   entry_type?: CashBookEntryType;
   category_id?: number;
-  source_payment_mode?: CashBookSourceMode;
-  source_bank_account_id?: number;
+  account_id?: number;
   bill_id?: number;
   voided?: "false" | "true" | "any";
   date_from?: string;
@@ -1055,13 +1083,14 @@ export const cashBookApi = {
         offset: p.offset ?? 0,
         entry_type: p.entry_type,
         category_id: p.category_id,
-        source_payment_mode: p.source_payment_mode,
-        source_bank_account_id: p.source_bank_account_id,
+        account_id: p.account_id,
         bill_id: p.bill_id,
         voided: p.voided ?? "false",
         date_from: p.date_from,
         date_to: p.date_to,
         search: p.search,
+        // Unique query each call — defeats Electron/Chromium stale GET reuse.
+        _: Date.now(),
       })}`
     ),
   create: (body: CashBookEntryIn, key: string, authorizationPassword?: string) =>
@@ -1079,7 +1108,8 @@ export const cashBookApi = {
 };
 
 export const accountsApi = {
-  summary: () => api.get<AccountsSummary>("/api/accounts/summary"),
+  summary: () =>
+    api.get<AccountsSummary>(`/api/accounts/summary${qs({ _: Date.now() })}`),
   customers: (p: ListParams & { has_balance?: "any" | "positive" | "zero" } = {}) =>
     api.get<PageOut<CustomerBalanceRow>>(
       `/api/accounts/customers${qs({

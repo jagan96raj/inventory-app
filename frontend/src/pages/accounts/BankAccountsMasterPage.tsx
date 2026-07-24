@@ -7,8 +7,10 @@ import {
   type BankAccount,
   type BankAccountBalance,
   type BankAccountIn,
+  type BankAccountKind,
   type BankAccountUpdateIn,
 } from "../../api/client";
+import { accountKindLabel } from "../../lib/moneyAccounts";
 import { formatDate, formatInr } from "../../lib/format";
 import PageHeader from "../../components/ui/PageHeader";
 import Button from "../../components/ui/Button";
@@ -28,6 +30,7 @@ import { toast } from "../../components/ui/Toaster";
 import { useSubmitGuard } from "../../hooks/useSubmitGuard";
 
 type FormState = {
+  kind: BankAccountKind;
   name: string;
   account_number_last4: string;
   ifsc: string;
@@ -37,6 +40,7 @@ type FormState = {
 };
 
 const empty: FormState = {
+  kind: "bank",
   name: "",
   account_number_last4: "",
   ifsc: "",
@@ -50,6 +54,7 @@ export default function BankAccountsMasterPage() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [activeFilter, setActiveFilter] = useState<"true" | "false" | "all">("all");
+  const [kindFilter, setKindFilter] = useState<"all" | "cash" | "bank">("all");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<BankAccount | null>(null);
   const [adding, setAdding] = useState(false);
@@ -62,13 +67,13 @@ export default function BankAccountsMasterPage() {
 
   const load = useCallback(() => {
     bankAccountsApi
-      .list({ limit, offset, active: activeFilter })
+      .list({ limit, offset, active: activeFilter, kind: kindFilter })
       .then((p) => {
         setRows(p.items);
         setTotal(p.total);
       })
       .catch((e) => setError(e.message));
-  }, [limit, offset, activeFilter]);
+  }, [limit, offset, activeFilter, kindFilter]);
 
   useEffect(() => {
     load();
@@ -76,15 +81,20 @@ export default function BankAccountsMasterPage() {
 
   useEffect(() => {
     setOffset(0);
-  }, [activeFilter]);
+  }, [activeFilter, kindFilter]);
 
-  const openAdd = () => {
-    setForm({ ...empty });
+  const openAdd = (kind: BankAccountKind = "bank") => {
+    setForm({
+      ...empty,
+      kind,
+      name: kind === "cash" ? "Cash" : "",
+    });
     setAdding(true);
   };
 
   const openEdit = (b: BankAccount) => {
     setForm({
+      kind: b.kind ?? "bank",
       name: b.name,
       account_number_last4: b.account_number_last4 ?? "",
       ifsc: b.ifsc ?? "",
@@ -101,6 +111,8 @@ export default function BankAccountsMasterPage() {
     setForm(empty);
   };
 
+  const isCash = (editing?.kind ?? form.kind) === "cash";
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
@@ -112,22 +124,35 @@ export default function BankAccountsMasterPage() {
         if (editing) {
           const body: BankAccountUpdateIn = {
             name: form.name.trim(),
-            account_number_last4: form.account_number_last4.trim() || null,
-            ifsc: form.ifsc.trim() || null,
             is_active: form.is_active,
           };
+          if (editing.kind === "cash") {
+            body.opening_balance = form.opening_balance || "0";
+          } else {
+            body.account_number_last4 = form.account_number_last4.trim() || null;
+            body.ifsc = form.ifsc.trim() || null;
+          }
           await bankAccountsApi.update(editing.id, body, saveIdemRef.current!);
-          toast.success("Bank account updated");
+          toast.success(editing.kind === "cash" ? "Cash account updated" : "Bank account updated");
         } else {
-          const body: BankAccountIn = {
-            name: form.name.trim(),
-            account_number_last4: form.account_number_last4.trim() || null,
-            ifsc: form.ifsc.trim() || null,
-            opening_balance: form.opening_balance || "0",
-            is_default: form.is_default,
-          };
+          const body: BankAccountIn =
+            form.kind === "cash"
+              ? {
+                  name: form.name.trim() || "Cash",
+                  kind: "cash",
+                  opening_balance: form.opening_balance || "0",
+                  is_default: false,
+                }
+              : {
+                  name: form.name.trim(),
+                  kind: "bank",
+                  account_number_last4: form.account_number_last4.trim() || null,
+                  ifsc: form.ifsc.trim() || null,
+                  opening_balance: form.opening_balance || "0",
+                  is_default: form.is_default,
+                };
           await bankAccountsApi.create(body, saveIdemRef.current!);
-          toast.success("Bank account added");
+          toast.success(form.kind === "cash" ? "Cash account added" : "Bank account added");
         }
         saveIdemRef.current = null;
         close();
@@ -146,7 +171,7 @@ export default function BankAccountsMasterPage() {
     if (!pendingDelete) return;
     try {
       await bankAccountsApi.remove(pendingDelete.id);
-      toast.success("Bank account deleted");
+      toast.success("Account deleted");
       setPendingDelete(null);
       load();
     } catch (err) {
@@ -160,7 +185,7 @@ export default function BankAccountsMasterPage() {
   const makeDefault = async (b: BankAccount) => {
     try {
       await bankAccountsApi.makeDefault(b.id, newIdempotencyKey());
-      toast.success(`${b.name} is now the default`);
+      toast.success(`${b.name} is now the default bank`);
       load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not set default";
@@ -173,12 +198,17 @@ export default function BankAccountsMasterPage() {
     <>
       <PageHeader
         eyebrow="Accounts"
-        title="Bank accounts"
-        subtitle="Add and manage every bank account. Closing balance includes opening balance plus bank payments and cash book movements."
+        title="Money accounts"
+        subtitle="Cash and bank accounts in one list. Opening balances and live closing balances drive the Accounts dashboard."
         actions={
-          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd}>
-            Add bank account
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" leftIcon={<Plus className="h-4 w-4" />} onClick={() => openAdd("cash")}>
+              Add Cash
+            </Button>
+            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => openAdd("bank")}>
+              Add Bank
+            </Button>
+          </div>
         }
       />
 
@@ -189,8 +219,16 @@ export default function BankAccountsMasterPage() {
       )}
 
       <Card className="mb-4">
-        <CardBody className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1 sm:col-span-2 sm:col-start-3">
+        <CardBody className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Type</label>
+            <Select value={kindFilter} onChange={(e) => setKindFilter(e.target.value as "all" | "cash" | "bank")}>
+              <option value="all">All</option>
+              <option value="cash">Cash</option>
+              <option value="bank">Bank</option>
+            </Select>
+          </div>
+          <div className="space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Show</label>
             <Select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "true" | "false" | "all")}>
               <option value="all">All</option>
@@ -205,26 +243,27 @@ export default function BankAccountsMasterPage() {
         {rows.length === 0 && total === 0 ? (
           <CardBody>
             <EmptyState
-              title="No bank accounts"
-              description="Add a bank account to start recording bank payments and transfers."
+              title="No money accounts"
+              description="Add a Cash or Bank account to record payments and cash book movements."
               action={
-                <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd}>
-                  Add bank account
+                <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => openAdd("bank")}>
+                  Add Bank
                 </Button>
               }
             />
           </CardBody>
         ) : (
           <div className="overflow-x-auto">
-            <table className="v2-data-table w-full text-base">
+            <table className="v2-data-table w-full min-w-[68rem] text-base">
               <thead className="bg-surface-muted/70 text-base font-semibold uppercase tracking-wide text-ink-muted">
                 <tr>
                   <th className="px-5 py-3.5 text-left">Name</th>
+                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Type</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-left">A/C ending</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-left">IFSC</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Opening balance</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Closing balance</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Opening date</th>
+                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Opening</th>
+                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Closing</th>
+                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Opened</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-left">Status</th>
                   <th className="whitespace-nowrap px-5 py-3.5 text-right">Actions</th>
                 </tr>
@@ -233,22 +272,29 @@ export default function BankAccountsMasterPage() {
                 {rows.map((b) => (
                   <tr key={b.id} className="border-t border-line/70">
                     <td className="px-5 py-4 font-semibold text-ink">{b.name}</td>
-                    <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">
-                      {b.account_number_last4 ? `••${b.account_number_last4}` : "—"}
+                    <td className="whitespace-nowrap px-5 py-4">
+                      <Badge tone={b.kind === "cash" ? "info" : "neutral"} size="sm">
+                        {accountKindLabel(b.kind ?? "bank")}
+                      </Badge>
                     </td>
-                    <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">{b.ifsc ?? "—"}</td>
+                    <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">
+                      {b.kind === "bank" && b.account_number_last4 ? `••${b.account_number_last4}` : "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">
+                      {b.kind === "bank" ? b.ifsc ?? "—" : "—"}
+                    </td>
                     <td className="whitespace-nowrap px-5 py-4 text-right v2-mono tabular-nums">{formatInr(b.opening_balance)}</td>
                     <td className="whitespace-nowrap px-5 py-4 text-right v2-mono tabular-nums font-semibold text-ink">{formatInr(b.balance)}</td>
                     <td className="whitespace-nowrap px-5 py-4 text-ink-muted">{formatDate(b.opening_balance_at)}</td>
                     <td className="px-5 py-4">
                       <div className="flex flex-wrap gap-1.5">
-                        {b.is_default ? <Badge tone="primary" size="sm">Default</Badge> : null}
+                        {b.is_default && b.kind === "bank" ? <Badge tone="primary" size="sm">Default</Badge> : null}
                         {b.is_active ? <Badge tone="success" size="sm">Active</Badge> : <Badge tone="neutral" size="sm">Inactive</Badge>}
                       </div>
                     </td>
                     <td className="px-5 py-4 text-right">
                       <div className="inline-flex items-center justify-end gap-0.5">
-                        {!b.is_default && b.is_active ? (
+                        {b.kind === "bank" && !b.is_default && b.is_active ? (
                           <IconButton
                             label="Make default"
                             size="sm"
@@ -258,14 +304,20 @@ export default function BankAccountsMasterPage() {
                             <Star />
                           </IconButton>
                         ) : null}
-                        <IconButton label="Edit bank account" size="sm" variant="outline" onClick={() => openEdit(b)}>
+                        <IconButton label="Edit account" size="sm" variant="outline" onClick={() => openEdit(b)}>
                           <Pencil />
                         </IconButton>
                         <IconButton
-                          label={b.is_default ? "Cannot delete the default bank" : "Delete bank account"}
+                          label={
+                            b.kind === "cash"
+                              ? "Cannot delete Cash"
+                              : b.is_default
+                                ? "Cannot delete the default bank"
+                                : "Delete account"
+                          }
                           size="sm"
                           onClick={() => setPendingDelete(b)}
-                          disabled={b.is_default}
+                          disabled={b.kind === "cash" || b.is_default}
                           className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:hover:bg-transparent dark:text-rose-400 dark:hover:bg-rose-950/40"
                         >
                           <Trash2 />
@@ -284,7 +336,15 @@ export default function BankAccountsMasterPage() {
       <Modal
         open={adding || !!editing}
         onClose={close}
-        title={editing ? "Edit bank account" : "Add bank account"}
+        title={
+          editing
+            ? editing.kind === "cash"
+              ? "Edit Cash account"
+              : "Edit bank account"
+            : form.kind === "cash"
+              ? "Add Cash account"
+              : "Add bank account"
+        }
         size="md"
         footer={
           <div className="flex justify-end gap-2">
@@ -293,54 +353,84 @@ export default function BankAccountsMasterPage() {
             </Button>
             <Button
               type="submit"
-              form="bank-account-form"
+              form="money-account-form"
               loading={busy}
               disabled={busy || submitDisabled}
               leftIcon={<CheckCircle2 className="h-4 w-4" />}
             >
-              {editing ? "Save changes" : "Add bank"}
+              {editing ? "Save changes" : isCash ? "Add Cash" : "Add Bank"}
             </Button>
           </div>
         }
       >
-        <form id="bank-account-form" onSubmit={submit} className="space-y-4">
+        <form id="money-account-form" onSubmit={submit} className="space-y-4">
+          {!editing && (
+            <FormField label="Type" required>
+              <Select
+                value={form.kind}
+                onChange={(e) => {
+                  const kind = e.target.value as BankAccountKind;
+                  setForm({
+                    ...form,
+                    kind,
+                    name: kind === "cash" ? form.name || "Cash" : form.name === "Cash" ? "" : form.name,
+                    is_default: kind === "cash" ? false : form.is_default,
+                    account_number_last4: kind === "cash" ? "" : form.account_number_last4,
+                    ifsc: kind === "cash" ? "" : form.ifsc,
+                  });
+                }}
+              >
+                <option value="cash">Cash</option>
+                <option value="bank">Bank</option>
+              </Select>
+            </FormField>
+          )}
           <FormField label="Name" required>
             <Input
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="e.g. HDFC Current"
+              placeholder={isCash ? "Cash" : "e.g. HDFC Current"}
               maxLength={120}
             />
           </FormField>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="A/C number (last 4)" hint="Optional">
-              <Input
-                value={form.account_number_last4}
-                onChange={(e) => setForm({ ...form, account_number_last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                placeholder="1234"
-                maxLength={4}
-              />
-            </FormField>
-            <FormField label="IFSC" hint="Optional">
-              <Input
-                value={form.ifsc}
-                onChange={(e) => setForm({ ...form, ifsc: e.target.value.toUpperCase() })}
-                placeholder="HDFC0000123"
-                maxLength={20}
-              />
-            </FormField>
-          </div>
-          {!editing && (
-            <FormField label="Opening balance (₹)" hint="Cannot be changed after creation">
+          {!isCash && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="A/C number (last 4)" hint="Optional">
+                <Input
+                  value={form.account_number_last4}
+                  onChange={(e) =>
+                    setForm({ ...form, account_number_last4: e.target.value.replace(/\D/g, "").slice(0, 4) })
+                  }
+                  placeholder="1234"
+                  maxLength={4}
+                />
+              </FormField>
+              <FormField label="IFSC" hint="Optional">
+                <Input
+                  value={form.ifsc}
+                  onChange={(e) => setForm({ ...form, ifsc: e.target.value.toUpperCase() })}
+                  placeholder="HDFC0000123"
+                  maxLength={20}
+                />
+              </FormField>
+            </div>
+          )}
+          {(adding || isCash) && (
+            <FormField
+              label="Opening balance (₹)"
+              hint={isCash ? "Used for cash totals on the Accounts dashboard" : "Cannot be changed after creation"}
+            >
               <NumberInput
                 min={0}
                 step="0.01"
                 value={form.opening_balance}
                 onChange={(e) => setForm({ ...form, opening_balance: e.target.value })}
+                readOnly={Boolean(editing && editing.kind === "bank")}
+                disabled={Boolean(editing && editing.kind === "bank")}
               />
             </FormField>
           )}
-          {!editing && (
+          {adding && form.kind === "bank" && (
             <label className="inline-flex items-center gap-2 text-sm text-ink-muted">
               <input
                 type="checkbox"
@@ -351,7 +441,7 @@ export default function BankAccountsMasterPage() {
               Make this the default bank (others will be cleared)
             </label>
           )}
-          {editing && (
+          {editing && editing.kind === "bank" && (
             <label className="inline-flex items-center gap-2 text-sm text-ink-muted">
               <input
                 type="checkbox"
@@ -371,8 +461,8 @@ export default function BankAccountsMasterPage() {
         onClose={() => setPendingDelete(null)}
         onConfirm={remove}
         tone="danger"
-        title="Delete this bank account?"
-        description="Soft-deletes the bank. Rejected if any payment or cash-book entry references it."
+        title="Delete this account?"
+        description="Soft-deletes the bank. Rejected if any payment or cash-book entry references it. Cash cannot be deleted."
         confirmLabel="Delete"
       />
     </>

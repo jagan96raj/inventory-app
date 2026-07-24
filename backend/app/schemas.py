@@ -15,6 +15,7 @@ def _business_date_not_future(v: date | None) -> date | None:
     return v
 from app.core.password_policy import validate_new_password_field
 from app.models.entities import (
+    BankAccountKind,
     BillType,
     CashBookEntryType,
     CashBookSourceMode,
@@ -395,7 +396,7 @@ class PaymentCreate(BaseModel):
     bill_id: int
     amount: Decimal = Field(..., gt=0)
     payment_mode: PaymentMode
-    bank_account_id: int | None = None
+    account_id: int | None = None
     expected_version: int | None = None
     paid_date: date | None = None
 
@@ -411,12 +412,26 @@ class PaymentCreate(BaseModel):
             raise ValueError("Set-off payments cannot be created directly")
         return v
 
+    @model_validator(mode="after")
+    def validate_account(self) -> "PaymentCreate":
+        if self.payment_mode in (PaymentMode.cash, PaymentMode.bank):
+            if self.account_id is None:
+                # Optional: service may fall back to default Cash/bank; allow omit for bank default.
+                pass
+        elif self.account_id is not None:
+            raise ValueError("account_id is only allowed when payment_mode is cash or bank")
+        return self
+
 
 class PaymentOut(BaseModel):
     id: int
     bill_id: int
     amount: Decimal
     payment_mode: PaymentMode
+    account_id: int | None = None
+    account_name: str | None = None
+    account_kind: BankAccountKind | None = None
+    # Compat aliases for bank-mode display (same as account when kind=bank).
     bank_account_id: int | None = None
     bank_account_name: str | None = None
     paid_at: datetime
@@ -1448,6 +1463,7 @@ class FulfillmentAuditPageOut(PageOut[FulfillmentAuditOut]):
 
 class BankAccountCreate(BaseModel):
     name: str
+    kind: BankAccountKind = BankAccountKind.bank
     account_number_last4: str | None = None
     ifsc: str | None = None
     opening_balance: Decimal = Field(default=Decimal("0"), ge=0)
@@ -1478,11 +1494,21 @@ class BankAccountCreate(BaseModel):
         s = v.strip()
         return s or None
 
+    @model_validator(mode="after")
+    def validate_kind_fields(self) -> "BankAccountCreate":
+        if self.kind == BankAccountKind.cash:
+            if self.account_number_last4 is not None or self.ifsc is not None:
+                raise ValueError("Cash accounts do not use account number or IFSC")
+            if self.is_default:
+                raise ValueError("Cash account cannot be the default bank")
+        return self
+
 
 class BankAccountUpdate(BaseModel):
     name: str | None = None
     account_number_last4: str | None = None
     ifsc: str | None = None
+    opening_balance: Decimal | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
     @field_validator("name")
@@ -1519,6 +1545,7 @@ class BankAccountUpdate(BaseModel):
 class BankAccountOut(BaseModel):
     id: int
     name: str
+    kind: BankAccountKind = BankAccountKind.bank
     account_number_last4: str | None = None
     ifsc: str | None = None
     opening_balance: Decimal
@@ -1592,10 +1619,8 @@ class CashBookEntryCreate(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     reference_no: str | None = Field(default=None, max_length=100)
     bill_id: int | None = None
-    source_payment_mode: CashBookSourceMode | None = None
-    source_bank_account_id: int | None = None
-    dest_payment_mode: CashBookSourceMode | None = None
-    dest_bank_account_id: int | None = None
+    source_account_id: int
+    dest_account_id: int | None = None
     entry_date: date | None = None
 
     @field_validator("entry_date")
@@ -1612,35 +1637,16 @@ class CashBookEntryCreate(BaseModel):
         return s or None
 
     @model_validator(mode="after")
-    def validate_modes(self) -> "CashBookEntryCreate":
+    def validate_accounts(self) -> "CashBookEntryCreate":
         if self.entry_type in (CashBookEntryType.expense, CashBookEntryType.income):
-            if self.source_payment_mode is None:
-                raise ValueError("source_payment_mode is required for expense/income entries")
-            if self.dest_payment_mode is not None or self.dest_bank_account_id is not None:
-                raise ValueError("dest_* fields not allowed for expense/income entries")
+            if self.dest_account_id is not None:
+                raise ValueError("dest_account_id is not allowed for expense/income entries")
         elif self.entry_type == CashBookEntryType.transfer:
-            if self.source_payment_mode is None or self.dest_payment_mode is None:
-                raise ValueError("transfer requires source_payment_mode and dest_payment_mode")
-            if (
-                self.source_payment_mode == self.dest_payment_mode == CashBookSourceMode.cash
-            ):
-                raise ValueError("Cash to cash transfer is not allowed")
-            if (
-                self.source_payment_mode == CashBookSourceMode.bank
-                and self.dest_payment_mode == CashBookSourceMode.bank
-                and self.source_bank_account_id is not None
-                and self.dest_bank_account_id is not None
-                and self.source_bank_account_id == self.dest_bank_account_id
-            ):
-                raise ValueError("Source and destination bank accounts must differ")
-        if self.source_payment_mode == CashBookSourceMode.bank and self.source_bank_account_id is None:
-            raise ValueError("source_bank_account_id is required when source is bank")
-        if self.source_payment_mode == CashBookSourceMode.cash and self.source_bank_account_id is not None:
-            raise ValueError("source_bank_account_id must be null when source is cash")
-        if self.dest_payment_mode == CashBookSourceMode.bank and self.dest_bank_account_id is None:
-            raise ValueError("dest_bank_account_id is required when destination is bank")
-        if self.dest_payment_mode == CashBookSourceMode.cash and self.dest_bank_account_id is not None:
-            raise ValueError("dest_bank_account_id must be null when destination is cash")
+            if self.dest_account_id is None:
+                raise ValueError("dest_account_id is required for transfers")
+            if self.source_account_id == self.dest_account_id:
+                # Same Cash wallet transfer is allowed (net zero); same bank id rejected in service.
+                pass
         return self
 
 
@@ -1659,6 +1665,13 @@ class CashBookEntryOut(BaseModel):
     reference_no: str | None = None
     bill_id: int | None = None
     bill_number: str | None = None
+    source_account_id: int
+    source_account_name: str | None = None
+    source_account_kind: BankAccountKind | None = None
+    dest_account_id: int | None = None
+    dest_account_name: str | None = None
+    dest_account_kind: BankAccountKind | None = None
+    # Derived display compat (from account.kind).
     source_payment_mode: CashBookSourceMode | None = None
     source_bank_account_id: int | None = None
     source_bank_account_name: str | None = None

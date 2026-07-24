@@ -432,14 +432,15 @@ class Payment(Base):
     bill_id: Mapped[int] = mapped_column(ForeignKey("bills.id", ondelete="CASCADE"), nullable=False)
     amount: Mapped[Decimal] = mapped_column(MONEY, nullable=False)
     payment_mode: Mapped[PaymentMode] = mapped_column(Enum(PaymentMode, name="payment_mode_enum"), nullable=False)
-    bank_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id"), nullable=True)
+    # Spec v17.2.4 — money source for cash|bank; null for credit/debit/setoff.
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id"), nullable=True)
     paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     linked_payment_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id"), nullable=True)
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     bill: Mapped[Bill] = relationship(back_populates="payments")
-    bank_account: Mapped["BankAccount | None"] = relationship(foreign_keys=[bank_account_id])
+    account: Mapped["BankAccount | None"] = relationship(foreign_keys=[account_id])
     linked_payment: Mapped["Payment | None"] = relationship(
         remote_side="Payment.id",
         foreign_keys=[linked_payment_id],
@@ -450,7 +451,7 @@ class Payment(Base):
     )
 
     __table_args__ = (
-        Index("ix_payments_bank_account_id", "bank_account_id"),
+        Index("ix_payments_account_id", "account_id"),
     )
 
 
@@ -1153,24 +1154,9 @@ class CashBookEntry(Base):
     description: Mapped[str | None] = mapped_column(String(500))
     reference_no: Mapped[str | None] = mapped_column(String(100))
     bill_id: Mapped[int | None] = mapped_column(ForeignKey("bills.id"), nullable=True)
-    source_payment_mode: Mapped[CashBookSourceMode | None] = mapped_column(
-        Enum(
-            CashBookSourceMode,
-            name="cash_book_source_mode_enum",
-            values_callable=lambda obj: [e.value for e in obj],
-        ),
-        nullable=True,
-    )
-    source_bank_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id"), nullable=True)
-    dest_payment_mode: Mapped[CashBookSourceMode | None] = mapped_column(
-        Enum(
-            CashBookSourceMode,
-            name="cash_book_dest_mode_enum",
-            values_callable=lambda obj: [e.value for e in obj],
-        ),
-        nullable=True,
-    )
-    dest_bank_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id"), nullable=True)
+    # Spec v17.2.4 — money accounts are the only source/dest FKs (legacy mode columns dropped).
+    source_account_id: Mapped[int] = mapped_column(ForeignKey("bank_accounts.id"), nullable=False)
+    dest_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id"), nullable=True)
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)
     entry_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1179,15 +1165,15 @@ class CashBookEntry(Base):
 
     category: Mapped["ExpenseCategory"] = relationship()
     bill: Mapped["Bill | None"] = relationship()
-    source_bank_account: Mapped["BankAccount | None"] = relationship(foreign_keys=[source_bank_account_id])
-    dest_bank_account: Mapped["BankAccount | None"] = relationship(foreign_keys=[dest_bank_account_id])
+    source_account: Mapped["BankAccount"] = relationship(foreign_keys=[source_account_id])
+    dest_account: Mapped["BankAccount | None"] = relationship(foreign_keys=[dest_account_id])
 
     __table_args__ = (
         Index("ix_cash_book_entry_date", "entry_date"),
         Index("ix_cash_book_entry_type", "entry_type"),
         Index("ix_cash_book_category_id", "category_id"),
-        Index("ix_cash_book_source_bank_id", "source_bank_account_id"),
-        Index("ix_cash_book_dest_bank_id", "dest_bank_account_id"),
+        Index("ix_cash_book_source_account_id", "source_account_id"),
+        Index("ix_cash_book_dest_account_id", "dest_account_id"),
         Index("ix_cash_book_bill_id", "bill_id"),
         Index("ix_cash_book_voided_at", "voided_at"),
         CheckConstraint("amount > 0", name="ck_cash_book_amount_positive"),

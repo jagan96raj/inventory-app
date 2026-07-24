@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import AppShell from "./components/AppShell";
 import RequireAuth from "./components/RequireAuth";
@@ -51,6 +51,13 @@ import PendingAccessPage from "./pages/PendingAccessPage";
 import UsersPage from "./pages/UsersPage";
 import CompanyRegisterPage from "./pages/CompanyRegisterPage";
 import ProfilePage from "./pages/ProfilePage";
+
+/** Remount when landing with ?created= so a fresh list always mounts. */
+function CashBookListRoute() {
+  const { search } = useLocation();
+  const created = new URLSearchParams(search).get("created") ?? "list";
+  return <CashBookListPage key={created} />;
+}
 
 export default function App() {
   return (
@@ -142,7 +149,7 @@ export default function App() {
             <Route path="/accounts/customers/:id" element={<CustomerStatementPage />} />
           </Route>
           <Route element={<RequireRole permission="cashbook_manage" />}>
-            <Route path="/accounts/cashbook" element={<CashBookListPage />} />
+            <Route path="/accounts/cashbook" element={<CashBookListRoute />} />
             <Route path="/accounts/cashbook/new" element={<CashBookEntryFormPage />} />
             <Route path="/accounts/cashbook/:id/edit" element={<CashBookEntryFormPage />} />
           </Route>
