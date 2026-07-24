@@ -596,7 +596,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                       <section key={date} className="space-y-3" aria-labelledby={`bills-date-m-${date}`}>
                         <header
                           id={`bills-date-m-${date}`}
-                          className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-surface-muted/80 px-4 py-3"
                         >
                           <div className="flex items-center gap-2.5">
                             <div
@@ -639,7 +639,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
               onPageChange={setOffset}
             />
 
-            <Card className={cn("hidden overflow-hidden border-line/80 lg:block", theme.filterGradient)}>
+            <Card className={cn("hidden border-line/80 lg:block", theme.filterGradient)}>
               <CardHeader
                 title={isSales ? "Sales bills" : "Purchase bills"}
                 subtitle={
@@ -648,7 +648,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                     : `${rows.length} bill${rows.length === 1 ? "" : "s"} on this page · grouped by date`
                 }
               />
-              <CardBody className="space-y-5 p-4 pt-0 sm:p-5">
+              <CardBody className="space-y-8 p-4 pt-0 sm:p-5">
                 {loading ? (
                   <Table
                     columns={columns}
@@ -656,6 +656,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                     rowKey={(b) => b.id}
                     loading
                     zebra
+                    stickyHeader={false}
                     headerClassName={theme.tableHeader}
                     className="rounded-2xl border-line/80"
                     caption={`${isSales ? "Sales" : "Purchase"} bills`}
@@ -667,7 +668,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                       <section key={date} className="space-y-3" aria-labelledby={`bills-date-${date}`}>
                         <header
                           id={`bills-date-${date}`}
-                          className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm sm:px-5"
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface-muted/80 px-4 py-3 sm:px-5"
                         >
                           <div className="flex items-center gap-2.5">
                             <div
@@ -691,6 +692,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                           rows={dayBills}
                           rowKey={(b) => b.id}
                           zebra
+                          stickyHeader={false}
                           headerClassName={theme.tableHeader}
                           className="rounded-2xl border-line/80 bg-surface/60"
                           caption={`${isSales ? "Sales" : "Purchase"} bills for ${label}`}
