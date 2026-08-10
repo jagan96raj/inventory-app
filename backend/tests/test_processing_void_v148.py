@@ -206,6 +206,104 @@ class ProcessingVoidV148Tests(unittest.TestCase):
         self.assertEqual(job.status, ProcessingJobStatus.open)
         self.assertIsNone(job.completed_at)
 
+    def test_complete_empty_open_job(self):
+        """Open job with no active batches may be completed to free the open slot."""
+        job = self._create_job()
+        payload = _zero_batch()
+        payload["input_lines"] = [_input_line(self.m, 4)]
+        submit_batch(self.db, job.id, **payload)
+        batch = self.db.scalars(select(ProcessingBatch).where(ProcessingBatch.job_id == job.id)).one()
+        void_processing_batch(self.db, batch.id)
+
+        job = complete_job(self.db, job.id, **_zero_batch())
+        self.assertEqual(job.status, ProcessingJobStatus.completed)
+        self.assertIsNotNone(job.completed_at)
+        summary = compute_processing_summary(job)
+        self.assertEqual(summary["batch_count"], 0)
+        self.assertEqual(summary["total_fresh_input_kg"], Decimal("0"))
+
+    def test_void_completed_job_auto_closes_empty_other_open_and_reopens(self):
+        """Empty open sibling is auto-closed so completed-job void can reopen."""
+        job = self._create_job()
+        payload = _zero_batch()
+        payload["input_lines"] = [_input_line(self.m, 10)]
+        submit_batch(self.db, job.id, **payload)
+        balance_payload = _zero_batch()
+        balance_payload["balance_return_lines"] = [
+            {
+                "location_id": self.m["location"].id,
+                "bag_type_id": self.m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("134.900"),
+            }
+        ]
+        submit_batch(self.db, job.id, **balance_payload)
+        complete_job(self.db, job.id, **_zero_batch())
+
+        other = create_job(
+            self.db,
+            input_product_id=self.m["product"].id,
+            input_brand_id=self.m["brand"].id,
+        )
+        self.assertEqual(other.status, ProcessingJobStatus.open)
+
+        batch = self.db.scalars(
+            select(ProcessingBatch)
+            .where(ProcessingBatch.job_id == job.id)
+            .order_by(ProcessingBatch.id.desc())
+        ).first()
+        assert batch is not None
+        void_processing_batch(self.db, batch.id)
+
+        job = load_processing_job(self.db, job.id)
+        self.assertEqual(job.status, ProcessingJobStatus.open)
+        self.assertIsNone(job.completed_at)
+        other = load_processing_job(self.db, other.id)
+        self.assertEqual(other.status, ProcessingJobStatus.completed)
+        self.db.refresh(batch)
+        self.assertIsNotNone(batch.voided_at)
+
+        inv = self.db.scalar(
+            select(Inventory).where(
+                Inventory.product_id == self.m["product"].id,
+                Inventory.brand_id == self.m["brand"].id,
+                Inventory.bag_type_id == self.m["bag_loose"].id,
+            )
+        )
+        if inv is not None:
+            self.assertEqual(inv.quantity_kg, Decimal("0.000"))
+
+    def test_void_completed_job_rejects_when_other_open_has_batches(self):
+        job = self._create_job()
+        payload = _zero_batch()
+        payload["input_lines"] = [_input_line(self.m, 10)]
+        submit_batch(self.db, job.id, **payload)
+        complete_job(self.db, job.id, **_zero_batch())
+
+        other = create_job(
+            self.db,
+            input_product_id=self.m["product"].id,
+            input_brand_id=self.m["brand"].id,
+        )
+        other_payload = _zero_batch()
+        other_payload["input_lines"] = [_input_line(self.m, 2)]
+        submit_batch(self.db, other.id, **other_payload)
+
+        batch = self.db.scalars(
+            select(ProcessingBatch)
+            .where(ProcessingBatch.job_id == job.id)
+            .order_by(ProcessingBatch.id.desc())
+        ).first()
+        assert batch is not None
+        with self.assertRaises(ValueError) as ctx:
+            void_processing_batch(self.db, batch.id)
+        self.assertIn("another open processing job", str(ctx.exception))
+
+        job = load_processing_job(self.db, job.id)
+        self.assertEqual(job.status, ProcessingJobStatus.completed)
+        self.db.refresh(batch)
+        self.assertIsNone(batch.voided_at)
+
     def test_double_void_rejected(self):
         job = self._create_job()
         payload = _zero_batch()

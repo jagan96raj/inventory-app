@@ -13,8 +13,13 @@ from app.models.entities import (
     BillStatus,
     BillType,
     Brand,
+    CashBookEntry,
+    CashBookEntryType,
     Customer,
     DeliveryStatus,
+    JobWorkLine,
+    JobWorkOrder,
+    JobWorkOrderStatus,
     Location,
     PaymentStatus,
     Product,
@@ -28,6 +33,28 @@ def q_kg(value: Decimal | float | int | str | None) -> Decimal:
 def month_date_range(year: int, month: int) -> tuple[date, date]:
     last_day = monthrange(year, month)[1]
     return date(year, month, 1), date(year, month, last_day)
+
+
+def fiscal_year_start_year(year: int, month: int) -> int:
+    """Indian FY starts 1 Apr. Apr–Dec belong to that calendar year; Jan–Mar to the previous."""
+    return year if month >= 4 else year - 1
+
+
+def fiscal_year_date_range(start_year: int) -> tuple[date, date]:
+    """FY start_year → start_year+1: 1 Apr start_year through 31 Mar start_year+1."""
+    return date(start_year, 4, 1), date(start_year + 1, 3, 31)
+
+
+def fiscal_year_months(start_year: int) -> list[tuple[int, int]]:
+    """Twelve (year, month) pairs from Apr of start_year through Mar of start_year+1."""
+    months: list[tuple[int, int]] = []
+    for m in range(4, 13):
+        months.append((start_year, m))
+    for m in range(1, 4):
+        months.append((start_year + 1, m))
+    return months
+
+
 def prev_year_month(year: int, month: int) -> tuple[int, int]:
     if month == 1:
         return year - 1, 12
@@ -38,18 +65,40 @@ def pct_change(current: Decimal, previous: Decimal) -> Decimal | None:
             return q_money(0)
         return None
     return q_money((current - previous) / previous * 100)
-def _bill_filters(year: int, month: int, bill_type: BillType, company_id: int = 1):
+def _bill_filters(
+    year: int,
+    month: int,
+    bill_type: BillType,
+    company_id: int = 1,
+    *,
+    customer_id: int | None = None,
+):
     start, end = month_date_range(year, month)
-    return (
+    filters = [
+        Bill.company_id == company_id,
+        Bill.bill_type == bill_type,
+        Bill.status == BillStatus.finalized,
+        Bill.bill_date >= start,
+        Bill.bill_date <= end,
+    ]
+    if customer_id is not None:
+        filters.append(Bill.customer_id == customer_id)
+    return tuple(filters)
+def _range_bill_totals(
+    db: Session,
+    start: date,
+    end: date,
+    bill_type: BillType,
+    company_id: int = 1,
+) -> dict:
+    """Bill-date totals for one bill type over an inclusive date range."""
+    filters = (
         Bill.company_id == company_id,
         Bill.bill_type == bill_type,
         Bill.status == BillStatus.finalized,
         Bill.bill_date >= start,
         Bill.bill_date <= end,
     )
-def _month_bill_totals(db: Session, year: int, month: int, bill_type: BillType, company_id: int = 1) -> dict:
-    """Bill-date totals for one bill type (v11.1 primary metrics)."""
-    filters = _bill_filters(year, month, bill_type, company_id)
     row = db.execute(
         select(
             func.coalesce(func.sum(Bill.grand_total), 0),
@@ -78,6 +127,12 @@ def _month_bill_totals(db: Session, year: int, month: int, bill_type: BillType, 
         "qty_ordered_kg": qty_ordered_kg,
         "bags_ordered": bags_ordered,
     }
+
+
+def _month_bill_totals(db: Session, year: int, month: int, bill_type: BillType, company_id: int = 1) -> dict:
+    """Bill-date totals for one bill type (v11.1 primary metrics)."""
+    start, end = month_date_range(year, month)
+    return _range_bill_totals(db, start, end, bill_type, company_id)
 def _month_sales_legacy_totals(db: Session, year: int, month: int, company_id: int = 1) -> dict:
     """Legacy v11 sales summary including collected/due (sales-summary endpoint only)."""
     start, end = month_date_range(year, month)
@@ -120,14 +175,80 @@ def _month_sales_legacy_totals(db: Session, year: int, month: int, company_id: i
         "total_due": total_due,
         "avg_bill_value": avg_bill_value,
     }
+def _month_expense_total(db: Session, year: int, month: int, company_id: int = 1) -> Decimal:
+    """Active cash-book expense entries dated in the month."""
+    start, end = month_date_range(year, month)
+    return _range_expense_total(db, start, end, company_id)
+
+
+def _range_expense_total(db: Session, start: date, end: date, company_id: int = 1) -> Decimal:
+    """Active cash-book expense entries dated in an inclusive range."""
+    total = db.execute(
+        select(func.coalesce(func.sum(CashBookEntry.amount), 0)).where(
+            CashBookEntry.company_id == company_id,
+            CashBookEntry.entry_type == CashBookEntryType.expense,
+            CashBookEntry.voided_at.is_(None),
+            CashBookEntry.entry_date >= start,
+            CashBookEntry.entry_date <= end,
+        )
+    ).scalar_one()
+    return q_money(total)
+
+
 def get_business_summary(db: Session, year: int, month: int, company_id: int = 1) -> dict:
     sales = _month_bill_totals(db, year, month, BillType.sales, company_id)
     purchase = _month_bill_totals(db, year, month, BillType.purchase, company_id)
+    expense_total = _month_expense_total(db, year, month, company_id)
+    gross_profit = q_money(sales["bill_amount"] - purchase["bill_amount"] - expense_total)
     return {
         "year": year,
         "month": month,
         "sales": sales,
         "purchase": purchase,
+        "expense_total": expense_total,
+        "gross_profit": gross_profit,
+    }
+
+
+def get_fiscal_year_summary(db: Session, start_year: int, company_id: int = 1) -> dict:
+    """April–March fiscal year: sales, purchase, expense, and gross profit (sales − purchase − expense)."""
+    if start_year < 2000 or start_year > 2100:
+        raise ValueError("fiscal year start must be between 2000 and 2100")
+    start, end = fiscal_year_date_range(start_year)
+    sales = _range_bill_totals(db, start, end, BillType.sales, company_id)
+    purchase = _range_bill_totals(db, start, end, BillType.purchase, company_id)
+    expense_total = _range_expense_total(db, start, end, company_id)
+    gross_profit = q_money(sales["bill_amount"] - purchase["bill_amount"] - expense_total)
+
+    months: list[dict] = []
+    for y, m in fiscal_year_months(start_year):
+        m_sales = _month_bill_totals(db, y, m, BillType.sales, company_id)
+        m_purchase = _month_bill_totals(db, y, m, BillType.purchase, company_id)
+        m_expense = _month_expense_total(db, y, m, company_id)
+        months.append(
+            {
+                "year": y,
+                "month": m,
+                "sales_amount": m_sales["bill_amount"],
+                "purchase_amount": m_purchase["bill_amount"],
+                "expense_total": m_expense,
+                "gross_profit": q_money(
+                    m_sales["bill_amount"] - m_purchase["bill_amount"] - m_expense
+                ),
+            }
+        )
+
+    return {
+        "start_year": start_year,
+        "end_year": start_year + 1,
+        "label": f"FY {start_year}-{str(start_year + 1)[2:]}",
+        "date_from": start,
+        "date_to": end,
+        "sales": sales,
+        "purchase": purchase,
+        "expense_total": expense_total,
+        "gross_profit": gross_profit,
+        "months": months,
     }
 def _business_compare_from_totals(
     cur_sales: dict,
@@ -188,26 +309,25 @@ def get_dashboard_bundle(
     bill_type: BillType,
     group_by: str,
     company_id: int = 1,
+    *,
+    customer_id: int | None = None,
 ) -> dict:
-    cur_sales = _month_bill_totals(db, year, month, BillType.sales, company_id)
-    cur_purchase = _month_bill_totals(db, year, month, BillType.purchase, company_id)
-    summary = {
-        "year": year,
-        "month": month,
-        "sales": cur_sales,
-        "purchase": cur_purchase,
-    }
-    py, pm = prev_year_month(year, month)
-    prev_sales = _month_bill_totals(db, py, pm, BillType.sales, company_id)
-    prev_purchase = _month_bill_totals(db, py, pm, BillType.purchase, company_id)
-    compare = _business_compare_from_totals(cur_sales, cur_purchase, prev_sales, prev_purchase)
+    summary = get_business_summary(db, year, month, company_id)
+    compare = get_business_compare(db, year, month, company_id)
+    fy_start = fiscal_year_start_year(year, month)
     return {
         "summary": summary,
         "compare": compare,
+        "fiscal_year": get_fiscal_year_summary(db, fy_start, company_id),
         "daily": get_daily_bill_amounts(db, year, month, company_id),
-        "by_product": get_bills_by_product(db, year, month, bill_type, group_by, company_id),
+        "by_product": get_bills_by_product(
+            db, year, month, bill_type, group_by, company_id, customer_id=customer_id
+        ),
         "by_customer": get_bills_by_customer(db, year, month, bill_type, limit=10, company_id=company_id),
         "by_location": get_bills_by_location(db, year, month, bill_type, company_id),
+        "job_work": get_job_work_by_product(
+            db, year, month, group_by, company_id, customer_id=customer_id
+        ),
     }
 def get_sales_summary(db: Session, year: int, month: int, company_id: int = 1) -> dict:
     current = _month_sales_legacy_totals(db, year, month, company_id)
@@ -243,9 +363,16 @@ def get_sales_compare(db: Session, year: int, month: int, company_id: int = 1) -
         },
     }
 def get_bills_by_product(
-    db: Session, year: int, month: int, bill_type: BillType, group_by: str, company_id: int = 1
+    db: Session,
+    year: int,
+    month: int,
+    bill_type: BillType,
+    group_by: str,
+    company_id: int = 1,
+    *,
+    customer_id: int | None = None,
 ) -> dict:
-    filters = _bill_filters(year, month, bill_type, company_id)
+    filters = _bill_filters(year, month, bill_type, company_id, customer_id=customer_id)
     lines_subtotal = q_money(
         db.execute(
             select(func.coalesce(func.sum(BillLine.line_total), 0))
@@ -337,8 +464,118 @@ def get_bills_by_product(
         "group_by": group_by,
         "bill_type": bill_type.value,
     }
-def get_sales_by_product(db: Session, year: int, month: int, group_by: str, company_id: int = 1) -> dict:
-    return get_bills_by_product(db, year, month, BillType.sales, group_by, company_id)
+def _job_work_filters(year: int, month: int, company_id: int = 1, *, customer_id: int | None = None):
+    """Job orders dated in the month, cancelled orders excluded."""
+    start, end = month_date_range(year, month)
+    filters = [
+        JobWorkOrder.company_id == company_id,
+        JobWorkOrder.status != JobWorkOrderStatus.cancelled,
+        JobWorkOrder.job_date >= start,
+        JobWorkOrder.job_date <= end,
+    ]
+    if customer_id is not None:
+        filters.append(JobWorkOrder.customer_id == customer_id)
+    return tuple(filters)
+
+
+def get_job_work_by_product(
+    db: Session,
+    year: int,
+    month: int,
+    group_by: str,
+    company_id: int = 1,
+    *,
+    customer_id: int | None = None,
+) -> dict:
+    """Job-order quantities per product (+brand): ordered, received, returned, in custody."""
+    filters = _job_work_filters(year, month, company_id, customer_id=customer_id)
+    order_count = int(
+        db.execute(
+            select(func.count(func.distinct(JobWorkOrder.id))).where(*filters)
+        ).scalar_one()
+        or 0
+    )
+
+    qty_cols = (
+        func.coalesce(func.sum(JobWorkLine.ordered_quantity_kg), 0),
+        func.coalesce(func.sum(JobWorkLine.ordered_bags), 0),
+        func.coalesce(func.sum(JobWorkLine.received_quantity_kg), 0),
+        func.coalesce(func.sum(JobWorkLine.returned_quantity_kg), 0),
+    )
+    group_cols = [JobWorkLine.product_id, Product.product_name]
+    select_cols = [JobWorkLine.product_id, Product.product_name]
+    if group_by != "product":
+        group_cols += [JobWorkLine.brand_id, Brand.name]
+        select_cols += [JobWorkLine.brand_id, Brand.name]
+
+    stmt = (
+        select(*select_cols, *qty_cols)
+        .join(JobWorkOrder, JobWorkLine.order_id == JobWorkOrder.id)
+        .join(Product, JobWorkLine.product_id == Product.id)
+        .where(*filters)
+        .group_by(*group_cols)
+        .order_by(func.sum(JobWorkLine.ordered_quantity_kg).desc())
+    )
+    if group_by != "product":
+        stmt = stmt.join(Brand, JobWorkLine.brand_id == Brand.id)
+
+    rows: list[dict] = []
+    total_ordered = Decimal("0")
+    total_received = Decimal("0")
+    total_returned = Decimal("0")
+    total_bags = 0
+    for raw in db.execute(stmt).all():
+        if group_by == "product":
+            product_id, product_name, ordered, bags, received, returned = raw
+            brand_id, brand_name = None, None
+        else:
+            product_id, product_name, brand_id, brand_name, ordered, bags, received, returned = raw
+        ordered = q_kg(ordered)
+        received = q_kg(received)
+        returned = q_kg(returned)
+        bags = int(bags or 0)
+        total_ordered += ordered
+        total_received += received
+        total_returned += returned
+        total_bags += bags
+        rows.append(
+            {
+                "product_id": product_id,
+                "product_name": product_name,
+                "brand_id": brand_id,
+                "brand_name": brand_name,
+                "ordered_quantity_kg": ordered,
+                "ordered_bags": bags,
+                "received_quantity_kg": received,
+                "returned_quantity_kg": returned,
+                "in_custody_kg": q_kg(received - returned),
+            }
+        )
+
+    return {
+        "rows": rows,
+        "order_count": order_count,
+        "ordered_quantity_kg": q_kg(total_ordered),
+        "ordered_bags": total_bags,
+        "received_quantity_kg": q_kg(total_received),
+        "returned_quantity_kg": q_kg(total_returned),
+        "in_custody_kg": q_kg(total_received - total_returned),
+        "group_by": group_by,
+    }
+
+
+def get_sales_by_product(
+    db: Session,
+    year: int,
+    month: int,
+    group_by: str,
+    company_id: int = 1,
+    *,
+    customer_id: int | None = None,
+) -> dict:
+    return get_bills_by_product(
+        db, year, month, BillType.sales, group_by, company_id, customer_id=customer_id
+    )
 def get_bills_by_customer(
     db: Session, year: int, month: int, bill_type: BillType, limit: int = 10, *, company_id: int = 1
 ) -> dict:
@@ -577,8 +814,11 @@ def get_bills_export_csv(
     group_by: str = "product_brand",
     *,
     company_id: int = 1,
+    customer_id: int | None = None,
 ) -> str:
-    data = get_bills_by_product(db, year, month, bill_type, group_by, company_id)
+    data = get_bills_by_product(
+        db, year, month, bill_type, group_by, company_id, customer_id=customer_id
+    )
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Product", "Brand", "Qty ordered (kg)", "Bags", "Line amount INR", "Share %", "Avg rate/kg"])

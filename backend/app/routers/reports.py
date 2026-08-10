@@ -6,7 +6,7 @@ from app.core.permissions import Permission, require_permission
 from app.core.tenant import company_id_for_user
 from app.database import get_db
 from app.models.entities import BillType, User
-from app.schemas import DashboardBundleOut
+from app.schemas import DashboardBundleOut, FiscalYearSummaryOut
 from app.services import reports
 router = APIRouter(
     prefix="/reports",
@@ -33,19 +33,53 @@ def business_summary(
     validate_year_month(year, month)
     company_id = company_id_for_user(user)
     return reports.get_business_summary(db, year, month, company_id)
+
+
+@router.get("/fiscal-year-summary", response_model=FiscalYearSummaryOut)
+def fiscal_year_summary(
+    start_year: int | None = Query(
+        None,
+        ge=2000,
+        le=2100,
+        description="FY start calendar year (e.g. 2025 → 1 Apr 2025–31 Mar 2026). Defaults from year/month.",
+    ),
+    year: int | None = Query(None, description="Optional calendar year to derive FY when start_year omitted"),
+    month: int | None = Query(None, ge=1, le=12, description="Optional calendar month to derive FY"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
+    if start_year is None:
+        if year is None or month is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide start_year, or both year and month to derive the fiscal year",
+            )
+        validate_year_month(year, month)
+        start_year = reports.fiscal_year_start_year(year, month)
+    return reports.get_fiscal_year_summary(db, start_year, company_id)
+
+
 @router.get("/dashboard-bundle", response_model=DashboardBundleOut)
 def dashboard_bundle(
     year: int = Query(...),
     month: int = Query(..., ge=1, le=12),
     bill_type: str = Query("sales", pattern="^(sales|purchase)$"),
     group_by: str = Query("product_brand", pattern="^(product|product_brand)$"),
+    customer_id: int | None = Query(None, ge=1),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     validate_year_month(year, month)
     company_id = company_id_for_user(user)
     return reports.get_dashboard_bundle(
-        db, year, month, parse_bill_type(bill_type), group_by, company_id
+        db,
+        year,
+        month,
+        parse_bill_type(bill_type),
+        group_by,
+        company_id,
+        customer_id=customer_id,
     )
 @router.get("/business-compare")
 def business_compare(
@@ -73,12 +107,21 @@ def bills_by_product(
     month: int = Query(..., ge=1, le=12),
     bill_type: str = Query("sales", pattern="^(sales|purchase)$"),
     group_by: str = Query("product_brand", pattern="^(product|product_brand)$"),
+    customer_id: int | None = Query(None, ge=1),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     validate_year_month(year, month)
     company_id = company_id_for_user(user)
-    return reports.get_bills_by_product(db, year, month, parse_bill_type(bill_type), group_by, company_id)
+    return reports.get_bills_by_product(
+        db,
+        year,
+        month,
+        parse_bill_type(bill_type),
+        group_by,
+        company_id,
+        customer_id=customer_id,
+    )
 @router.get("/by-customer")
 def bills_by_customer(
     year: int = Query(...),
@@ -108,6 +151,7 @@ def bills_export(
     month: int = Query(..., ge=1, le=12),
     bill_type: str = Query("sales", pattern="^(sales|purchase)$"),
     group_by: str = Query("product_brand", pattern="^(product|product_brand)$"),
+    customer_id: int | None = Query(None, ge=1),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -115,7 +159,7 @@ def bills_export(
     company_id = company_id_for_user(user)
     bt = parse_bill_type(bill_type)
     csv_text = reports.get_bills_export_csv(
-        db, year, month, bt, group_by, company_id=company_id
+        db, year, month, bt, group_by, company_id=company_id, customer_id=customer_id
     )
     filename = f"{bill_type}-{year}-{month:02d}.csv"
     return Response(
@@ -138,12 +182,15 @@ def sales_by_product(
     year: int = Query(...),
     month: int = Query(..., ge=1, le=12),
     group_by: str = Query("product_brand", pattern="^(product|product_brand)$"),
+    customer_id: int | None = Query(None, ge=1),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     validate_year_month(year, month)
     company_id = company_id_for_user(user)
-    return reports.get_sales_by_product(db, year, month, group_by, company_id)
+    return reports.get_sales_by_product(
+        db, year, month, group_by, company_id, customer_id=customer_id
+    )
 @router.get("/sales-by-customer")
 def sales_by_customer(
     year: int = Query(...),

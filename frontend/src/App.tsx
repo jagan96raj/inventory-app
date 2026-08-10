@@ -59,6 +59,20 @@ function CashBookListRoute() {
   return <CashBookListPage key={created} />;
 }
 
+/** Remount bill detail after payment create so payments tab shows the new row. */
+function BillDetailRoute({ billType }: { billType: "sales" | "purchase" }) {
+  const { search, pathname } = useLocation();
+  const created = new URLSearchParams(search).get("created") ?? "detail";
+  return <BillDetailPage key={`${pathname}-${created}`} billType={billType} />;
+}
+
+/** Remount payments list when landing with ?created=. */
+function PaymentsListRoute() {
+  const { search } = useLocation();
+  const created = new URLSearchParams(search).get("created") ?? "list";
+  return <PaymentsPage key={created} />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -102,17 +116,17 @@ export default function App() {
           <Route element={<RequireRole permission="bills_manage" />}>
             <Route path="/sales-bills" element={<BillsListPage billType="sales" />} />
             <Route path="/sales-bills/new" element={<BillFormPage billType="sales" />} />
-            <Route path="/sales-bills/:id" element={<BillDetailPage billType="sales" />} />
+            <Route path="/sales-bills/:id" element={<BillDetailRoute billType="sales" />} />
             <Route path="/sales-bills/:id/edit" element={<BillFormPage billType="sales" edit />} />
             <Route path="/sales-bills/:id/payment" element={<PaymentPage billType="sales" />} />
             <Route path="/purchase-bills" element={<BillsListPage billType="purchase" />} />
             <Route path="/purchase-bills/new" element={<BillFormPage billType="purchase" />} />
-            <Route path="/purchase-bills/:id" element={<BillDetailPage billType="purchase" />} />
+            <Route path="/purchase-bills/:id" element={<BillDetailRoute billType="purchase" />} />
             <Route path="/purchase-bills/:id/edit" element={<BillFormPage billType="purchase" edit />} />
             <Route path="/purchase-bills/:id/payment" element={<PaymentPage billType="purchase" />} />
           </Route>
           <Route element={<RequireRole permission="payments_manage" />}>
-            <Route path="/payments" element={<PaymentsPage />} />
+            <Route path="/payments" element={<PaymentsListRoute />} />
             <Route path="/payments/new" element={<PaymentPage />} />
           </Route>
           <Route element={<RequireRole anyOf={["fulfillment_write", "fulfillment_view"]} />}>

@@ -1,4 +1,5 @@
 import { formatInr } from "../lib/format";
+import { formatCustomerName } from "../lib/customerDisplay";
 import AddressSummaryLink from "../components/AddressSummaryLink";
 import PartyMasterCrud from "../components/PartyMasterCrud";
 import { addressFormFields } from "../lib/addressFormFields";
@@ -66,13 +67,43 @@ export default function CustomersPage() {
         },
       ]}
       columns={[
-        { key: "name", label: "Name" },
-        { key: "phone", label: "Phone" },
-        { key: "alternate_phone", label: "Alt. phone" },
+        {
+          key: "name",
+          label: "Name",
+          render: (r) => {
+            const name = formatCustomerName(r.name);
+            return (
+              <span
+                className="block max-w-[14rem] truncate text-sm font-semibold tracking-tight text-ink sm:max-w-[18rem] md:max-w-[22rem]"
+                title={name}
+              >
+                {name}
+              </span>
+            );
+          },
+        },
+        {
+          key: "phone",
+          label: "Phone",
+          render: (r) => (
+            <span className="v2-mono whitespace-nowrap text-sm text-ink">{r.phone || "—"}</span>
+          ),
+        },
+        {
+          key: "alternate_phone",
+          label: "Alt. phone",
+          render: (r) => (
+            <span className="v2-mono whitespace-nowrap text-sm text-ink">
+              {r.alternate_phone || "—"}
+            </span>
+          ),
+        },
         {
           key: "address_line",
           label: "Address",
-          render: (r) => <AddressSummaryLink address={r} title={`${r.name} — address`} />,
+          render: (r) => (
+            <AddressSummaryLink address={r} title={`${formatCustomerName(r.name)} — address`} />
+          ),
         },
         {
           key: "credit_balance",

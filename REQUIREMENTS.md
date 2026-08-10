@@ -1,14 +1,33 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 17 Jul 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.0.6** (Processing snapshot + fulfillment filters + bill form polish); inventory **v14.2.1**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 7 Aug 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.4** (dashboard FY/expenses, cash-book totals, bills product filter, payments UX, processing reopen); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
-- **v17.0.6** — UI/data polish to match current app behavior: Processing job snapshot simplified (removed reprocess/output/allowance rows; replaced net unclean with latest balance return; powder hover aligned and powder location block removed), Fulfillment bills now support product + brand filters, and Bill form layout/line-item UX updates (customer row placement, no numbered field labels, quantity before rate, unified field sizing, and products-billed counter between line items and totals). See **Spec v17.0.6** below.
+- **v17.3.4** — UX polish matching live lists: bills list `product_id` filter (`EXISTS` line); payments list newest-first + post-create `?created=` highlight (`paymentCreated`); cash-book / payments tables `stickyHeader={false}`; `formatCustomerName` collapses whitespace on Customers / balances / statement. See **Spec v17.3.4** below.
+- **v17.3.3** — Cash book list: filter card above table (incl. money **Account** filter); response totals `amount_total` / `expense_total` / `income_total` / `transfer_total` over full filtered set (not page only); KPI cards between filters and table; post-create “Just recorded” highlight. See **Spec v17.3.3** below.
+- **v17.3.2** — Dashboard reflects current app: month KPIs = Sales / Purchase / **Expenses (cash book)** / **Gross profit** (`sales − purchase − expenses`); Indian **FY Apr–Mar** strip + monthly table via bundle `fiscal_year` and `GET /api/reports/fiscal-year-summary`; **Job order** qty breakdown (`job_work`); optional `customer_id` on product + JW sections only; qty-first tables (no money columns / charts / MoM strip in UI). See **Spec v17.3.2** below.
+- **v17.3.1** — Processing: voiding a batch on a **completed** job **always reopens** it. Empty open sibling for same product/brand is auto-closed in the same void; non-empty open sibling → **400**. Open jobs with **zero active batches** may be closed (UI **Close empty process**). Snapshot metrics = active batches only. See **Spec v17.3.1** below.
+- **v17.3.0** — Processing Job snapshot UI: Fresh in, latest balance return, output-by-brand, powder (hover), waste excl. powder, misc, total loss (no reprocess/allowance/net-unclean rows); fulfillment bills product + brand filters; bill form layout/line UX (customer row, qty before rate, products-billed counter). See **Spec v17.3.0** below.
+- **v17.2.4** — Money accounts cutover: `source_account_id` required on cash book; drop legacy cash/bank mode + bank FK columns on cash book; drop `payments.bank_account_id` (keep `payment_mode` + `account_id`). Migration `060`. See **Spec v17.2.4** below.
+- **v17.2.3** — Money accounts API: `GET/POST /api/bank-accounts?kind=bank|cash|all`; Cash opening edits sync `book_settings`; Payment + Cash Book forms pick unified accounts. See **Spec v17.2.3** below.
+- **v17.2.2** — Account balances from unified FKs (`get_account_balance`: opening ± payments ± cash-book ± transfers; voids excluded). See **Spec v17.2.2** below.
+- **v17.2.1** — Dual-write `payments.account_id` + cash-book `source_account_id`/`dest_account_id` (migration `059`). See **Spec v17.2.1** below.
+- **v17.2.0** — `bank_accounts.kind` (`cash`|`bank`); one Cash account per company seeded from book settings (migration `058`). See **Spec v17.2.0** below.
+- **v17.1.5** — `jw_number_counters` PK = `company_id` (migration `057`; fixes 2nd-company JW counter UniqueViolation). Also: bill money fields always persist at **2 decimal places**. See **Spec v17.1.5** below.
+- **v17.1.4** — Idempotency unique on `(user_id, idempotency_key, route_key)` (migration `056`). See **Spec v17.1.4** below.
+- **v17.1.3** — Seed expense/income/transfer categories for every company; system transfer label **Transfer** (migration `055`). See **Spec v17.1.3** below.
+- **v17.1.2** — At most one default bank account **per company** (migration `054`). See **Spec v17.1.2** below.
+- **v17.1.1** — Expense-category active-name uniqueness scoped by `company_id` (migration `053`). See **Spec v17.1.1** below.
+- **v17.1.0** — Drop till opening/closing snapshot columns on payments/cash book (migration `052`). See **Spec v17.1.0** below.
+- **v17.0.9** — *(superseded by v17.1.0)* Till balance snapshot columns (migration `051`). Not live behavior. See **Spec v17.0.9** below.
+- **v17.0.8** — Widen `book_settings.company_address_line` to 2000 (migration `050`). See **Spec v17.0.8** below.
+- **v17.0.7** — Optional `bills.notes` on create/edit/list/detail/print (migration `049`). See **Spec v17.0.7** below.
+- **v17.0.6** — Detailed company address + GSTIN on `companies` (line2, district, state, PIN, GSTIN; migration `048`); Profile / register / bill-print. See **Spec v17.0.6** below.
 - **v17.0.5** — Profile page at `/profile`: logged-in person (view) + company details; company editable by owner only via `PATCH /api/companies/me`; syncs `book_settings` company_* for bill print. Removed company header from Book Settings UI (cash opening + powder unchanged). Topbar Profile no longer goes to Home. See **Spec v17.0.5** below.
 - **v17.0.4** — Multi-tenant Phase 5: `POST /api/companies/register` creates company + owner (`role=owner`) atomically; seeds per-company book settings + bill/JW counters; feature flag `ALLOW_COMPANY_REGISTRATION` (default false); `/register` UI. Existing staff allowlist (`ALLOWED_EMAILS`) unchanged for Raj Agro lockdown. See **Spec v17.0.4** below.
 - **v17.0.3** — Multi-tenant Phase 4: per-company `book_settings`, `bill_number_counters`, and `jw_number_counters` (migration `047`); remove Phase 3 default-company-only book-settings guard; bill/JW numbers and cash opening isolated per company; Raj Agro sequences preserved. Registration still deferred (Phase 5). See **Spec v17.0.3** below.
@@ -84,18 +103,18 @@
 | Area | Spec | Implementation |
 |------|------|----------------|
 | Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0** | `routers/auth.py`, `/login`, `/signup`, JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; `company_id` on user |
-| Multi-tenant | **v17.0.0**–**v17.0.5** | Phase 1–5 multi-tenant + Profile company header ownership (owner edits on `/profile`; bill print via `companies` + synced `book_settings` company_*) |
-| Dashboard | v11.1, **v15.5.1**, **v16.0.2** | `services/reports.py`, `DashboardPage.tsx` — bill-date KPIs; `dashboard-bundle` single API call |
-| Processing | v9–v9.4, **v14.0**, **v14.4**, **v14.4.1**, **v14.4.2**, **v14.5**, **v14.6**, **v14.6.1**, **v14.7**, **v15.5.1**, **v16.0** | `services/processing.py`; list aggregate summary; detail full batches |
-| Payments | v5.1–v5.4, v12.12, v13.2 | `services/payments.py`, void + set-off cascade; `VoidConfirmDialog` + `X-Void-Authorization` |
-| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1** | sales lines: `stock_source`; auto `line_charge_type`; `BillFormPage` job work stock pickers |
-| Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2** | deliver/return owner-aware; audit log API + `/histories/fulfillment`; JW stock-on-hand fix on deliver |
+| Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
+| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2** | `dashboard-bundle` (+ `fiscal_year`, `job_work`); expenses + gross profit; qty-first UI |
+| Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1** | list aggregates; snapshot UI; void reopen + close empty |
+| Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight |
+| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4** | sales lines: `stock_source`; notes; list `product_id` filter; form UX |
+| Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0** | deliver/return; audit log; product + brand filters on bills list |
 | Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment |
-| Customers | v12.2, v13.2, **v14.0** | `party_type` internal/external; mixed processing rules |
+| Customers | v12.2, v13.2, **v14.0**, **v17.3.4** | `party_type`; `formatCustomerName` display |
 | Job Work orders | **v14.0**, **v14.3** | `services/job_work.py`, `routers/job_work.py`, JW-000001 counter; `/job-work` list/create/detail; activity log (receive + return events) |
 | Job Work fulfillment | **v14.0**, **v14.3** | `GET /api/job-work/fulfillment/orders`; receive/return/void receive on `/job-work/fulfillment`; `entry_type` on receipt rows — **not** bill `/fulfillment` |
 | Operations | v7, v12.17, **v14.1** | bag change / transfer / disposal owner-aware; `StockOwnerFields`; migration 026 |
-| Accounts | v12.21, v13.2 | bank list returns `balance` (closing); dashboard `Stat` tiles + full-width single-line tables; cash book aligned tables |
+| Accounts | v12.21, v13.2, **v17.1.1**–**v17.1.3**, **v17.2.0**–**v17.2.4**, **v17.3.3** | unified money accounts (`kind` + `account_id`); cash book filter totals |
 | Cleanup | v12.6 | Removed legacy `bill_service`, `fulfillment_service`, `inventory_calc`, `models.py` |
 
 **Stack:** React + Vite + TypeScript (port 5173) | FastAPI (port 8000) | PostgreSQL | `VITE_API_URL` optional (Vite proxy recommended)
@@ -166,6 +185,22 @@
 | 042 | v16.0.6 | `login_events` (login history) |
 | 043 | v16.0.7 | `users.is_active` (disable user / soft ban) |
 | 044 | v16.0.9 | `book_settings` company header (bill print) |
+| 045 | v17.0.0 | `companies`; `users.company_id` |
+| 046 | v17.0.1 | `company_id` on business tables + per-company uniques |
+| 047 | v17.0.3 | per-company `book_settings`, bill/JW counters |
+| 048 | v17.0.6 | `companies` address_line_2, district, state, pin_code, gstin |
+| 049 | v17.0.7 | `bills.notes` |
+| 050 | v17.0.8 | widen `book_settings.company_address_line` to 2000 |
+| 051 | v17.0.9 | *(superseded)* till opening/closing on payments + cash book |
+| 052 | v17.1.0 | drop till balance columns |
+| 053 | v17.1.1 | expense category unique active name per company |
+| 054 | v17.1.2 | default bank unique per company |
+| 055 | v17.1.3 | seed expense categories for all companies |
+| 056 | v17.1.4 | idempotency unique `(user_id, key, route_key)` |
+| 057 | v17.1.5 | `jw_number_counters` PK = `company_id` |
+| 058 | v17.2.0 | `bank_accounts.kind`; seed Cash per company |
+| 059 | v17.2.1 | `payments.account_id`; cash-book `source_account_id` / `dest_account_id` |
+| 060 | v17.2.4 | drop legacy cash-book mode/bank columns; drop `payments.bank_account_id` |
 
 ## API surface (summary)
 
@@ -185,7 +220,7 @@
 
 **Operations:** `POST/GET /api/operations/bag-change|product-transfer|stock-disposal|processing/…`
 
-**Reports:** `GET /api/reports/dashboard-bundle` (v16.0.2 — all dashboard data); `GET /api/reports/business-*`, `by-*`, `bills-export`; legacy `sales-*` retained
+**Reports:** `GET /api/reports/dashboard-bundle` (v16.0.2 + **v17.3.2** — summary, compare, daily, by_product, by_customer, by_location, **fiscal_year**, **job_work**; optional `customer_id` on product/JW); `GET /api/reports/fiscal-year-summary`; `GET /api/reports/business-*`, `by-*`, `bills-export`; legacy `sales-*` retained
 
 ## Frontend routes (summary)
 
@@ -251,7 +286,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
 | `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). | — |
-| `/dashboard` | `DashboardPage` | 4 KPI cards with `Stat` + sparkline (sales/purchase bill amount, qty ordered), Recharts AreaChart for daily, donut for product mix, MoM compare strip, top-customer/location/product tables, CSV export. | **#9 v11.1** — only bill-date accrual metrics shown; no "Collected/Due" KPIs. |
+| `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (cash book) / Gross profit; FY Apr–Mar strip + monthly table; product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** expenses/FY/JW |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
 | `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
 | `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
@@ -3309,6 +3344,163 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.4 — Bills product filter, payments newest-first, customer name display
+
+**Problem:** Hard to find bills that contain a product; newest payments/cash-book rows were easy to miss under sticky headers; customer names with odd whitespace looked messy.
+
+**Solution:**
+- **Bills list:** `GET /api/bills?product_id=` filters bills with ≥1 line for that product (`EXISTS`); `BillsListPage` AsyncSearchCombobox; applies to list + summary aggregates.
+- **Payments:** list ordered `id DESC`; `PaymentsPage` / bill-detail payments newest-first; after create, `?created=` + `paymentCreated` memory highlights the row; tables use `stickyHeader={false}`.
+- **Customers:** `formatCustomerName` trims/collapses whitespace for display on Customers, Customer Balances, Customer Statement (storage unchanged).
+
+**Files:** `backend/app/routers/bills.py`, `backend/app/routers/payments.py`, `frontend/src/pages/BillsListPage.tsx`, `PaymentsPage.tsx`, `BillDetailPage.tsx`, `lib/paymentCreated.ts`, `lib/customerDisplay.ts`, pages under customers/accounts.
+
+## Spec v17.3.3 — Cash book filter totals + account filter
+
+**Problem:** Cash book page showed only the current page of rows with no filtered totals; filters were easy to miss next to the table.
+
+**Solution:**
+- `GET /api/cashbook` page payload adds `amount_total`, `expense_total`, `income_total`, `transfer_total` summed over **all rows matching filters** (voided rules follow list filters).
+- Optional `account_id` filter matches source or dest money account.
+- UI: filter `Card` above list (Type / Category / Account / voided / dates / Clear); KPI total cards between filters and table; “Just recorded” banner after create.
+
+**Files:** `backend/app/services/cash_book.py`, `routers/cash_book.py`, `schemas.py`, `frontend/src/pages/accounts/CashBookListPage.tsx`.
+
+## Spec v17.3.2 — Dashboard expenses, FY, job work, qty-first UI
+
+**Problem:** Dashboard showed bill-only KPIs and money-heavy product charts; operators needed cash-book expenses, gross profit, fiscal year, and job-order quantities.
+
+**Solution:**
+- **Month summary:** `sales`, `purchase`, `expense_total` (active cash-book **expense** by `entry_date` in month), `gross_profit = sales.bill_amount − purchase.bill_amount − expense_total`.
+- **FY (India Apr–Mar):** `get_fiscal_year_summary(start_year)`; included as `fiscal_year` on dashboard-bundle (FY containing selected month); also `GET /api/reports/fiscal-year-summary`. Fields: label, date range, sales/purchase, expense_total, gross_profit, `months[]`.
+- **Job work:** bundle `job_work` — per product/(brand) ordered/received qty from non-cancelled JW orders with `job_date` in month.
+- **Optional `customer_id`:** filters `by_product` (bills) and `job_work` (orders) only — not summary/FY/top customers/locations.
+- **UI:** 4 month Stats; FY strip + monthly table; product qty table + share bars; job-order table; top customers/locations without amount columns; no AreaChart / sparklines / MoM strip (API may still return `daily`/`compare` unused by main UI).
+
+**Files:** `backend/app/services/reports.py`, `routers/reports.py`, `schemas.py`, `frontend/src/pages/DashboardPage.tsx`, `tests/test_dashboard_bundle_v1602.py`.
+
+## Spec v17.3.1 — Processing void reopen + close empty open job
+
+**Problem:** Voiding on a completed job must reopen it. Unique open-per-product/brand blocked reopen when another empty open job existed; empty open jobs could not be completed (`Cannot complete job without at least one batch`).
+
+**Solution:**
+1. Void on completed job → `status=open`, clear `completed_at`.
+2. If another open job for same product/brand has **zero** active batches → auto-complete it in the same transaction, then reopen.
+3. If that sibling has active batches → **400**, full void txn rolled back.
+4. `POST .../complete` with empty body on open job with no active batches → completed (UI **Close empty process**).
+5. Snapshot / summary use `voided_at IS NULL` only (subtitle: active batches only).
+
+**Files:** `backend/app/services/processing/batch.py`, `frontend/src/pages/ProcessingJobPage.tsx`, `tests/test_processing_void_v148.py`.
+
+## Spec v17.3.0 — Processing snapshot polish + fulfillment/bill form UX
+
+**Change (live UI):** Job snapshot shows Fresh in; latest balance return (hover); output-by-brand; powder stock (hover, location block removed); waste excl. powder; misc; total loss. No reprocess / total-output / allowance / net-unclean rows. Fulfillment bills list: product + brand filters. Bill form: customer row placement, no numbered field labels, quantity before rate, unified sizing, products-billed counter.
+
+**Files:** `ProcessingJobPage.tsx`, fulfillment list pages, `BillFormPage.tsx`.
+
+## Spec v17.2.4 — Drop legacy money modes (cutover)
+
+**Migration:** `060_spec_v1724_drop_legacy_money_modes`  
+**Tests:** `test_money_account_ids_v1721.py`
+
+- Re-backfill account FKs; require company Cash where needed; `cash_book_entries.source_account_id` NOT NULL.
+- Drop cash-book `source_payment_mode`, `dest_payment_mode`, `source_bank_account_id`, `dest_bank_account_id`.
+- Drop `payments.bank_account_id`; keep `payment_mode` + `account_id`.
+- UI/API write only money-account IDs.
+
+## Spec v17.2.3 — Money accounts API + pickers
+
+**Tests:** `test_money_accounts_v1723.py`
+
+- `GET/POST /api/bank-accounts` with `kind=bank` (default) | `cash` | `all`.
+- One Cash per company; editing Cash opening syncs `book_settings.cash_opening_balance`.
+- Payment + cash-book forms use unified account pickers (`lib/moneyAccounts.ts`).
+
+## Spec v17.2.2 — Money-account balances
+
+**Tests:** `test_money_account_balances_v1722.py`
+
+- `get_account_balance(account)` = opening + sales payments − purchase payments + income − expense + transfers in − transfers out (voids excluded), using `account_id` / source+dest FKs.
+- Cash-on-hand / bank / total-bank helpers use the same path.
+
+## Spec v17.2.1 — Money account ID dual-write
+
+**Migration:** `059_spec_v1721_money_account_ids`
+
+- Add `payments.account_id`, `cash_book_entries.source_account_id` / `dest_account_id` (+ FKs/indexes); backfill from legacy mode+bank columns and company Cash.
+
+## Spec v17.2.0 — bank_accounts.kind + Cash seed
+
+**Migration:** `058_spec_v1720_bank_account_kind_cash`  
+**Tests:** `test_unified_money_accounts_v1720.py`
+
+- `bank_accounts.kind` enum `cash`|`bank`; partial unique one Cash per `company_id`.
+- Seed Cash from `book_settings` opening for each company; Cash is never the default bank.
+
+## Spec v17.1.5 — JW counter company PK + bill money 2 dp
+
+**Migration:** `057_spec_v1715_jw_counter_company_pk`  
+**Tests:** `test_bill_money_rounding_v1715.py` (money rounding)
+
+- `jw_number_counters` PK = `company_id` (drop singleton `id=1` default that broke second company).
+- Bill finalize/edit: line amounts, subtotal, discount, adjustment, grand_total persist at **2 decimal places**.
+
+## Spec v17.1.4 — Route-scoped idempotency
+
+**Migration:** `056_spec_v1714_idempotency_route_scoped_unique`
+
+- Unique `(user_id, idempotency_key, route_key)` so the same key may be reused on different routes.
+
+## Spec v17.1.3 — Seed expense categories all companies
+
+**Migration:** `055_spec_v1713_seed_expense_categories_all_companies`
+
+- Seed standard expense/income/transfer categories per company missing them; rename system transfer label to **Transfer**.
+
+## Spec v17.1.2 — Default bank per company
+
+**Migration:** `054_spec_v1712_bank_default_per_company`
+
+- Unique one `is_default` bank account per `company_id`.
+
+## Spec v17.1.1 — Expense category unique per company
+
+**Migration:** `053_spec_v1711_expense_category_company_unique`
+
+- Active name uniqueness: `(company_id, lower(trim(name)))`.
+
+## Spec v17.1.0 — Drop till balances
+
+**Migration:** `052_spec_v1710_drop_till_balances`
+
+- Drop payment/cash-book opening/closing till snapshot columns from v17.0.9.
+
+## Spec v17.0.9 — Till balances (superseded)
+
+**Migration:** `051_spec_v1709_till_balances`
+
+- Added nullable opening/closing balance columns on payments and cash-book entries — **removed in v17.1.0**. Not current app behavior.
+
+## Spec v17.0.8 — Book settings address length
+
+**Migration:** `050_spec_v1708_book_settings_address_len`
+
+- `book_settings.company_address_line` widened to **2000** chars for composed addresses.
+
+## Spec v17.0.7 — Bill notes
+
+**Migration:** `049_spec_v1707_bill_notes`  
+**Tests:** `test_bill_notes_v1707.py`
+
+- Optional `bills.notes` Text; create/edit/list/detail/print; blank → null; UI textarea + notes hover on list.
+
+## Spec v17.0.6 — Company address details + GSTIN
+
+**Migration:** `048_spec_v1706_company_address_details`
+
+- `companies`: `address_line_2`, `district`, `state`, `pin_code`, `gstin`.
+- Profile / register / `PATCH /api/companies/me` / bill-print header use detailed address + GSTIN (prefer `companies` over legacy book_settings header columns).
 
 ## Spec v17.0.5 — Profile & company header ownership
 

@@ -14,6 +14,7 @@ import {
 import { accountsByKind, pickDefaultMoneyAccountId } from "../lib/moneyAccounts";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import { billDueAmount } from "../lib/billAmounts";
+import { rememberPaymentCreated } from "../lib/paymentCreated";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 import { formatInr, localIsoDate, validateDateNotFuture } from "../lib/format";
@@ -192,7 +193,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   const postPayment = async (authorizationPassword?: string) => {
     if (!bill || !idemKeyRef.current || !paymentFields) return;
     const amt = Number(form.amount);
-    await api.post<Payment>(
+    const saved = await api.post<Payment>(
       "/api/payments",
       {
         bill_id: bill.id,
@@ -206,7 +207,9 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
     );
     idemKeyRef.current = null;
     toast.success("Payment recorded");
-    navigate(listPath);
+    // Full document navigation — Electron SPA soft-nav was keeping a stale bill payments view.
+    rememberPaymentCreated(saved);
+    window.location.assign(`${listPath}/${bill.id}?tab=payments&created=${saved.id}`);
   };
 
   const submit = async (e: FormEvent) => {

@@ -472,14 +472,17 @@ def complete_job(
         miscellaneous_waste_kg=miscellaneous_waste_kg,
     )
 
-    if not has_body:
-        batch_count = db.scalar(
-            select(ProcessingBatch.id)
-            .where(ProcessingBatch.job_id == job_id, ProcessingBatch.voided_at.is_(None))
-            .limit(1)
-        )
-        if not batch_count:
-            raise ValueError("Cannot complete job without at least one batch")
+    if not has_body and not _job_has_active_batches(db, job_id):
+        # Empty open job (never recorded, or all batches voided): close to free
+        # the per-product/brand open slot so another completed job can reopen.
+        try:
+            job.status = ProcessingJobStatus.completed
+            job.completed_at = utc_now()
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        return _processing.load_processing_job(db, job_id)
 
     try:
         validate_balance_reprocess(job, input_lines, db)
@@ -522,6 +525,23 @@ def complete_job(
         raise
     return _processing.load_processing_job(db, job_id)
 
+
+def _job_has_active_batches(db: Session, job_id: int) -> bool:
+    return (
+        db.scalar(
+            select(ProcessingBatch.id)
+            .where(ProcessingBatch.job_id == job_id, ProcessingBatch.voided_at.is_(None))
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _close_empty_open_job(db: Session, job: ProcessingJob) -> None:
+    """Complete an open job that has no non-voided batches (frees open unique slot)."""
+    job.status = ProcessingJobStatus.completed
+    job.completed_at = utc_now()
+
 def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch, *, company_id: int) -> None:
     if batch.powder_kg <= 0:
         return
@@ -558,6 +578,27 @@ def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch, *, com
 
 def _reconcile_job_after_batch_void(db: Session, job: ProcessingJob) -> None:
     if job.status == ProcessingJobStatus.completed:
+        # Unique open job per product+brand. Auto-close an empty open sibling
+        # (voided-only / never recorded); block if the other open still has activity.
+        other_open = db.scalar(
+            select(ProcessingJob)
+            .where(
+                ProcessingJob.company_id == job.company_id,
+                ProcessingJob.input_product_id == job.input_product_id,
+                ProcessingJob.input_brand_id == job.input_brand_id,
+                ProcessingJob.status == ProcessingJobStatus.open,
+                ProcessingJob.id != job.id,
+            )
+            .with_for_update()
+        )
+        if other_open is not None:
+            if _job_has_active_batches(db, other_open.id):
+                raise ValueError(
+                    "Cannot reopen this completed job while another open processing job "
+                    "already exists for the same product and brand with recorded batches. "
+                    "Complete that job first (or void its batches and close it), then void again."
+                )
+            _close_empty_open_job(db, other_open)
         job.status = ProcessingJobStatus.open
         job.completed_at = None
     if len(_job_input_owner_keys(db, job)) < 2:
@@ -717,8 +758,23 @@ def void_processing_batch(
         )
 
     batch.voided_at = utc_now()
-    _reconcile_job_after_batch_void(db, job)
-    db.commit()
+    try:
+        _reconcile_job_after_batch_void(db, job)
+        db.commit()
+    except ValueError:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        # Safety net if uq_processing_job_open_input still fires (race with concurrent open).
+        msg = str(getattr(exc, "orig", exc))
+        if "uq_processing_job_open_input" in msg:
+            raise ValueError(
+                "Cannot reopen this completed job while another open processing job "
+                "already exists for the same product and brand. Complete or close the "
+                "other open job first, then void again."
+            ) from exc
+        raise
     result = _processing.load_processing_job(db, job.id)
     if actor is not None:
         from app.services.audit_log import AuditAction, AuditEntityType, record_audit_event

@@ -1234,6 +1234,29 @@ class SalesByProductOut(BaseModel):
     group_by: str
 
 
+class JobWorkProductRowOut(BaseModel):
+    product_id: int
+    product_name: str
+    brand_id: int | None = None
+    brand_name: str | None = None
+    ordered_quantity_kg: Decimal
+    ordered_bags: int
+    received_quantity_kg: Decimal
+    returned_quantity_kg: Decimal
+    in_custody_kg: Decimal
+
+
+class JobWorkByProductOut(BaseModel):
+    rows: list[JobWorkProductRowOut]
+    order_count: int
+    ordered_quantity_kg: Decimal
+    ordered_bags: int
+    received_quantity_kg: Decimal
+    returned_quantity_kg: Decimal
+    in_custody_kg: Decimal
+    group_by: str
+
+
 class SalesCustomerRowOut(BaseModel):
     customer_id: int
     customer_name: str
@@ -1316,6 +1339,32 @@ class BusinessSummaryOut(BaseModel):
     month: int
     sales: BusinessTypeSummaryOut
     purchase: BusinessTypeSummaryOut
+    expense_total: Decimal = Decimal("0.00")
+    # Sales − purchase − cash-book expenses for the month.
+    gross_profit: Decimal = Decimal("0.00")
+
+
+class FiscalYearMonthRowOut(BaseModel):
+    year: int
+    month: int
+    sales_amount: Decimal
+    purchase_amount: Decimal
+    expense_total: Decimal
+    gross_profit: Decimal
+
+
+class FiscalYearSummaryOut(BaseModel):
+    start_year: int
+    end_year: int
+    label: str
+    date_from: date
+    date_to: date
+    sales: BusinessTypeSummaryOut
+    purchase: BusinessTypeSummaryOut
+    expense_total: Decimal
+    # Sales − purchase − cash-book expenses for the fiscal year (1 Apr–31 Mar).
+    gross_profit: Decimal
+    months: list[FiscalYearMonthRowOut] = []
 
 
 class BusinessCompareBucketOut(BaseModel):
@@ -1362,10 +1411,12 @@ class DailyBillAmountsOut(BaseModel):
 class DashboardBundleOut(BaseModel):
     summary: BusinessSummaryOut
     compare: BusinessCompareOut
+    fiscal_year: FiscalYearSummaryOut
     daily: DailyBillAmountsOut
     by_product: SalesByProductOut
     by_customer: SalesByCustomerOut
     by_location: SalesByLocationOut
+    job_work: JobWorkByProductOut
 
 
 class AuditEventOut(BaseModel):
@@ -1688,7 +1739,11 @@ class CashBookEntryOut(BaseModel):
 
 
 class CashBookEntryPageOut(PageOut[CashBookEntryOut]):
-    pass
+    # Amounts for all rows matching the current list filters (not just this page).
+    amount_total: Decimal = Decimal("0.00")
+    expense_total: Decimal = Decimal("0.00")
+    income_total: Decimal = Decimal("0.00")
+    transfer_total: Decimal = Decimal("0.00")
 
 
 class BookSettingsOut(BaseModel):

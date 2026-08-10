@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   Ban,
@@ -28,6 +28,11 @@ import {
   type Payment,
 } from "../api/client";
 import { billDueAmount } from "../lib/billAmounts";
+import {
+  clearRememberedPaymentCreated,
+  mergePaymentIntoBill,
+  readRememberedPaymentCreated,
+} from "../lib/paymentCreated";
 import { formatInr, formatDateTime, formatQtyKg } from "../lib/format";
 import { fulfillmentEntryLabel, fulfillmentQtyLabel } from "../lib/fulfillmentLabels";
 import { paymentModeLabel } from "../lib/statusLabels";
@@ -83,7 +88,13 @@ type VoidTarget =
 
 export default function BillDetailPage({ billType }: { billType: "sales" | "purchase" }) {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const createdParam = searchParams.get("created");
+  const createdId =
+    createdParam && Number.isFinite(Number(createdParam)) ? Number(createdParam) : null;
+  const initialTab = searchParams.get("tab") === "payments" || createdId != null ? "payments" : "overview";
+
   const [bill, setBill] = useState<Bill | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -93,6 +104,7 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
   const [voidPrecheck, setVoidPrecheck] = useState<BillVoidLinkedInfo | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<VoidTarget>(null);
   const [voidAuthError, setVoidAuthError] = useState("");
+  const [highlightedPaymentId, setHighlightedPaymentId] = useState<number | null>(createdId);
   const confirmIdemRef = useRef<string | null>(null);
   const loadRequestIdRef = useRef(0);
 
@@ -110,9 +122,29 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
     setLinkedExpenses([]);
     setVoidPrecheck(null);
     setError("");
-    api
-      .get<Bill>(`/api/bills/${id}`)
-      .then(async (b) => {
+
+    const remembered =
+      createdId != null
+        ? (() => {
+            const p = readRememberedPaymentCreated();
+            return p && Number(p.id) === createdId && Number(p.bill_id) === Number(id) ? p : null;
+          })()
+        : null;
+
+    (async () => {
+      let seedPayment = remembered;
+      if (createdId != null) {
+        try {
+          seedPayment = await api.get<Payment>(`/api/payments/${createdId}?_=${Date.now()}`);
+          if (loadRequestIdRef.current !== requestId) return;
+          setHighlightedPaymentId(seedPayment.id);
+        } catch {
+          /* keep remembered seed if GET fails */
+        }
+      }
+
+      try {
+        const b = await api.get<Bill>(`/api/bills/${id}?_=${Date.now()}`);
         if (loadRequestIdRef.current !== requestId) return;
         if (b.bill_type !== billType) {
           setBill(null);
@@ -122,12 +154,23 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
           setError("Bill type mismatch");
           return;
         }
-        setBill(b);
+        const merged =
+          seedPayment && Number(seedPayment.bill_id) === Number(b.id)
+            ? mergePaymentIntoBill(b, seedPayment)
+            : b;
+        setBill(merged);
         setError("");
+        if (
+          seedPayment &&
+          (merged.payments ?? []).some((p) => Number(p.id) === Number(seedPayment!.id))
+        ) {
+          clearRememberedPaymentCreated(seedPayment.id);
+        }
+
         const entryResults = await Promise.all(
           b.lines.map((line) =>
             api.get<PageOut<FulfillmentEntry>>(
-              `/api/fulfillment/entries?bill_line_id=${line.id}&limit=50&offset=0`
+              `/api/fulfillment/entries?bill_line_id=${line.id}&limit=50&offset=0&_=${Date.now()}`
             )
           )
         );
@@ -152,19 +195,18 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
           if (loadRequestIdRef.current !== requestId) return;
           setVoidPrecheck(null);
         }
-      })
-      .catch((e) => {
+      } catch (e) {
         if (loadRequestIdRef.current !== requestId) return;
         setBill(null);
         setEntriesByLine({});
         setLinkedExpenses([]);
         setVoidPrecheck(null);
-        setError(e.message);
-      })
-      .finally(() => {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
         if (loadRequestIdRef.current === requestId) setLoading(false);
-      });
-  }, [id, billType]);
+      }
+    })();
+  }, [id, billType, createdId]);
 
   useEffect(() => {
     loadBill();
@@ -287,6 +329,15 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
   const due = useMemo(() => (bill ? billDueAmount(bill) : 0), [bill]);
   const finalPayable = bill?.final_payable ?? bill?.grand_total ?? "0";
 
+  /** Newest first so a just-recorded payment is at the top, like cash book. */
+  const paymentsNewestFirst = useMemo(() => {
+    const rows = bill?.payments ?? [];
+    return [...rows].sort((a, b) => {
+      const byDate = String(b.paid_at).localeCompare(String(a.paid_at));
+      return byDate !== 0 ? byDate : Number(b.id) - Number(a.id);
+    });
+  }, [bill]);
+
   if (loading) {
     return (
       <Card>
@@ -355,11 +406,18 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
                   </tr>
                 </thead>
                 <tbody>
-                  {bill.payments.map((p) => {
+                  {paymentsNewestFirst.map((p) => {
                     const voided = Boolean(p.voided_at);
                     const isSetoff = p.payment_mode === "setoff" || p.linked_payment_id != null;
+                    const justRecorded = highlightedPaymentId != null && Number(p.id) === highlightedPaymentId;
                     return (
-                      <tr key={p.id} className={cn(voided && "opacity-65")}>
+                      <tr
+                        key={p.id}
+                        className={cn(
+                          voided && "opacity-65",
+                          justRecorded && "bg-emerald-50/90 dark:bg-emerald-950/40"
+                        )}
+                      >
                         <td className={cn(detailTd, "text-right v2-mono text-lg font-bold tabular-nums")}>
                           {formatInr(p.amount)}
                         </td>
@@ -407,15 +465,17 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
             </div>
 
             <div className="space-y-3 lg:hidden">
-              {bill.payments.map((p) => {
+              {paymentsNewestFirst.map((p) => {
                 const voided = Boolean(p.voided_at);
                 const isSetoff = p.payment_mode === "setoff" || p.linked_payment_id != null;
+                const justRecorded = highlightedPaymentId != null && Number(p.id) === highlightedPaymentId;
                 return (
                   <div
                     key={p.id}
                     className={cn(
                       "rounded-2xl border border-line/80 bg-surface-subtle/50 p-4 space-y-3",
-                      voided && "opacity-65"
+                      voided && "opacity-65",
+                      justRecorded && "border-emerald-300/80 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/40"
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -960,7 +1020,36 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
         </CardBody>
       </Card>
 
-      <Tabs defaultId="overview" variant="pill" size="lg" className="mb-2 [&_[role=tabpanel]]:mt-6">
+      {highlightedPaymentId != null &&
+        bill.payments?.some((p) => Number(p.id) === highlightedPaymentId) && (
+          <Card className="mb-4 border-emerald-300/80 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-950/40">
+            <CardBody className="flex flex-wrap items-center justify-between gap-4">
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                  Just recorded
+                </p>
+                {(() => {
+                  const p = bill.payments!.find((row) => Number(row.id) === highlightedPaymentId)!;
+                  return (
+                    <>
+                      <p className="text-2xl font-bold tabular-nums text-ink">
+                        {formatInr(p.amount)}
+                        <span className="ml-2 text-base font-medium text-ink-muted">
+                          {paymentModeLabel(p.payment_mode)}
+                        </span>
+                      </p>
+                      <p className="text-sm text-ink-muted">
+                        #{p.id} · {formatDateTime(p.paid_at)}
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+      <Tabs defaultId={initialTab} variant="pill" size="lg" className="mb-2 [&_[role=tabpanel]]:mt-6">
         <Tab
           id="overview"
           label={

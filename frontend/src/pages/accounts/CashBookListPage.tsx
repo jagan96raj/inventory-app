@@ -104,6 +104,10 @@ export default function CashBookListPage() {
     return remembered ? [remembered] : [];
   });
   const [total, setTotal] = useState(() => (resolveSeed(null, createdParam) ? 1 : 0));
+  const [amountTotal, setAmountTotal] = useState("0.00");
+  const [expenseTotal, setExpenseTotal] = useState("0.00");
+  const [incomeTotal, setIncomeTotal] = useState("0.00");
+  const [transferTotal, setTransferTotal] = useState("0.00");
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState("");
   const [voidAuthError, setVoidAuthError] = useState("");
@@ -188,6 +192,10 @@ export default function CashBookListPage() {
             ? Math.max((page.total ?? 0) + 1, items.length)
             : (page.total ?? 0)
         );
+        setAmountTotal(page.amount_total ?? "0.00");
+        setExpenseTotal(page.expense_total ?? "0.00");
+        setIncomeTotal(page.income_total ?? "0.00");
+        setTransferTotal(page.transfer_total ?? "0.00");
         if (createdEntry && (page.items ?? []).some((r) => sameEntryId(r.id, createdEntry!.id))) {
           clearRememberedCashBookCreated(createdEntry.id);
         }
@@ -197,6 +205,10 @@ export default function CashBookListPage() {
         if (!createdEntry) {
           setRows([]);
           setTotal(0);
+          setAmountTotal("0.00");
+          setExpenseTotal("0.00");
+          setIncomeTotal("0.00");
+          setTransferTotal("0.00");
         }
         setError(msg);
         toast.error(msg);
@@ -423,63 +435,6 @@ export default function CashBookListPage() {
         </Card>
       )}
 
-      {loading && displayRows.length === 0 ? (
-        <Table
-          columns={columns}
-          rows={[]}
-          rowKey={(r) => r.id}
-          caption="Cash book entries"
-          loading
-          zebra
-          compact
-          stickyHeader={false}
-          className="mb-4"
-        />
-      ) : displayRows.length === 0 ? (
-        <Card className="mb-4">
-          <CardBody>
-            <EmptyState
-              icon={<ReceiptText />}
-              title={error ? "Could not load cash book" : "No cash-book entries"}
-              description={
-                error
-                  ? error
-                  : "Record an expense, income, or transfer to see it here."
-              }
-              action={
-                error ? (
-                  <Button variant="secondary" onClick={reload}>
-                    Retry
-                  </Button>
-                ) : (
-                  <Link to="/accounts/cashbook/new">
-                    <Button leftIcon={<Plus className="h-4 w-4" />}>New entry</Button>
-                  </Link>
-                )
-              }
-            />
-          </CardBody>
-        </Card>
-      ) : (
-        <div className="mb-4">
-          <Table
-            columns={columns}
-            rows={displayRows}
-            rowKey={(r) => `cashbook-${r.id}`}
-            caption="Cash book entries"
-            zebra
-            compact
-            stickyHeader={false}
-            rowClassName={(r) =>
-              highlightedEntry && sameEntryId(r.id, highlightedEntry.id)
-                ? "bg-emerald-50/90 dark:bg-emerald-950/40"
-                : undefined
-            }
-          />
-          <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
-        </div>
-      )}
-
       <Card className="mb-4">
         <CardBody className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -606,6 +561,139 @@ export default function CashBookListPage() {
           </div>
         </CardBody>
       </Card>
+
+      {loading && displayRows.length === 0 ? (
+        <Table
+          columns={columns}
+          rows={[]}
+          rowKey={(r) => r.id}
+          caption="Cash book entries"
+          loading
+          zebra
+          compact
+          stickyHeader={false}
+          className="mb-4"
+        />
+      ) : displayRows.length === 0 ? (
+        <Card className="mb-4">
+          <CardBody>
+            <EmptyState
+              icon={<ReceiptText />}
+              title={error ? "Could not load cash book" : "No cash-book entries"}
+              description={
+                error
+                  ? error
+                  : "Record an expense, income, or transfer to see it here."
+              }
+              action={
+                error ? (
+                  <Button variant="secondary" onClick={reload}>
+                    Retry
+                  </Button>
+                ) : (
+                  <Link to="/accounts/cashbook/new">
+                    <Button leftIcon={<Plus className="h-4 w-4" />}>New entry</Button>
+                  </Link>
+                )
+              }
+            />
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="mb-4">
+          <div className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {filters.entry_type ? (
+              <Card
+                className={cn(
+                  filters.entry_type === "expense" &&
+                    "border-rose-200/80 bg-rose-50/50 dark:border-rose-900 dark:bg-rose-950/30",
+                  filters.entry_type === "income" &&
+                    "border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/30",
+                  filters.entry_type === "transfer" &&
+                    "border-sky-200/80 bg-sky-50/50 dark:border-sky-900 dark:bg-sky-950/30"
+                )}
+              >
+                <CardBody className="p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                    {filters.entry_type === "expense"
+                      ? "Expense total"
+                      : filters.entry_type === "income"
+                        ? "Income total"
+                        : "Transfer total"}
+                  </p>
+                  <p className="mt-1 v2-mono text-xl font-bold tabular-nums text-ink">
+                    {formatInr(amountTotal)}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-subtle">
+                    {total.toLocaleString("en-IN")} entr{total === 1 ? "y" : "ies"} matching filters
+                  </p>
+                </CardBody>
+              </Card>
+            ) : (
+              <>
+                <Card className="border-rose-200/80 bg-rose-50/50 dark:border-rose-900 dark:bg-rose-950/30">
+                  <CardBody className="p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+                      Expense total
+                    </p>
+                    <p className="mt-1 v2-mono text-xl font-bold tabular-nums text-ink">
+                      {formatInr(expenseTotal)}
+                    </p>
+                  </CardBody>
+                </Card>
+                <Card className="border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/30">
+                  <CardBody className="p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
+                      Income total
+                    </p>
+                    <p className="mt-1 v2-mono text-xl font-bold tabular-nums text-ink">
+                      {formatInr(incomeTotal)}
+                    </p>
+                  </CardBody>
+                </Card>
+                <Card className="border-sky-200/80 bg-sky-50/50 dark:border-sky-900 dark:bg-sky-950/30">
+                  <CardBody className="p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-800 dark:text-sky-300">
+                      Transfer total
+                    </p>
+                    <p className="mt-1 v2-mono text-xl font-bold tabular-nums text-ink">
+                      {formatInr(transferTotal)}
+                    </p>
+                  </CardBody>
+                </Card>
+                <Card className="border-line/80">
+                  <CardBody className="p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+                      All types total
+                    </p>
+                    <p className="mt-1 v2-mono text-xl font-bold tabular-nums text-ink">
+                      {formatInr(amountTotal)}
+                    </p>
+                    <p className="mt-1 text-xs text-ink-subtle">
+                      {total.toLocaleString("en-IN")} entr{total === 1 ? "y" : "ies"} matching filters
+                    </p>
+                  </CardBody>
+                </Card>
+              </>
+            )}
+          </div>
+          <Table
+            columns={columns}
+            rows={displayRows}
+            rowKey={(r) => `cashbook-${r.id}`}
+            caption="Cash book entries"
+            zebra
+            compact
+            stickyHeader={false}
+            rowClassName={(r) =>
+              highlightedEntry && sameEntryId(r.id, highlightedEntry.id)
+                ? "bg-emerald-50/90 dark:bg-emerald-950/40"
+                : undefined
+            }
+          />
+          <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
+        </div>
+      )}
 
       <VoidConfirmDialog
         open={!!pending}

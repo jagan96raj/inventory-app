@@ -7,6 +7,7 @@ import {
   type CustomerStatementPage as StatementPage,
   type CustomerStatementRow,
 } from "../../api/client";
+import { formatCustomerName } from "../../lib/customerDisplay";
 import { formatDate, formatInr } from "../../lib/format";
 import PageHeader from "../../components/ui/PageHeader";
 import Button from "../../components/ui/Button";
@@ -122,7 +123,15 @@ export default function CustomerStatementPage() {
     <>
       <PageHeader
         eyebrow="Accounts"
-        title={page?.customer_name ?? "Customer statement"}
+        title={
+          page?.customer_name ? (
+            <span className="block truncate" title={formatCustomerName(page.customer_name)}>
+              {formatCustomerName(page.customer_name)}
+            </span>
+          ) : (
+            "Customer statement"
+          )
+        }
         subtitle="Chronological list of bills, payments, and set-offs with running balance."
         actions={
           <Link to="/accounts/customers">

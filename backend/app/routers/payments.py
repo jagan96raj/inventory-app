@@ -110,6 +110,27 @@ def setoff_preview(
     return SetoffPreviewOut(**data)
 
 
+@router.get("/payments/{payment_id}", response_model=PaymentOut, dependencies=MANAGE)
+def get_payment(
+    payment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    company_id = company_id_for_user(user)
+    payment = db.scalar(
+        select(Payment)
+        .where(Payment.id == payment_id)
+        .options(
+            joinedload(Payment.bill).joinedload(Bill.customer),
+            joinedload(Payment.account),
+            joinedload(Payment.linked_payments).joinedload(Payment.bill).joinedload(Bill.customer),
+        )
+    )
+    if payment is None or payment.bill is None or payment.bill.company_id != company_id:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return payment_to_out(payment, payment.bill, include_linked=True)
+
+
 @router.post("/payments", response_model=PaymentOut, status_code=201, dependencies=MANAGE)
 def add_payment(
     body: PaymentCreate,

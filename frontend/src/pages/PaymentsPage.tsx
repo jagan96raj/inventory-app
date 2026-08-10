@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { IndianRupee, PackagePlus, Plus, ShoppingCart } from "lucide-react";
 import {
   api,
@@ -10,6 +10,10 @@ import {
   type PageOut,
   type Payment,
 } from "../api/client";
+import {
+  clearRememberedPaymentCreated,
+  readRememberedPaymentCreated,
+} from "../lib/paymentCreated";
 import { formatDateTime, formatInr } from "../lib/format";
 import { paymentModeLabel } from "../lib/statusLabels";
 import { BILL_TYPE_THEME, themeForBillType } from "../lib/billTypeTheme";
@@ -25,30 +29,95 @@ import VoidConfirmDialog from "../components/ui/VoidConfirmDialog";
 import PaginationBar from "../components/ui/PaginationBar";
 import { toast } from "../components/ui/Toaster";
 
+function samePaymentId(a: number | string | null | undefined, b: number | string | null | undefined): boolean {
+  if (a == null || b == null) return false;
+  return Number(a) === Number(b);
+}
+
+function prependUniquePayment(payment: Payment, items: Payment[]): Payment[] {
+  if (items.some((r) => samePaymentId(r.id, payment.id))) {
+    return items.map((r) => (samePaymentId(r.id, payment.id) ? payment : r));
+  }
+  return [payment, ...items];
+}
+
 export default function PaymentsPage() {
-  const [rows, setRows] = useState<Payment[]>([]);
+  const location = useLocation();
+  const createdParam = new URLSearchParams(location.search).get("created");
+  const createdId =
+    createdParam && Number.isFinite(Number(createdParam)) ? Number(createdParam) : null;
+
+  const [rows, setRows] = useState<Payment[]>(() => {
+    const remembered = readRememberedPaymentCreated();
+    if (!remembered) return [];
+    if (createdId != null && Number(remembered.id) !== createdId) return [];
+    return [remembered];
+  });
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState("");
   const [voidAuthError, setVoidAuthError] = useState("");
   const [pending, setPending] = useState<Payment | null>(null);
   const [busy, setBusy] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<number | null>(createdId);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const voidIdemRef = useRef<string | null>(null);
+  const loadGenRef = useRef(0);
   const limit = DEFAULT_PAGE_LIMIT;
 
-  const load = useCallback(() => {
-    api
-      .get<PageOut<Payment>>(`/api/payments?limit=${limit}&offset=${offset}`)
-      .then((page) => {
-        setRows(page.items);
-        setTotal(page.total);
-      })
-      .catch((e) => setError(e.message));
-  }, [limit, offset]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    const gen = ++loadGenRef.current;
+    let cancelled = false;
+    const remembered = readRememberedPaymentCreated();
+    const seed =
+      remembered && (createdId == null || Number(remembered.id) === createdId) ? remembered : null;
+
+    (async () => {
+      setError("");
+      let createdPayment: Payment | null = seed;
+      if (createdId != null) {
+        try {
+          createdPayment = await api.get<Payment>(`/api/payments/${createdId}?_=${Date.now()}`);
+          if (cancelled || gen !== loadGenRef.current) return;
+          setHighlightedId(createdPayment.id);
+          setRows([createdPayment]);
+          setTotal(1);
+        } catch {
+          /* keep seed */
+        }
+      }
+
+      try {
+        const page = await api.get<PageOut<Payment>>(
+          `/api/payments?limit=${limit}&offset=${offset}&_=${Date.now()}`
+        );
+        if (cancelled || gen !== loadGenRef.current) return;
+        const items = createdPayment
+          ? prependUniquePayment(createdPayment, page.items ?? [])
+          : (page.items ?? []);
+        setRows(items);
+        setTotal(
+          createdPayment && !(page.items ?? []).some((r) => samePaymentId(r.id, createdPayment!.id))
+            ? Math.max((page.total ?? 0) + 1, items.length)
+            : (page.total ?? 0)
+        );
+        if (createdPayment && (page.items ?? []).some((r) => samePaymentId(r.id, createdPayment!.id))) {
+          clearRememberedPaymentCreated(createdPayment.id);
+        }
+      } catch (e) {
+        if (cancelled || gen !== loadGenRef.current) return;
+        setError(e instanceof Error ? e.message : String(e));
+        if (!createdPayment) {
+          setRows([]);
+          setTotal(0);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [limit, offset, createdId, reloadNonce]);
 
   const voidPayment = async (authorizationPassword: string) => {
     if (!pending) return;
@@ -68,7 +137,7 @@ export default function PaymentsPage() {
       voidIdemRef.current = null;
       toast.success("Payment voided");
       setPending(null);
-      load();
+      setReloadNonce((n) => n + 1);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not void payment";
       if (msg.toLowerCase().includes("authorization") || msg.toLowerCase().includes("password")) {
@@ -242,9 +311,17 @@ export default function PaymentsPage() {
             rows={rows}
             rowKey={(p) => p.id}
             caption="Active payments"
-            rowClassName={(p) => themeForBillType(p.bill_type ?? "sales").row}
+            rowClassName={(p) =>
+              cn(
+                themeForBillType(p.bill_type ?? "sales").row,
+                highlightedId != null && samePaymentId(p.id, highlightedId)
+                  ? "bg-emerald-50/90 dark:bg-emerald-950/40"
+                  : undefined
+              )
+            }
             zebra
             compact
+            stickyHeader={false}
           />
           <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
         </>

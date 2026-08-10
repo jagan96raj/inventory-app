@@ -272,6 +272,97 @@ def list_cash_book(
     return q
 
 
+def sum_cash_book_amounts(
+    db: Session,
+    *,
+    company_id: int | None = None,
+    entry_type: CashBookEntryType | None = None,
+    category_id: int | None = None,
+    account_id: int | None = None,
+    bill_id: int | None = None,
+    voided: str = "false",
+    date_from: date | None = None,
+    date_to: date | None = None,
+    search: str | None = None,
+) -> dict:
+    """Sum amounts for the same filters as list_cash_book (all matching rows, not one page)."""
+    from sqlalchemy import case, func
+
+    q = select(
+        func.coalesce(func.sum(CashBookEntry.amount), 0),
+        func.coalesce(
+            func.sum(
+                case(
+                    (CashBookEntry.entry_type == CashBookEntryType.expense, CashBookEntry.amount),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+        func.coalesce(
+            func.sum(
+                case(
+                    (CashBookEntry.entry_type == CashBookEntryType.income, CashBookEntry.amount),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+        func.coalesce(
+            func.sum(
+                case(
+                    (CashBookEntry.entry_type == CashBookEntryType.transfer, CashBookEntry.amount),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
+    )
+    if company_id is not None:
+        q = q.where(CashBookEntry.company_id == company_id)
+    if entry_type is not None:
+        q = q.where(CashBookEntry.entry_type == entry_type)
+    if category_id is not None:
+        q = q.where(CashBookEntry.category_id == category_id)
+    if account_id is not None:
+        q = q.where(
+            or_(
+                CashBookEntry.source_account_id == account_id,
+                CashBookEntry.dest_account_id == account_id,
+            )
+        )
+    if bill_id is not None:
+        q = q.where(CashBookEntry.bill_id == bill_id)
+    if voided == "false":
+        q = q.where(CashBookEntry.voided_at.is_(None))
+    elif voided == "true":
+        q = q.where(CashBookEntry.voided_at.isnot(None))
+    if date_from is not None:
+        q = q.where(CashBookEntry.entry_date >= date_from)
+    if date_to is not None:
+        q = q.where(CashBookEntry.entry_date <= date_to)
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        q = q.where(
+            or_(
+                func.lower(CashBookEntry.description).like(term),
+                func.lower(CashBookEntry.reference_no).like(term),
+            )
+        )
+    row = db.execute(q).one()
+    money = Decimal("0.01")
+
+    def q_money(v) -> Decimal:
+        return Decimal(str(v or 0)).quantize(money)
+
+    return {
+        "amount_total": q_money(row[0]),
+        "expense_total": q_money(row[1]),
+        "income_total": q_money(row[2]),
+        "transfer_total": q_money(row[3]),
+    }
+
+
 def serialize_entry(entry: CashBookEntry) -> dict:
     source = entry.source_account
     dest = entry.dest_account

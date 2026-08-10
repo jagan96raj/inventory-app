@@ -201,6 +201,250 @@ class DashboardBundleV1602Tests(unittest.TestCase):
         )
         self.assertEqual(res2.status_code, 422)
 
+    def test_summary_includes_expense_and_gross_profit(self):
+        from datetime import datetime, timezone
+
+        from app.models.entities import (
+            BankAccount,
+            BankAccountKind,
+            CashBookEntry,
+            CashBookEntryType,
+            ExpenseCategory,
+            ExpenseCategoryKind,
+        )
+
+        cat = ExpenseCategory(name="Rent", kind=ExpenseCategoryKind.expense, is_system=False)
+        cash = BankAccount(
+            company_id=1,
+            name="Cash",
+            kind=BankAccountKind.cash,
+            opening_balance=Decimal("0"),
+            opening_balance_at=date(2025, 1, 1),
+            is_default=False,
+            is_active=True,
+        )
+        self.db.add_all([cat, cash])
+        self.db.flush()
+        self.db.add(
+            CashBookEntry(
+                entry_type=CashBookEntryType.expense,
+                category_id=cat.id,
+                amount=Decimal("150.00"),
+                entry_date=date(2025, 5, 8),
+                entry_at=datetime(2025, 5, 8, 12, 0, tzinfo=timezone.utc),
+                description="May rent",
+                source_account_id=cash.id,
+            )
+        )
+        self.db.commit()
+
+        summary = reports.get_business_summary(self.db, 2025, 5)
+        self.assertEqual(summary["expense_total"], Decimal("150.00"))
+        # Sales 1000 − purchase 500 − expense 150 = 350
+        self.assertEqual(summary["gross_profit"], Decimal("350.00"))
+
+        res = self.client.get(
+            "/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales&group_by=product"
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["summary"]["expense_total"], "150.00")
+        self.assertEqual(body["summary"]["gross_profit"], "350.00")
+
+    def test_fiscal_year_summary_april_to_march(self):
+        from datetime import datetime, timezone
+
+        from app.models.entities import (
+            BankAccount,
+            BankAccountKind,
+            CashBookEntry,
+            CashBookEntryType,
+            ExpenseCategory,
+            ExpenseCategoryKind,
+        )
+
+        # May 2025 sales/purchase already seeded in setUp (1000 / 500).
+        # Add Mar 2026 bill (same FY) and Mar 2025 bill (previous FY — excluded).
+        _add_bill(
+            self.db,
+            self.masters,
+            bill_number="S-MAR26",
+            bill_type=BillType.sales,
+            bill_date=date(2026, 3, 15),
+            grand_total="200.00",
+            qty_kg="20",
+            bags=2,
+        )
+        _add_bill(
+            self.db,
+            self.masters,
+            bill_number="S-MAR25",
+            bill_type=BillType.sales,
+            bill_date=date(2025, 3, 15),
+            grand_total="999.00",
+            qty_kg="99",
+            bags=9,
+        )
+        cat = ExpenseCategory(name="Wages", kind=ExpenseCategoryKind.expense, is_system=False)
+        cash = BankAccount(
+            company_id=1,
+            name="FY Cash",
+            kind=BankAccountKind.cash,
+            opening_balance=Decimal("0"),
+            opening_balance_at=date(2025, 1, 1),
+            is_default=False,
+            is_active=True,
+        )
+        self.db.add_all([cat, cash])
+        self.db.flush()
+        self.db.add(
+            CashBookEntry(
+                entry_type=CashBookEntryType.expense,
+                category_id=cat.id,
+                amount=Decimal("100.00"),
+                entry_date=date(2025, 6, 1),
+                entry_at=datetime(2025, 6, 1, 10, 0, tzinfo=timezone.utc),
+                description="Wages",
+                source_account_id=cash.id,
+            )
+        )
+        self.db.commit()
+
+        self.assertEqual(reports.fiscal_year_start_year(2025, 5), 2025)
+        self.assertEqual(reports.fiscal_year_start_year(2026, 3), 2025)
+        self.assertEqual(reports.fiscal_year_start_year(2026, 4), 2026)
+
+        fy = reports.get_fiscal_year_summary(self.db, 2025)
+        self.assertEqual(fy["label"], "FY 2025-26")
+        self.assertEqual(fy["date_from"], date(2025, 4, 1))
+        self.assertEqual(fy["date_to"], date(2026, 3, 31))
+        # Sales: May 1000 + Jun 100 (setUp) + Mar26 200 = 1300. Mar25 excluded.
+        # Purchase: May 500. Expense: 100. Gross = 1300 − 500 − 100 = 700.
+        self.assertEqual(fy["sales"]["bill_amount"], Decimal("1300.00"))
+        self.assertEqual(fy["purchase"]["bill_amount"], Decimal("500.00"))
+        self.assertEqual(fy["expense_total"], Decimal("100.00"))
+        self.assertEqual(fy["gross_profit"], Decimal("700.00"))
+        self.assertEqual(len(fy["months"]), 12)
+
+        res = self.client.get("/api/reports/fiscal-year-summary?start_year=2025")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["gross_profit"], "700.00")
+
+        derived = self.client.get("/api/reports/fiscal-year-summary?year=2026&month=2")
+        self.assertEqual(derived.status_code, 200)
+        self.assertEqual(derived.json()["start_year"], 2025)
+
+        bundle = self.client.get(
+            "/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales&group_by=product"
+        ).json()
+        self.assertEqual(bundle["fiscal_year"]["gross_profit"], "700.00")
+
+    def test_job_work_section_aggregates_month_orders(self):
+        from app.models.entities import JobWorkLine, JobWorkOrder, JobWorkOrderStatus
+
+        order = JobWorkOrder(
+            job_number="JW-001",
+            customer_id=self.masters["customer"].id,
+            job_date=date(2025, 5, 20),
+            status=JobWorkOrderStatus.open,
+        )
+        cancelled = JobWorkOrder(
+            job_number="JW-002",
+            customer_id=self.masters["customer"].id,
+            job_date=date(2025, 5, 21),
+            status=JobWorkOrderStatus.cancelled,
+        )
+        self.db.add_all([order, cancelled])
+        self.db.flush()
+        self.db.add_all(
+            [
+                JobWorkLine(
+                    order_id=order.id,
+                    product_id=self.masters["product"].id,
+                    brand_id=self.masters["brand"].id,
+                    bag_type_id=self.masters["bag_type"].id,
+                    ordered_bags=8,
+                    ordered_quantity_kg=Decimal("400"),
+                    received_quantity_kg=Decimal("250"),
+                    returned_quantity_kg=Decimal("100"),
+                ),
+                JobWorkLine(
+                    order_id=cancelled.id,
+                    product_id=self.masters["product"].id,
+                    brand_id=self.masters["brand"].id,
+                    bag_type_id=self.masters["bag_type"].id,
+                    ordered_bags=5,
+                    ordered_quantity_kg=Decimal("999"),
+                ),
+            ]
+        )
+        self.db.commit()
+
+        jw = reports.get_job_work_by_product(self.db, 2025, 5, "product")
+        self.assertEqual(jw["order_count"], 1)
+        self.assertEqual(jw["ordered_quantity_kg"], Decimal("400.000"))
+        self.assertEqual(jw["ordered_bags"], 8)
+        self.assertEqual(jw["received_quantity_kg"], Decimal("250.000"))
+        self.assertEqual(jw["returned_quantity_kg"], Decimal("100.000"))
+        self.assertEqual(jw["in_custody_kg"], Decimal("150.000"))
+        self.assertEqual(len(jw["rows"]), 1)
+        self.assertIsNone(jw["rows"][0]["brand_id"])
+
+        brandwise = reports.get_job_work_by_product(self.db, 2025, 5, "product_brand")
+        self.assertEqual(brandwise["rows"][0]["brand_id"], self.masters["brand"].id)
+
+        # Other months see no job work.
+        self.assertEqual(reports.get_job_work_by_product(self.db, 2025, 6, "product")["order_count"], 0)
+
+        res = self.client.get(
+            "/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales&group_by=product"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["job_work"]["in_custody_kg"], "150.000")
+
+    def test_product_breakdown_filters_by_customer(self):
+        customer2 = Customer(name="Customer Two")
+        self.db.add(customer2)
+        self.db.flush()
+        _add_bill(
+            self.db,
+            {**self.masters, "customer": customer2},
+            bill_number="S-MAY-2",
+            bill_type=BillType.sales,
+            bill_date=date(2025, 5, 15),
+            grand_total="200.00",
+            qty_kg="20",
+            bags=2,
+        )
+
+        all_rows = reports.get_bills_by_product(
+            self.db, 2025, 5, BillType.sales, "product"
+        )
+        filtered = reports.get_bills_by_product(
+            self.db,
+            2025,
+            5,
+            BillType.sales,
+            "product",
+            customer_id=customer2.id,
+        )
+        self.assertEqual(all_rows["lines_subtotal"], Decimal("1200.00"))
+        self.assertEqual(filtered["lines_subtotal"], Decimal("200.00"))
+        self.assertEqual(filtered["rows"][0]["quantity_kg"], Decimal("20.000"))
+
+        res = self.client.get(
+            f"/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales"
+            f"&group_by=product&customer_id={customer2.id}"
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["by_product"]["lines_subtotal"], "200.00")
+        # Customer filter must not change company-wide summary KPIs.
+        unfiltered = self.client.get(
+            "/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales&group_by=product"
+        ).json()
+        self.assertEqual(body["summary"], unfiltered["summary"])
+
 
 if __name__ == "__main__":
     unittest.main()

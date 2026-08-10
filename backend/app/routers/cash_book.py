@@ -25,6 +25,7 @@ from app.services.cash_book import (
     edit_cash_book_entry,
     list_cash_book,
     serialize_entry,
+    sum_cash_book_amounts,
     void_cash_book_entry,
 )
 from app.services.idempotency import hash_empty_body, hash_pydantic_body
@@ -73,8 +74,7 @@ def list_cash_book_endpoint(
     response.headers["Pragma"] = "no-cache"
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
-    q = list_cash_book(
-        db,
+    filter_kwargs = dict(
         company_id=company_id_for_user(user),
         entry_type=entry_type,
         category_id=category_id,
@@ -85,9 +85,11 @@ def list_cash_book_endpoint(
         date_to=date_to,
         search=search,
     )
+    q = list_cash_book(db, **filter_kwargs)
     rows, total = paginate_select(db, q, limit=limit, offset=offset)
     items = [_to_out(r) for r in rows]
-    return CashBookEntryPageOut(**page_dict(items, total, limit, offset))
+    amounts = sum_cash_book_amounts(db, **filter_kwargs)
+    return CashBookEntryPageOut(**page_dict(items, total, limit, offset), **amounts)
 
 
 @router.get("/{entry_id}", response_model=CashBookEntryOut)

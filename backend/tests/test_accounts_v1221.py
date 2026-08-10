@@ -759,6 +759,14 @@ class CashBookApiTests(unittest.TestCase):
         page = res.json()
         self.assertEqual(page["total"], 2)
         self.assertEqual(len(page["items"]), 2)
+        self.assertEqual(page["amount_total"], "300.00")
+        self.assertEqual(page["expense_total"], "300.00")
+        self.assertEqual(page["income_total"], "0.00")
+        self.assertEqual(page["transfer_total"], "0.00")
+
+        filtered = self.client.get("/api/cashbook?entry_type=expense&limit=10&offset=0").json()
+        self.assertEqual(filtered["amount_total"], "300.00")
+        self.assertEqual(filtered["expense_total"], "300.00")
 
 
 # ---------------------------------------------------------------------------

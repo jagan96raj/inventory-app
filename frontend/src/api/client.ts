@@ -169,7 +169,7 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
     }
     if (res.status >= 500 && detail === "Internal Server Error") {
       detail =
-        "Server error — the database may be unavailable. Start Docker Desktop, run docker compose up -d, then restart the backend.";
+        "Server error — something failed while saving. If this keeps happening, check that Docker Desktop is running and the backend is up, then try again.";
     }
     throw new Error(String(detail));
   }
@@ -576,6 +576,32 @@ export type BusinessSummary = {
   month: number;
   sales: BusinessTypeSummary;
   purchase: BusinessTypeSummary;
+  expense_total: string;
+  /** Sales − purchase − cash-book expenses for the month. */
+  gross_profit: string;
+};
+
+export type FiscalYearMonthRow = {
+  year: number;
+  month: number;
+  sales_amount: string;
+  purchase_amount: string;
+  expense_total: string;
+  gross_profit: string;
+};
+
+export type FiscalYearSummary = {
+  start_year: number;
+  end_year: number;
+  label: string;
+  date_from: string;
+  date_to: string;
+  sales: BusinessTypeSummary;
+  purchase: BusinessTypeSummary;
+  expense_total: string;
+  /** Sales − purchase − cash-book expenses for 1 Apr–31 Mar. */
+  gross_profit: string;
+  months: FiscalYearMonthRow[];
 };
 
 export type BusinessCompareBucket = {
@@ -647,6 +673,29 @@ export type SalesByProduct = {
   group_by: string;
 };
 
+export type JobWorkProductRow = {
+  product_id: number;
+  product_name: string;
+  brand_id?: number | null;
+  brand_name?: string | null;
+  ordered_quantity_kg: string;
+  ordered_bags: number;
+  received_quantity_kg: string;
+  returned_quantity_kg: string;
+  in_custody_kg: string;
+};
+
+export type JobWorkByProduct = {
+  rows: JobWorkProductRow[];
+  order_count: number;
+  ordered_quantity_kg: string;
+  ordered_bags: number;
+  received_quantity_kg: string;
+  returned_quantity_kg: string;
+  in_custody_kg: string;
+  group_by: string;
+};
+
 export type SalesCustomerRow = {
   customer_id: number;
   customer_name: string;
@@ -671,10 +720,12 @@ export type SalesByLocation = { rows: SalesLocationRow[] };
 export type DashboardBundle = {
   summary: BusinessSummary;
   compare: BusinessCompare;
+  fiscal_year: FiscalYearSummary;
   daily: DailyBillAmounts;
   by_product: SalesByProduct;
   by_customer: SalesByCustomer;
   by_location: SalesByLocation;
+  job_work: JobWorkByProduct;
 };
 
 export type SalesDailyRow = {
@@ -720,7 +771,12 @@ export type SalesDeliveryBreakdown = {
 export type ReportMonthParams = { year: number; month: number };
 
 function reportQs(
-  params: ReportMonthParams & { group_by?: string; limit?: number; bill_type?: BillTypeParam }
+  params: ReportMonthParams & {
+    group_by?: string;
+    limit?: number;
+    bill_type?: BillTypeParam;
+    customer_id?: number | null;
+  }
 ) {
   const q = new URLSearchParams({
     year: String(params.year),
@@ -729,12 +785,17 @@ function reportQs(
   if (params.group_by) q.set("group_by", params.group_by);
   if (params.limit != null) q.set("limit", String(params.limit));
   if (params.bill_type) q.set("bill_type", params.bill_type);
+  if (params.customer_id != null) q.set("customer_id", String(params.customer_id));
   return q.toString();
 }
 
 export const reportsApi = {
   dashboardBundle: (
-    p: ReportMonthParams & { bill_type: BillTypeParam; group_by: "product" | "product_brand" }
+    p: ReportMonthParams & {
+      bill_type: BillTypeParam;
+      group_by: "product" | "product_brand";
+      customer_id?: number | null;
+    }
   ) => api.get<DashboardBundle>(`/api/reports/dashboard-bundle?${reportQs(p)}`),
 };
 
@@ -1074,10 +1135,17 @@ export type CashBookListParams = ListParams & {
   date_to?: string;
 };
 
+export type CashBookPage = PageOut<CashBookEntry> & {
+  amount_total: string;
+  expense_total: string;
+  income_total: string;
+  transfer_total: string;
+};
+
 export const cashBookApi = {
   get: (id: number) => api.get<CashBookEntry>(`/api/cashbook/${id}`),
   list: (p: CashBookListParams = {}) =>
-    api.get<PageOut<CashBookEntry>>(
+    api.get<CashBookPage>(
       `/api/cashbook${qs({
         limit: p.limit ?? DEFAULT_PAGE_LIMIT,
         offset: p.offset ?? 0,

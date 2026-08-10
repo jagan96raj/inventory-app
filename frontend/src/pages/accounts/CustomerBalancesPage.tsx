@@ -6,6 +6,7 @@ import {
   DEFAULT_PAGE_LIMIT,
   type CustomerBalanceRow,
 } from "../../api/client";
+import { formatCustomerName } from "../../lib/customerDisplay";
 import { formatDateTime, formatInr } from "../../lib/format";
 import PageHeader from "../../components/ui/PageHeader";
 import Button from "../../components/ui/Button";
@@ -58,11 +59,18 @@ export default function CustomerBalancesPage() {
       {
         key: "name",
         header: "Customer",
-        cell: (r) => (
-          <Link to={`/accounts/customers/${r.customer_id}`} className="font-semibold text-ink hover:text-primary-700">
-            {r.customer_name}
-          </Link>
-        ),
+        cell: (r) => {
+          const name = formatCustomerName(r.customer_name);
+          return (
+            <Link
+              to={`/accounts/customers/${r.customer_id}`}
+              className="block max-w-[14rem] truncate text-sm font-semibold tracking-tight text-ink hover:text-primary-700 sm:max-w-[18rem] md:max-w-[22rem]"
+              title={name}
+            >
+              {name}
+            </Link>
+          );
+        },
       },
       {
         key: "credit",

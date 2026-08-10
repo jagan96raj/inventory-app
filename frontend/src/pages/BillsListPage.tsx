@@ -19,6 +19,7 @@ import {
 import { api, DEFAULT_PAGE_LIMIT, type BillListItem, type BillsPage } from "../api/client";
 import { billDueAmount } from "../lib/billAmounts";
 import { formatDate, formatInr } from "../lib/format";
+import { searchProducts } from "../lib/masterSearch";
 import {
   deliveryStatusLabel,
   normalizeDeliveryStatus,
@@ -39,6 +40,7 @@ import { PaymentPill } from "../components/ui/StatusPill";
 import EmptyState from "../components/ui/EmptyState";
 import Banner from "../components/ui/Banner";
 import SegmentedControl from "../components/ui/SegmentedControl";
+import AsyncSearchCombobox from "../components/ui/AsyncSearchCombobox";
 import AddCustomerDialog from "../components/AddCustomerDialog";
 import BillNotesHover from "../components/bills/BillNotesHover";
 import PaginationBar from "../components/ui/PaginationBar";
@@ -218,6 +220,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [productId, setProductId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
@@ -244,6 +247,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
     if (debouncedSearch) params.set("search", debouncedSearch);
     if (dateFrom) params.set("date_from", dateFrom);
     if (dateTo) params.set("date_to", dateTo);
+    if (productId != null) params.set("product_id", String(productId));
     api
       .get<BillsPage>(`/api/bills?${params}`)
       .then((page) => {
@@ -253,7 +257,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [billType, limit, offset, paymentStatusFilter, deliveryStatusFilter, debouncedSearch, dateFrom, dateTo]);
+  }, [billType, limit, offset, paymentStatusFilter, deliveryStatusFilter, debouncedSearch, dateFrom, dateTo, productId]);
 
   useEffect(() => {
     load();
@@ -261,7 +265,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
 
   useEffect(() => {
     setOffset(0);
-  }, [billType, paymentStatusFilter, deliveryStatusFilter, debouncedSearch, dateFrom, dateTo]);
+  }, [billType, paymentStatusFilter, deliveryStatusFilter, debouncedSearch, dateFrom, dateTo, productId]);
 
   const finalPayable = (b: BillListItem) => b.final_payable ?? b.grand_total;
 
@@ -280,7 +284,8 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
     deliveryStatusFilter !== "all" ||
     search.trim() !== "" ||
     dateFrom !== "" ||
-    dateTo !== "";
+    dateTo !== "" ||
+    productId != null;
 
   const clearFilters = () => {
     setPaymentStatusFilter("all");
@@ -289,6 +294,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
     setDebouncedSearch("");
     setDateFrom("");
     setDateTo("");
+    setProductId(null);
   };
 
   const columns: Column<BillListItem>[] = [
@@ -546,6 +552,17 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <FormField label="Product">
+                {() => (
+                  <AsyncSearchCombobox
+                    value={productId}
+                    onChange={(id) => setProductId(id)}
+                    searchFn={searchProducts}
+                    placeholder="All products"
+                    emptyText="No matching product"
+                  />
+                )}
+              </FormField>
               <FormField label="Date from" htmlFor="bills-date-from">
                 {({ id }) => (
                   <Input

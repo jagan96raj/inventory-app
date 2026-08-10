@@ -1,5 +1,10 @@
 import type { Customer } from "../api/client";
 
+/** Collapse pasted newlines / extra spaces so names read as one clean label. */
+export function formatCustomerName(name: string): string {
+  return name.replace(/\s+/g, " ").trim();
+}
+
 export function customerPhones(customer: Pick<Customer, "phone" | "alternate_phone">): string {
   return [customer.phone, customer.alternate_phone].filter(Boolean).join(" · ");
 }
@@ -18,5 +23,6 @@ export function customerMatchesQuery(
 
 export function customerComboLabel(customer: Pick<Customer, "name" | "phone" | "alternate_phone">): string {
   const phones = customerPhones(customer);
-  return phones ? `${customer.name} (${phones})` : customer.name;
+  const name = formatCustomerName(customer.name);
+  return phones ? `${name} (${phones})` : name;
 }

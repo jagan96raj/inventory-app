@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import case, delete, func, or_, select
+from sqlalchemy import case, delete, exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -159,6 +159,7 @@ def _apply_bill_list_filters(
     search: str | None,
     date_from: date | None = None,
     date_to: date | None = None,
+    product_id: int | None = None,
 ):
     q = q.where(Bill.status == BillStatus.finalized)
     if bill_type is not None:
@@ -171,6 +172,15 @@ def _apply_bill_list_filters(
         q = q.where(Bill.bill_date >= date_from)
     if date_to is not None:
         q = q.where(Bill.bill_date <= date_to)
+    if product_id is not None:
+        q = q.where(
+            exists(
+                select(BillLine.id).where(
+                    BillLine.bill_id == Bill.id,
+                    BillLine.product_id == product_id,
+                )
+            )
+        )
     if search and search.strip():
         term = f"%{search.strip().lower()}%"
         q = q.outerjoin(Customer, Bill.customer_id == Customer.id).where(
@@ -398,6 +408,7 @@ def list_bills(
     search: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    product_id: int | None = None,
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -409,6 +420,8 @@ def list_bills(
         raise HTTPException(400, "Invalid delivery_status")
     if date_from is not None and date_to is not None and date_from > date_to:
         raise HTTPException(400, "date_from must be on or before date_to")
+    if product_id is not None and product_id < 1:
+        raise HTTPException(400, "product_id must be >= 1")
     limit = clamp_limit(limit)
     offset = clamp_offset(offset)
     company_id = company_id_for_user(user)
@@ -421,6 +434,7 @@ def list_bills(
         search=search,
         date_from=date_from,
         date_to=date_to,
+        product_id=product_id,
     )
     summary = _bills_list_summary(db, base_q)
 
@@ -437,6 +451,7 @@ def list_bills(
         search=search,
         date_from=date_from,
         date_to=date_to,
+        product_id=product_id,
     ).order_by(Bill.bill_date.desc(), Bill.id.desc())
 
     bills, total = paginate_select(db, items_q, limit=limit, offset=offset)

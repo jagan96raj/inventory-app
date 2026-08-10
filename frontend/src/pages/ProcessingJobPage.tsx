@@ -991,12 +991,13 @@ export default function ProcessingJobPage() {
     wasteValidationErrors.length === 0 &&
     wastePendingMassBalance.isValid;
 
+  const activeBatchCount = summary?.batch_count ?? 0;
+  const isEmptyOpenJob = !completed && activeBatchCount === 0;
   const canComplete =
     !completed &&
-    (summary?.batch_count ?? 0) > 0 &&
     !inputFormHasContent(inputForm) &&
     !outputFormHasContent(outputForm) &&
-    committedMassBalance.isValid;
+    (isEmptyOpenJob || (activeBatchCount > 0 && committedMassBalance.isValid));
 
   const submitInputBatch = async (e: FormEvent) => {
     e.preventDefault();
@@ -1164,11 +1165,7 @@ export default function ProcessingJobPage() {
       return;
     }
 
-    if ((s.batch_count ?? 0) === 0) {
-      setError("Cannot complete without at least one batch.");
-      return;
-    }
-
+    // Empty open job (0 active batches) may be closed to free the open slot.
     setError("");
     setSuccess("");
     setCompleteAuthError("");
@@ -1216,7 +1213,7 @@ export default function ProcessingJobPage() {
         setJob(updated);
         setActiveTab("summary");
         setCompleteAuthOpen(false);
-        setSuccess("Job completed.");
+        setSuccess(isEmptyOpenJob ? "Empty process closed." : "Job completed.");
       } catch (e) {
         const msg = errMsg(e);
         if (msg.toLowerCase().includes("authorization") || msg.toLowerCase().includes("password")) {
@@ -1327,7 +1324,6 @@ export default function ProcessingJobPage() {
   const allBatches = [...(job.batches ?? [])].sort(
     (a, b) => new Date(b.operation_at).getTime() - new Date(a.operation_at).getTime()
   );
-  const activeBatchCount = activeProcessingBatches(allBatches).length;
   const fromParam = searchParams.get("from");
   const fromHistory = fromParam === "history" || (fromParam !== "open" && job.status === "completed");
   const backTo = fromHistory ? "/histories/processing" : "/operations/processing";
@@ -2371,11 +2367,15 @@ export default function ProcessingJobPage() {
               <Card className="border-accent-200/60 bg-gradient-to-br from-accent-50/40 via-surface to-surface dark:border-accent-800/40 dark:from-accent-950/20">
                 <CardBody className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <p className="text-lg font-semibold text-ink">Ready to close this job?</p>
-                    <p className="mt-1 text-sm text-ink-muted">
-                      Clear unsaved forms on Input, Output, and Waste tabs. Mass balance must be valid.
+                    <p className="text-lg font-semibold text-ink">
+                      {isEmptyOpenJob ? "Close this empty process?" : "Ready to close this job?"}
                     </p>
-                    {!committedMassBalance.isValid && committedMassBalance.errorMessage && (
+                    <p className="mt-1 text-sm text-ink-muted">
+                      {isEmptyOpenJob
+                        ? "No active batches remain (all voided or never recorded). Closing frees this product/brand so another completed job can reopen on void."
+                        : "Clear unsaved forms on Input, Output, and Waste tabs. Mass balance must be valid."}
+                    </p>
+                    {!isEmptyOpenJob && !committedMassBalance.isValid && committedMassBalance.errorMessage && (
                       <Banner tone="warning" className="mt-3">
                         {committedMassBalance.errorMessage}
                       </Banner>
@@ -2388,7 +2388,7 @@ export default function ProcessingJobPage() {
                     onClick={startCompleteProcess}
                     leftIcon={<CheckCircle2 className="h-4 w-4" />}
                   >
-                    Complete process
+                    {isEmptyOpenJob ? "Close empty process" : "Complete process"}
                   </Button>
                 </CardBody>
               </Card>
@@ -2499,9 +2499,13 @@ export default function ProcessingJobPage() {
           setCompleteAuthOpen(false);
         }}
         onConfirm={confirmCompleteProcess}
-        title="Complete this processing job?"
-        description="This locks the job — no further batches can be added. Authorization is required."
-        confirmLabel="Complete process"
+        title={isEmptyOpenJob ? "Close this empty processing job?" : "Complete this processing job?"}
+        description={
+          isEmptyOpenJob
+            ? "Marks this empty open job completed so the product/brand slot is free. Authorization is required."
+            : "This locks the job — no further batches can be added. Authorization is required."
+        }
+        confirmLabel={isEmptyOpenJob ? "Close empty process" : "Complete process"}
         cancelLabel="Cancel"
         authError={completeAuthError || undefined}
       />
@@ -2999,7 +3003,7 @@ function SummarySidebar({
         </span>
         <div className="min-w-0">
           <p className="text-base font-semibold text-ink">Job snapshot</p>
-          <p className="text-sm text-ink-muted">Fixed on the right while you scroll</p>
+          <p className="text-sm text-ink-muted">Active batches only — voided excluded</p>
         </div>
       </div>
       {warn ? (
