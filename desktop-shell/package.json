@@ -1,12 +1,16 @@
 {
   "name": "desktop-shell",
-  "version": "1.0.0",
-  "description": "Inventory App Desktop Shell",
+  "version": "1.1.0",
+  "description": "Inventory App Desktop Shell (online: app.rajagro.org)",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win"
   },
+  "files": [
+    "main.js",
+    "offline.html"
+  ],
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -19,7 +23,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^35.0.0",
+    "electron": "^35.7.5",
     "electron-builder": "^25.0.0"
   }
 }
