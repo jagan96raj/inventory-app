@@ -129,7 +129,7 @@ function OrderCard({
   onVoidReceive: (r: JobWorkFulfillmentReceipt) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-line/80 bg-gradient-to-br from-violet-50/80 to-surface dark:from-violet-950/30 dark:to-surface">
+    <section className="overflow-hidden rounded-2xl border border-line/80 bg-gradient-to-br from-primary-50/80 to-surface dark:from-primary-950/30 dark:to-surface">
       <header className="flex flex-col gap-2 border-b border-line/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -138,7 +138,7 @@ function OrderCard({
             </Badge>
             <Link
               to={`/job-work/${order.order_id}`}
-              className="v2-mono text-xl font-bold text-violet-800 dark:text-violet-200"
+              className="v2-mono text-xl font-bold text-primary-800 dark:text-primary-200"
             >
               {order.job_number}
             </Link>
@@ -414,7 +414,7 @@ export default function JobWorkFulfillmentPage() {
                   className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm sm:px-5"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
                       <Calendar className="h-4 w-4" aria-hidden="true" />
                     </div>
                     <h2 className="text-lg font-bold text-ink sm:text-xl">{label}</h2>

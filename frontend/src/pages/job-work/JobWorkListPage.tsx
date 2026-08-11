@@ -264,7 +264,7 @@ export default function JobWorkListPage() {
                         className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
                       >
                         <div className="flex items-center gap-2.5">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
                             <Calendar className="h-4 w-4" aria-hidden="true" />
                           </div>
                           <h2 className="text-lg font-bold text-ink">{label}</h2>
@@ -293,7 +293,7 @@ export default function JobWorkListPage() {
                         className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
                       >
                         <div className="flex items-center gap-2.5">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
                             <Calendar className="h-4 w-4" aria-hidden="true" />
                           </div>
                           <h2 className="text-lg font-bold text-ink">{label}</h2>
@@ -345,7 +345,7 @@ export default function JobWorkListPage() {
       <button
         type="button"
         onClick={() => navigate("/job-work/new")}
-        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-primary-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
         aria-label="New job work order"
       >
         <Plus className="h-6 w-6" />

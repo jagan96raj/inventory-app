@@ -37,7 +37,7 @@ const ACTIONS = [
     title: "Purchase bills",
     desc: "Inbound purchases, multi-location receive, supplier credit.",
     Icon: PackagePlus,
-    color: "from-violet-500 to-purple-500",
+    color: "from-primary-500 to-primary-700",
   },
   {
     to: "/fulfillment",
@@ -58,7 +58,7 @@ const ACTIONS = [
     title: "Customers",
     desc: "Parties, credit and debit balances.",
     Icon: Users,
-    color: "from-indigo-500 to-violet-500",
+    color: "from-primary-500 to-primary-700",
   },
 ];
 

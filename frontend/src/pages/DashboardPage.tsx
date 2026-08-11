@@ -590,7 +590,7 @@ export default function DashboardPage() {
                                   className={cn(
                                     "inline-flex rounded-full px-2 py-0.5 text-xs font-semibold",
                                     billType === "sales"
-                                      ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-200"
+                                      ? "bg-primary-50 text-primary-800 dark:bg-primary-950/50 dark:text-primary-200"
                                       : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200"
                                   )}
                                 >

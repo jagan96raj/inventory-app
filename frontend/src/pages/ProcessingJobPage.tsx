@@ -1371,7 +1371,7 @@ export default function ProcessingJobPage() {
                   to={backTo}
                   className="group inline-flex shrink-0 items-center gap-2.5 rounded-full border border-line/70 bg-surface px-2.5 py-1.5 pr-3.5 text-sm font-semibold text-ink shadow-sm transition hover:border-primary-300 hover:bg-primary-50 hover:text-primary-800 dark:hover:border-primary-700 dark:hover:bg-primary-950/40 dark:hover:text-primary-100"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-md transition group-hover:scale-105">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md transition group-hover:scale-105">
                     <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   </span>
                   <span className="hidden sm:inline">{backLabel}</span>
@@ -2606,7 +2606,7 @@ function MassBalancePanel({
         "rounded-2xl border p-4",
         warn
           ? "border-warning-300/70 bg-warning-50/40 dark:border-warning-700/50 dark:bg-warning-950/20"
-          : "border-primary-200/60 bg-gradient-to-br from-primary-50/50 via-surface to-violet-50/30 dark:border-primary-800/40 dark:from-primary-950/25 dark:via-surface dark:to-violet-950/15"
+          : "border-primary-200/60 bg-gradient-to-br from-primary-50/50 via-surface to-primary-50/30 dark:border-primary-800/40 dark:from-primary-950/25 dark:via-surface dark:to-primary-950/15"
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -2646,7 +2646,7 @@ function MassBalancePanel({
             <div
               className={cn(
                 "h-full rounded-full transition-all",
-                warn ? "bg-warning-500" : "bg-gradient-to-r from-primary-500 to-violet-500"
+                warn ? "bg-warning-500" : "bg-gradient-to-r from-primary-500 to-primary-700"
               )}
               style={{ width: `${usedPct}%` }}
             />
@@ -2994,13 +2994,13 @@ function SummarySidebar({
     "relative overflow-hidden rounded-2xl border v2-glass shadow-soft",
     warn
       ? "border-warning-300/60 bg-gradient-to-b from-warning-50/45 via-surface/95 to-surface dark:border-warning-700/50 dark:from-warning-950/25 dark:via-surface/95 dark:to-surface"
-      : "border-primary-200/60 bg-gradient-to-b from-primary-50/40 via-surface/95 to-violet-50/30 dark:border-primary-800/40 dark:from-primary-950/20 dark:via-surface/95 dark:to-violet-950/15"
+      : "border-primary-200/60 bg-gradient-to-b from-primary-50/40 via-surface/95 to-primary-50/30 dark:border-primary-800/40 dark:from-primary-950/20 dark:via-surface/95 dark:to-primary-950/15"
   );
 
   const header = (
     <div className="flex items-start justify-between gap-2 border-b border-line/50 px-4 py-3">
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-md">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md">
           <Layers className="h-4 w-4" aria-hidden="true" />
         </span>
         <div className="min-w-0">
@@ -3029,7 +3029,7 @@ function SummarySidebar({
         <summary className="cursor-pointer list-none px-4 py-3 marker:content-none [&::-webkit-details-marker]:hidden">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-md">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md">
                 <Layers className="h-4 w-4" aria-hidden="true" />
               </span>
               <span className="text-base font-semibold text-ink">Job snapshot</span>
@@ -3116,7 +3116,7 @@ function SummaryCard({
     .filter((row) => row.categories.length > 0);
 
   return (
-    <Card className="overflow-hidden border-primary-200/60 bg-gradient-to-br from-primary-50/35 via-surface to-violet-50/25 dark:border-primary-800/40 dark:from-primary-950/20">
+    <Card className="overflow-hidden border-primary-200/60 bg-gradient-to-br from-primary-50/35 via-surface to-primary-50/25 dark:border-primary-800/40 dark:from-primary-950/20">
       <CardHeader
         title="Waste allocation"
         subtitle="Owner split for dust, stone, sack, and misc — totals are in the snapshot panel on the right."

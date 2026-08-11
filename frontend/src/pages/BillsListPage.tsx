@@ -81,9 +81,9 @@ function fulfillmentTone(status: string): "success" | "warning" | "muted" {
 const PAGE_THEME = {
   sales: {
     filterGradient:
-      "bg-gradient-to-br from-primary-50/50 via-surface to-violet-50/35 dark:from-primary-950/30 dark:via-surface dark:to-violet-950/20",
+      "bg-gradient-to-br from-primary-50/50 via-surface to-primary-50/35 dark:from-primary-950/30 dark:via-surface dark:to-primary-950/20",
     filterIcon: "text-primary-600 dark:text-primary-300",
-    tableHeader: "text-indigo-700/90 dark:text-indigo-200/90",
+    tableHeader: "text-primary-800/90 dark:text-primary-200/90",
     billLink: "text-primary-700 dark:text-primary-300",
     fab: "from-primary-500 to-primary-700",
     partyLabel: "Customer",
@@ -461,7 +461,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
               <div
                 className={cn(
                   "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface/80",
-                  isSales ? "text-violet-600 dark:text-violet-300" : "text-teal-600 dark:text-teal-300"
+                  isSales ? "text-primary-700 dark:text-primary-300" : "text-teal-600 dark:text-teal-300"
                 )}
               >
                 <Truck className="h-5 w-5" />

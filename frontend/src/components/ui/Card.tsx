@@ -47,7 +47,7 @@ export function CardHeader({
     <div className={cn("flex flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-start sm:justify-between sm:gap-3 sm:px-5 sm:pt-5", className)}>
       <div className="min-w-0">
         {title && <h3 className="text-lg font-semibold tracking-tight text-primary-900 dark:text-primary-100">{title}</h3>}
-        {subtitle && <p className="mt-1 text-sm text-indigo-700/80 sm:text-base dark:text-indigo-200/80">{subtitle}</p>}
+        {subtitle && <p className="mt-1 text-sm text-primary-800/80 sm:text-base dark:text-primary-200/80">{subtitle}</p>}
       </div>
       {actions && (
         <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">

@@ -37,7 +37,7 @@ export default function PageHeader({
   const crumbs = breadcrumbs ?? deriveCrumbs(pathname);
   return (
     <header className={cn("mb-6 flex flex-col gap-3", className)}>
-      <nav aria-label="Breadcrumb" className="flex items-center text-sm text-indigo-600/80 dark:text-indigo-300/80">
+      <nav aria-label="Breadcrumb" className="flex items-center text-sm text-primary-700/80 dark:text-primary-300/80">
         <Link to="/" className="inline-flex items-center gap-1 hover:text-primary-700 dark:hover:text-primary-200">
           <Home className="h-3.5 w-3.5" />
           <span className="sr-only">Home</span>
@@ -50,7 +50,7 @@ export default function PageHeader({
                 {c.label}
               </Link>
             ) : (
-              <span className="capitalize font-medium text-violet-800 dark:text-violet-200">{c.label}</span>
+              <span className="capitalize font-medium text-primary-800 dark:text-primary-200">{c.label}</span>
             )}
           </Fragment>
         ))}
@@ -62,11 +62,11 @@ export default function PageHeader({
               {eyebrow}
             </p>
           )}
-          <h1 className="truncate bg-gradient-to-r from-primary-900 via-indigo-800 to-violet-800 bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl dark:from-primary-100 dark:via-indigo-100 dark:to-violet-100">
+          <h1 className="truncate bg-gradient-to-r from-primary-900 via-primary-700 to-primary-600 bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl dark:from-primary-100 dark:via-primary-200 dark:to-primary-100">
             {title}
           </h1>
           {subtitle && (
-            <p className="mt-1 text-sm text-indigo-700/85 sm:max-w-2xl dark:text-indigo-200/85">{subtitle}</p>
+            <p className="mt-1 text-sm text-primary-800/85 sm:max-w-2xl dark:text-primary-200/85">{subtitle}</p>
           )}
         </div>
         {actions && (

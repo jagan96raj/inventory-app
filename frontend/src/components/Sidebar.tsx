@@ -137,7 +137,7 @@ const RAINBOW_HOVER = [
   "hover:bg-amber-500/12 dark:hover:bg-amber-400/15",
   "hover:bg-lime-500/12 dark:hover:bg-lime-400/15",
   "hover:bg-sky-500/12 dark:hover:bg-sky-400/15",
-  "hover:bg-violet-500/12 dark:hover:bg-violet-400/15",
+  "hover:bg-primary-500/12 dark:hover:bg-primary-400/15",
   "hover:bg-fuchsia-500/12 dark:hover:bg-fuchsia-400/15",
 ];
 
@@ -321,7 +321,7 @@ function NavGroupButton({
       )}
     >
       {(open || active) && (
-        <span className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-gradient-to-b from-sky-400 via-violet-400 to-rose-400" />
+        <span className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-gradient-to-b from-lime-500 via-primary-500 to-amber-500" />
       )}
       <span className={NAV_ICON_SLOT}>
         <Icon className={cn("h-4 w-4", (open || active) && "text-primary-600 dark:text-primary-300")} />

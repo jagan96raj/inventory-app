@@ -3,7 +3,7 @@
  * Reference photos are not used — this is original vector art only.
  */
 type Props = {
-  /** "app" = main shell (indigo tint); "auth" = login hero (light on purple) */
+  /** "app" = main shell (olive tint); "auth" = login hero (light on brand green) */
   variant?: "app" | "auth";
 };
 
@@ -67,7 +67,7 @@ export default function AppAmbientBackground({ variant = "app" }: Props) {
         {/* —— Processing plant (right) — inspired by silos / elevators —— */}
         <g className="app-ambient-plant">
           {/* blue silo */}
-          <rect x="820" y="180" width="120" height="200" rx="4" fill="#1e3a8a" fillOpacity="0.14" stroke="currentColor" strokeOpacity="0.2" strokeWidth="1.5" />
+          <rect x="820" y="180" width="120" height="200" rx="4" fill="#3a4027" fillOpacity="0.14" stroke="currentColor" strokeOpacity="0.2" strokeWidth="1.5" />
           <rect x="832" y="192" width="96" height="24" rx="2" fill="currentColor" fillOpacity="0.06" />
 
           {/* white elevator columns */}
@@ -75,7 +75,7 @@ export default function AppAmbientBackground({ variant = "app" }: Props) {
           <rect x="760" y="100" width="36" height="500" rx="3" fill="currentColor" fillOpacity="0.06" stroke="currentColor" strokeOpacity="0.18" strokeWidth="1.2" className="app-ambient-elevator app-ambient-elevator--delay" />
 
           {/* overhead walkway */}
-          <rect x="680" y="260" width="280" height="14" rx="2" fill="#1e40af" fillOpacity="0.12" stroke="currentColor" strokeOpacity="0.14" strokeWidth="1" />
+          <rect x="680" y="260" width="280" height="14" rx="2" fill="#454c2d" fillOpacity="0.12" stroke="currentColor" strokeOpacity="0.14" strokeWidth="1" />
           <line x1="690" y1="274" x2="690" y2="340" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1.2" />
           <line x1="950" y1="274" x2="950" y2="340" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1.2" />
 
