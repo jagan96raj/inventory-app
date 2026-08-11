@@ -217,8 +217,8 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
       }
       size="md"
       footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>
+        <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="ghost" onClick={onClose} disabled={submitting} className="w-full sm:w-auto">
             Cancel
           </Button>
           <Button
@@ -226,6 +226,7 @@ export default function JobWorkFulfillmentActionDialog({ open, mode, line, onClo
             form="jw-fulfillment-action"
             loading={submitting}
             disabled={submitDisabled || noReturnLocations}
+            className="w-full sm:w-auto"
             leftIcon={isReceive ? <PackagePlus className="h-4 w-4" /> : <Undo2 className="h-4 w-4" />}
           >
             {isReceive ? "Receive" : "Return"}

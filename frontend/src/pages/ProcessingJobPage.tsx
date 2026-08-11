@@ -1722,6 +1722,8 @@ export default function ProcessingJobPage() {
                           ariaLabel="Output allocation mode"
                           value={outputAllocationMode}
                           onChange={setOutputAllocationMode}
+                          size="sm"
+                          className="flex w-full flex-wrap [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none"
                           options={[
                             {
                               value: "proportional",
@@ -3569,6 +3571,78 @@ const WASTE_COLUMNS: Column<WasteLogRow>[] = [
   },
 ];
 
+function ProcessingLogMobileCards({
+  rows,
+  kind,
+}: {
+  rows: Array<InputLogRow | OutputLogRow | WasteLogRow>;
+  kind: "input" | "output" | "waste";
+}) {
+  return (
+    <div className="space-y-2 lg:hidden">
+      {rows.map((r) => (
+        <div key={r.id} className="rounded-xl border border-line/80 bg-surface px-3 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              {kind === "input" && (
+                <>
+                  <p
+                    className={cn(
+                      "text-sm font-semibold",
+                      (r as InputLogRow).source === "Reprocess"
+                        ? "text-ink-muted"
+                        : "text-primary-700 dark:text-primary-300"
+                    )}
+                  >
+                    {(r as InputLogRow).source}
+                  </p>
+                  <p className="truncate text-sm text-ink">
+                    {(r as InputLogRow).owner || "—"} · {(r as InputLogRow).locationName || "—"}
+                  </p>
+                  <p className="truncate text-xs text-ink-muted">
+                    {(r as InputLogRow).bagTypeName || "—"}
+                    {(r as InputLogRow).bagCount != null ? ` · ${(r as InputLogRow).bagCount} bags` : ""}
+                  </p>
+                </>
+              )}
+              {kind === "output" && (
+                <>
+                  <p
+                    className={cn(
+                      "text-sm font-semibold",
+                      (r as OutputLogRow).entryKind === "Output"
+                        ? "text-accent-800 dark:text-accent-300"
+                        : "text-warning-800 dark:text-warning-300"
+                    )}
+                  >
+                    {(r as OutputLogRow).entryKind}
+                  </p>
+                  <p className="truncate text-sm text-ink">
+                    {(r as OutputLogRow).owner || "—"} · {(r as OutputLogRow).brandName !== "—" ? (r as OutputLogRow).brandName : "—"}
+                  </p>
+                  <p className="truncate text-xs text-ink-muted">
+                    {(r as OutputLogRow).locationName || "—"}
+                    {(r as OutputLogRow).bagTypeName ? ` · ${(r as OutputLogRow).bagTypeName}` : ""}
+                  </p>
+                </>
+              )}
+              {kind === "waste" && (
+                <p className="text-sm font-semibold text-warning-700 dark:text-warning-300">
+                  {(r as WasteLogRow).category}
+                </p>
+              )}
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="v2-mono text-sm font-semibold text-ink">{formatQtyKg(r.quantityKg)}</p>
+              <p className="v2-mono text-xs text-ink-muted">{formatLogTime(r.at)}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function useProcessingLogGroups(batches: ProcessingBatch[], customerNames: Map<number, string>) {
   return useMemo(() => buildProcessingLogGroups(batches, customerNames), [batches, customerNames]);
 }
@@ -3618,14 +3692,17 @@ function ProcessingInputLog({
     >
       {byDate.map((day) => (
         <LogDateGroup key={day.dayKey} label={day.label} totalKg={day.totalKg}>
-          <Table
-            columns={INPUT_COLUMNS}
-            rows={day.rows}
-            rowKey={(r) => r.id}
-            caption={`Input log ${day.label}`}
-            compact
-            stickyHeader={false}
-          />
+          <div className="hidden lg:block">
+            <Table
+              columns={INPUT_COLUMNS}
+              rows={day.rows}
+              rowKey={(r) => r.id}
+              caption={`Input log ${day.label}`}
+              compact
+              stickyHeader={false}
+            />
+          </div>
+          <ProcessingLogMobileCards rows={day.rows} kind="input" />
         </LogDateGroup>
       ))}
     </LogSection>
@@ -3654,14 +3731,17 @@ function ProcessingOutputLog({
     >
       {byDate.map((day) => (
         <LogDateGroup key={day.dayKey} label={day.label} totalKg={day.totalKg}>
-          <Table
-            columns={OUTPUT_COLUMNS}
-            rows={day.rows}
-            rowKey={(r) => r.id}
-            caption={`Output log ${day.label}`}
-            compact
-            stickyHeader={false}
-          />
+          <div className="hidden lg:block">
+            <Table
+              columns={OUTPUT_COLUMNS}
+              rows={day.rows}
+              rowKey={(r) => r.id}
+              caption={`Output log ${day.label}`}
+              compact
+              stickyHeader={false}
+            />
+          </div>
+          <ProcessingLogMobileCards rows={day.rows} kind="output" />
         </LogDateGroup>
       ))}
     </LogSection>
@@ -3686,14 +3766,17 @@ function ProcessingWasteLog({ batches }: { batches: ProcessingBatch[] }) {
     >
       {byDate.map((day) => (
         <LogDateGroup key={day.dayKey} label={day.label} totalKg={day.totalKg}>
-          <Table
-            columns={WASTE_COLUMNS}
-            rows={day.rows}
-            rowKey={(r) => r.id}
-            caption={`Waste log ${day.label}`}
-            compact
-            stickyHeader={false}
-          />
+          <div className="hidden lg:block">
+            <Table
+              columns={WASTE_COLUMNS}
+              rows={day.rows}
+              rowKey={(r) => r.id}
+              caption={`Waste log ${day.label}`}
+              compact
+              stickyHeader={false}
+            />
+          </div>
+          <ProcessingLogMobileCards rows={day.rows} kind="waste" />
         </LogDateGroup>
       ))}
     </LogSection>

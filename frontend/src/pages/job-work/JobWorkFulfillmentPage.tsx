@@ -87,14 +87,26 @@ function LineActions({
   onReturn: () => void;
 }) {
   return (
-    <div className="flex flex-wrap justify-end gap-1.5">
+    <div className="flex w-full flex-wrap justify-stretch gap-2 sm:justify-end sm:gap-1.5">
       {canReceive(ln) && (
-        <Button size="sm" variant="primary" leftIcon={<PackagePlus className="h-4 w-4" />} onClick={onReceive}>
+        <Button
+          size="sm"
+          variant="primary"
+          className="min-h-10 flex-1 sm:flex-none"
+          leftIcon={<PackagePlus className="h-4 w-4" />}
+          onClick={onReceive}
+        >
           Receive
         </Button>
       )}
       {canReturn(ln) && (
-        <Button size="sm" variant="outline" leftIcon={<Undo2 className="h-4 w-4" />} onClick={onReturn}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="min-h-10 flex-1 sm:flex-none"
+          leftIcon={<Undo2 className="h-4 w-4" />}
+          onClick={onReturn}
+        >
           Return
         </Button>
       )}
@@ -135,7 +147,7 @@ function OrderCard({
         </div>
       </header>
 
-      <div className="overflow-x-auto bg-surface/50">
+      <div className="hidden overflow-x-auto bg-surface/50 lg:block">
         <table className="v2-data-table min-w-[52rem] w-full text-base">
           <thead>
             <tr>
@@ -195,6 +207,55 @@ function OrderCard({
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="space-y-3 bg-surface/50 p-3 lg:hidden">
+        {(order.lines ?? []).map((ln) => {
+          const dimmed = visibility === "actionable" && !lineNeedsAction(ln);
+          return (
+            <div
+              key={ln.line_id}
+              className={cn(
+                "space-y-3 rounded-2xl border border-line/80 bg-surface p-4",
+                dimmed && "opacity-60"
+              )}
+            >
+              <div className="min-w-0">
+                <p className="font-semibold text-ink">{ln.product_name}</p>
+                <p className="mt-0.5 text-sm text-ink-muted">
+                  {ln.brand_name} · {ln.bag_type_name}
+                </p>
+              </div>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                <div>
+                  <dt className="text-ink-subtle">Ordered</dt>
+                  <dd>
+                    <JwQtyCell qty={jwOrderedQty(ln)} />
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-ink-subtle">Received</dt>
+                  <dd>
+                    <JwQtyCell qty={jwNetReceivedQty(ln)} />
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-ink-subtle">Remaining</dt>
+                  <dd>
+                    {remainingIsZero(ln) ? (
+                      <span className="text-sm text-ink-subtle">Complete</span>
+                    ) : (
+                      <JwQtyCell qty={jwRemainingReceiveQty(ln)} emphasize />
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <div className="border-t border-line/60 pt-3">
+                <LineActions ln={ln} onReceive={() => onReceive(ln)} onReturn={() => onReturn(ln)} />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {(order.lines ?? []).some((ln) => (ln.receipts ?? []).length > 0) && (
@@ -316,6 +377,8 @@ export default function JobWorkFulfillmentPage() {
             setOffset(0);
             setVisibility(v as Visibility);
           }}
+          size="sm"
+          className="flex w-full flex-wrap sm:w-auto sm:flex-nowrap [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none"
           options={[
             { value: "actionable", label: "Needs action" },
             { value: "all", label: "All" },

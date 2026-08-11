@@ -145,13 +145,17 @@ export default function JobWorkListPage() {
   const hasFilters = Boolean(listMode === "voided" || customerFilter != null);
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         eyebrow="Job work"
         title="Job work orders"
         subtitle="Customer material orders for processing — like bills without payment."
         actions={
-          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => navigate("/job-work/new")}>
+          <Button
+            leftIcon={<Plus className="h-4 w-4" />}
+            onClick={() => navigate("/job-work/new")}
+            className="hidden sm:inline-flex"
+          >
             New order
           </Button>
         }
@@ -250,7 +254,7 @@ export default function JobWorkListPage() {
             />
           ) : (
             <>
-              <div className="hidden space-y-5 md:block">
+              <div className="hidden space-y-5 lg:block">
                 {ordersByDate.map(({ date, orders: dayOrders }) => {
                   const label = date === "unknown" ? "No job date" : formatDate(date);
                   return (
@@ -279,7 +283,7 @@ export default function JobWorkListPage() {
                   );
                 })}
               </div>
-              <div className="space-y-5 md:hidden">
+              <div className="space-y-5 lg:hidden">
                 {ordersByDate.map(({ date, orders: dayOrders }) => {
                   const label = date === "unknown" ? "No job date" : formatDate(date);
                   return (
@@ -338,6 +342,14 @@ export default function JobWorkListPage() {
           )}
         </CardBody>
       </Card>
-    </>
+      <button
+        type="button"
+        onClick={() => navigate("/job-work/new")}
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-primary-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label="New job work order"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+    </div>
   );
 }
