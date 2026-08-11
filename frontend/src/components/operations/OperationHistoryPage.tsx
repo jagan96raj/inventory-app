@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { Plus } from "lucide-react";
 import {
   api,
   DEFAULT_PAGE_LIMIT,
@@ -31,6 +33,7 @@ export type OperationHistoryPageProps<T extends OperationHistoryRecord> = {
   voidDialogTitle: string;
   voidDialogDescription: string;
   renderTable: (rows: T[], onVoid: (row: T) => void) => ReactNode;
+  renderCards?: (rows: T[], onVoid: (row: T) => void) => ReactNode;
 };
 
 export function OperationHistoryVoidCell({
@@ -54,6 +57,22 @@ export function OperationHistoryVoidCell({
   );
 }
 
+export function OperationHistoryVoidAction({
+  voidedAt,
+  onVoid,
+}: {
+  voidedAt?: string | null;
+  onVoid: () => void;
+}) {
+  const voided = Boolean(voidedAt);
+  if (voided) return <VoidPill when={voidedAt} />;
+  return (
+    <Button type="button" variant="danger" size="md" className="w-full sm:w-auto" onClick={onVoid}>
+      Void
+    </Button>
+  );
+}
+
 export default function OperationHistoryPage<T extends OperationHistoryRecord>({
   title,
   subtitle,
@@ -66,6 +85,7 @@ export default function OperationHistoryPage<T extends OperationHistoryRecord>({
   voidDialogTitle,
   voidDialogDescription,
   renderTable,
+  renderCards,
 }: OperationHistoryPageProps<T>) {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
@@ -118,7 +138,7 @@ export default function OperationHistoryPage<T extends OperationHistoryRecord>({
   };
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <OperationPageHeader
         title={title}
         subtitle={subtitle}
@@ -135,7 +155,14 @@ export default function OperationHistoryPage<T extends OperationHistoryRecord>({
             <p>{emptyMessage}</p>
           </div>
         ) : (
-          <div className="v2-table-frame table-scroll">{renderTable(rows, setVoidTarget)}</div>
+          <>
+            {renderCards ? (
+              <div className="space-y-3 lg:hidden">{renderCards(rows, setVoidTarget)}</div>
+            ) : null}
+            <div className={renderCards ? "v2-table-frame table-scroll hidden lg:block" : "v2-table-frame table-scroll"}>
+              {renderTable(rows, setVoidTarget)}
+            </div>
+          </>
         )}
         <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} />
       </div>
@@ -152,6 +179,14 @@ export default function OperationHistoryPage<T extends OperationHistoryRecord>({
         }}
         authError={voidAuthError || undefined}
       />
-    </>
+
+      <Link
+        to={formTo}
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label="New record"
+      >
+        <Plus className="h-6 w-6" />
+      </Link>
+    </div>
   );
 }

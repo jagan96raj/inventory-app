@@ -133,88 +133,146 @@ type ProductTableProps = {
 
 function ProductGroupedTable({ products, onEdit, className }: ProductTableProps) {
   return (
-    <div className={cn("overflow-x-auto", className)}>
-      <table className="v2-data-table inventory-stock-table w-full min-w-[44rem] table-fixed text-sm">
-        <colgroup>
-          <col className="w-[20%]" />
-          <col className="w-[14%]" />
-          <col className="w-[14%]" />
-          <col style={{ width: "4.5rem" }} />
-          <col style={{ width: "6.75rem" }} />
-          <col style={{ width: "11rem" }} />
-          <col style={{ width: "5rem" }} />
-        </colgroup>
-        <thead className="bg-surface-subtle/80">
-          <tr>
-            <th scope="col" className={HEAD_LEFT}>
-              Product
-            </th>
-            <th scope="col" className={HEAD_LEFT}>
-              Brand
-            </th>
-            <th scope="col" className={HEAD_LEFT}>
-              Bag type
-            </th>
-            <BagsHeader />
-            <LooseKgHeader />
-            <TotalKgHeader />
-            <ActionsHeader />
-          </tr>
-        </thead>
-        <tbody>
-          {products.map((product, productIdx) =>
-            product.rows.map((row, rowIdx) => {
-              const low = isLowStock(row);
-              const isFirst = rowIdx === 0;
-              const isLastRow = rowIdx === product.rows.length - 1;
-              const isLastProduct = productIdx === products.length - 1;
-              return (
-                <tr
-                  key={row.id}
-                  className={cn(
-                    low && "bg-amber-50/80 dark:bg-amber-950/20",
-                    !isLastRow && "border-b border-line/25",
-                    isLastRow && !isLastProduct && "border-b-2 border-line/50"
-                  )}
-                >
-                  {isFirst ? (
-                    <td
-                      rowSpan={product.rows.length}
-                      className={cn(
-                        CELL,
-                        "border-r border-line/40 bg-surface-subtle/40 align-top font-semibold text-ink"
-                      )}
-                      title={product.productName}
-                    >
-                      <span className="line-clamp-4">{product.productName}</span>
+    <>
+      <div className={cn("hidden overflow-x-auto lg:block", className)}>
+        <table className="v2-data-table inventory-stock-table w-full min-w-[44rem] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[20%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col style={{ width: "4.5rem" }} />
+            <col style={{ width: "6.75rem" }} />
+            <col style={{ width: "11rem" }} />
+            <col style={{ width: "5rem" }} />
+          </colgroup>
+          <thead className="bg-surface-subtle/80">
+            <tr>
+              <th scope="col" className={HEAD_LEFT}>
+                Product
+              </th>
+              <th scope="col" className={HEAD_LEFT}>
+                Brand
+              </th>
+              <th scope="col" className={HEAD_LEFT}>
+                Bag type
+              </th>
+              <BagsHeader />
+              <LooseKgHeader />
+              <TotalKgHeader />
+              <ActionsHeader />
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((product, productIdx) =>
+              product.rows.map((row, rowIdx) => {
+                const low = isLowStock(row);
+                const isFirst = rowIdx === 0;
+                const isLastRow = rowIdx === product.rows.length - 1;
+                const isLastProduct = productIdx === products.length - 1;
+                return (
+                  <tr
+                    key={row.id}
+                    className={cn(
+                      low && "bg-amber-50/80 dark:bg-amber-950/20",
+                      !isLastRow && "border-b border-line/25",
+                      isLastRow && !isLastProduct && "border-b-2 border-line/50"
+                    )}
+                  >
+                    {isFirst ? (
+                      <td
+                        rowSpan={product.rows.length}
+                        className={cn(
+                          CELL,
+                          "border-r border-line/40 bg-surface-subtle/40 align-top font-semibold text-ink"
+                        )}
+                        title={product.productName}
+                      >
+                        <span className="line-clamp-4">{product.productName}</span>
+                      </td>
+                    ) : null}
+                    <td className={cn(CELL, "truncate")} title={row.brand_name ?? undefined}>
+                      {row.brand_name ?? "—"}
                     </td>
+                    <td className={cn(CELL, "truncate")} title={row.bag_type_name ?? undefined}>
+                      {row.bag_type_name ?? "—"}
+                    </td>
+                    <BagsCell count={row.bag_count} />
+                    <LooseKgCell kg={row.loose_kg} />
+                    <TotalKgCell kg={row.total_quantity_kg} low={low} />
+                    <td className={cn(CELL, "inventory-actions-cell whitespace-nowrap text-center")}>
+                      <IconButton
+                        label="Edit stock"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onEdit(row)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </IconButton>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className={cn("space-y-3 lg:hidden", className)}>
+        {products.flatMap((product) =>
+          product.rows.map((row) => {
+            const low = isLowStock(row);
+            return (
+              <div
+                key={row.id}
+                className={cn(
+                  "space-y-3 rounded-xl border border-line/80 bg-surface p-3",
+                  low && "border-amber-300/80 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/25"
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{product.productName}</p>
+                    <p className="mt-0.5 truncate text-sm text-ink-muted">
+                      {row.brand_name ?? "—"} · {row.bag_type_name ?? "—"}
+                    </p>
+                  </div>
+                  {low ? (
+                    <TriangleAlert
+                      className="h-4 w-4 shrink-0 text-warning-600 dark:text-warning-400"
+                      aria-label="Low stock"
+                    />
                   ) : null}
-                  <td className={cn(CELL, "truncate")} title={row.brand_name ?? undefined}>
-                    {row.brand_name ?? "—"}
-                  </td>
-                  <td className={cn(CELL, "truncate")} title={row.bag_type_name ?? undefined}>
-                    {row.bag_type_name ?? "—"}
-                  </td>
-                  <BagsCell count={row.bag_count} />
-                  <LooseKgCell kg={row.loose_kg} />
-                  <TotalKgCell kg={row.total_quantity_kg} low={low} />
-                  <td className={cn(CELL, "inventory-actions-cell whitespace-nowrap text-center")}>
-                    <IconButton
-                      label="Edit stock"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => onEdit(row)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </IconButton>
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
+                </div>
+                <dl className="grid grid-cols-3 gap-2 text-sm">
+                  <div>
+                    <dt className="text-ink-subtle">Bags</dt>
+                    <dd className="v2-mono tabular-nums text-ink">{row.bag_count}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-subtle">Loose kg</dt>
+                    <dd className="v2-mono tabular-nums text-ink">{formatQtyKg(row.loose_kg)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-subtle">Total kg</dt>
+                    <dd className="v2-mono font-semibold tabular-nums text-ink">
+                      {formatQtyKg(row.total_quantity_kg)}
+                    </dd>
+                  </div>
+                </dl>
+                <Button
+                  size="md"
+                  variant="secondary"
+                  className="w-full"
+                  leftIcon={<Pencil className="h-4 w-4" />}
+                  onClick={() => onEdit(row)}
+                >
+                  Edit stock
+                </Button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </>
   );
 }
 
@@ -243,109 +301,164 @@ type OwnerProductTableProps = {
 /** Detail view: product + owner columns grouped (rowspan) per owner → product. */
 function OwnerProductGroupedTable({ owners, onEdit }: OwnerProductTableProps) {
   return (
-    <div className="overflow-x-auto">
-      <table className="v2-data-table inventory-stock-table w-full min-w-[52rem] table-fixed text-sm">
-        <colgroup>
-          <col className="w-[18%]" />
-          <col className="w-[14%]" />
-          <col className="w-[14%]" />
-          <col className="w-[14%]" />
-          <col style={{ width: "4.5rem" }} />
-          <col style={{ width: "6.75rem" }} />
-          <col style={{ width: "11rem" }} />
-          <col style={{ width: "5rem" }} />
-        </colgroup>
-        <thead className="bg-surface-subtle/80">
-          <tr>
-            <th scope="col" className={HEAD_LEFT}>
-              Owner
-            </th>
-            <th scope="col" className={HEAD_LEFT}>
-              Product
-            </th>
-            <th scope="col" className={HEAD_LEFT}>
-              Brand
-            </th>
-            <th scope="col" className={HEAD_LEFT}>
-              Bag type
-            </th>
-            <BagsHeader />
-            <LooseKgHeader />
-            <TotalKgHeader />
-            <ActionsHeader />
-          </tr>
-        </thead>
-        <tbody>
-          {owners.flatMap((owner, ownerIdx) => {
-            const isLastOwner = ownerIdx === owners.length - 1;
+    <>
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="v2-data-table inventory-stock-table w-full min-w-[52rem] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col style={{ width: "4.5rem" }} />
+            <col style={{ width: "6.75rem" }} />
+            <col style={{ width: "11rem" }} />
+            <col style={{ width: "5rem" }} />
+          </colgroup>
+          <thead className="bg-surface-subtle/80">
+            <tr>
+              <th scope="col" className={HEAD_LEFT}>
+                Owner
+              </th>
+              <th scope="col" className={HEAD_LEFT}>
+                Product
+              </th>
+              <th scope="col" className={HEAD_LEFT}>
+                Brand
+              </th>
+              <th scope="col" className={HEAD_LEFT}>
+                Bag type
+              </th>
+              <BagsHeader />
+              <LooseKgHeader />
+              <TotalKgHeader />
+              <ActionsHeader />
+            </tr>
+          </thead>
+          <tbody>
+            {owners.flatMap((owner, ownerIdx) => {
+              const isLastOwner = ownerIdx === owners.length - 1;
 
-            return owner.products.flatMap((product, productIdx) =>
-              product.rows.map((row, rowIdx) => {
-                const low = isLowStock(row);
-                const isFirstProductRow = rowIdx === 0;
-                const isLastProductRow = rowIdx === product.rows.length - 1;
-                const isLastProduct = productIdx === owner.products.length - 1;
+              return owner.products.flatMap((product, productIdx) =>
+                product.rows.map((row, rowIdx) => {
+                  const low = isLowStock(row);
+                  const isFirstProductRow = rowIdx === 0;
+                  const isLastProductRow = rowIdx === product.rows.length - 1;
+                  const isLastProduct = productIdx === owner.products.length - 1;
 
-                return (
-                  <tr
-                    key={row.id}
-                    className={cn(
-                      low && "bg-amber-50/80 dark:bg-amber-950/20",
-                      !isLastProductRow && "border-b border-line/25",
-                      isLastProductRow && !isLastProduct && "border-b border-line/35",
-                      isLastProductRow && isLastProduct && !isLastOwner && "border-b-2 border-line/50"
-                    )}
+                  return (
+                    <tr
+                      key={row.id}
+                      className={cn(
+                        low && "bg-amber-50/80 dark:bg-amber-950/20",
+                        !isLastProductRow && "border-b border-line/25",
+                        isLastProductRow && !isLastProduct && "border-b border-line/35",
+                        isLastProductRow && isLastProduct && !isLastOwner && "border-b-2 border-line/50"
+                      )}
+                    >
+                      {isFirstProductRow ? (
+                        <td
+                          rowSpan={product.rows.length}
+                          className={cn(
+                            CELL,
+                            "border-r border-line/30 bg-surface-subtle/25 align-top"
+                          )}
+                        >
+                          <OwnerLabel owner={owner} />
+                        </td>
+                      ) : null}
+                      {isFirstProductRow ? (
+                        <td
+                          rowSpan={product.rows.length}
+                          className={cn(
+                            CELL,
+                            "border-r border-line/40 bg-surface-subtle/40 align-top font-semibold text-ink"
+                          )}
+                          title={product.productName}
+                        >
+                          <span className="line-clamp-4">{product.productName}</span>
+                        </td>
+                      ) : null}
+                      <td className={cn(CELL, "truncate")} title={row.brand_name ?? undefined}>
+                        {row.brand_name ?? "—"}
+                      </td>
+                      <td className={cn(CELL, "truncate")} title={row.bag_type_name ?? undefined}>
+                        {row.bag_type_name ?? "—"}
+                      </td>
+                      <BagsCell count={row.bag_count} />
+                      <LooseKgCell kg={row.loose_kg} />
+                      <TotalKgCell kg={row.total_quantity_kg} low={low} />
+                      <td className={cn(CELL, "inventory-actions-cell whitespace-nowrap text-center")}>
+                        <IconButton
+                          label="Edit stock"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onEdit(row)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </IconButton>
+                      </td>
+                    </tr>
+                  );
+                })
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-3 p-3 lg:hidden">
+        {owners.flatMap((owner) =>
+          owner.products.flatMap((product) =>
+            product.rows.map((row) => {
+              const low = isLowStock(row);
+              return (
+                <div
+                  key={row.id}
+                  className={cn(
+                    "space-y-3 rounded-xl border border-line/80 bg-surface p-3",
+                    low && "border-amber-300/80 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/25"
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <OwnerLabel owner={owner} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{product.productName}</p>
+                    <p className="mt-0.5 truncate text-sm text-ink-muted">
+                      {row.brand_name ?? "—"} · {row.bag_type_name ?? "—"}
+                    </p>
+                  </div>
+                  <dl className="grid grid-cols-3 gap-2 text-sm">
+                    <div>
+                      <dt className="text-ink-subtle">Bags</dt>
+                      <dd className="v2-mono tabular-nums text-ink">{row.bag_count}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-subtle">Loose kg</dt>
+                      <dd className="v2-mono tabular-nums text-ink">{formatQtyKg(row.loose_kg)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-subtle">Total kg</dt>
+                      <dd className="v2-mono font-semibold tabular-nums text-ink">
+                        {formatQtyKg(row.total_quantity_kg)}
+                      </dd>
+                    </div>
+                  </dl>
+                  <Button
+                    size="md"
+                    variant="secondary"
+                    className="w-full"
+                    leftIcon={<Pencil className="h-4 w-4" />}
+                    onClick={() => onEdit(row)}
                   >
-                    {isFirstProductRow ? (
-                      <td
-                        rowSpan={product.rows.length}
-                        className={cn(
-                          CELL,
-                          "border-r border-line/30 bg-surface-subtle/25 align-top"
-                        )}
-                      >
-                        <OwnerLabel owner={owner} />
-                      </td>
-                    ) : null}
-                    {isFirstProductRow ? (
-                      <td
-                        rowSpan={product.rows.length}
-                        className={cn(
-                          CELL,
-                          "border-r border-line/40 bg-surface-subtle/40 align-top font-semibold text-ink"
-                        )}
-                        title={product.productName}
-                      >
-                        <span className="line-clamp-4">{product.productName}</span>
-                      </td>
-                    ) : null}
-                    <td className={cn(CELL, "truncate")} title={row.brand_name ?? undefined}>
-                      {row.brand_name ?? "—"}
-                    </td>
-                    <td className={cn(CELL, "truncate")} title={row.bag_type_name ?? undefined}>
-                      {row.bag_type_name ?? "—"}
-                    </td>
-                    <BagsCell count={row.bag_count} />
-                    <LooseKgCell kg={row.loose_kg} />
-                    <TotalKgCell kg={row.total_quantity_kg} low={low} />
-                    <td className={cn(CELL, "inventory-actions-cell whitespace-nowrap text-center")}>
-                      <IconButton
-                        label="Edit stock"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onEdit(row)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </IconButton>
-                    </td>
-                  </tr>
-                );
-              })
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                    Edit stock
+                  </Button>
+                </div>
+              );
+            })
+          )
+        )}
+      </div>
+    </>
   );
 }
 
@@ -432,7 +545,7 @@ export function InventorySummaryView({
                     <div key={ownerExpandKey} className="border-b border-line/40 last:border-b-0">
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 px-4 py-2.5 pl-10 text-left hover:bg-surface-subtle/50"
+                        className="flex w-full items-center gap-2 px-4 py-2.5 pl-4 text-left hover:bg-surface-subtle/50 sm:pl-10"
                         onClick={() => onToggleOwner(ownerExpandKey)}
                       >
                         {ownerExpanded ? (
@@ -467,7 +580,7 @@ export function InventorySummaryView({
                         </div>
                       </button>
                       {ownerExpanded ? (
-                        <div className="px-4 pb-4 pl-16">
+                        <div className="px-3 pb-3 sm:px-4 sm:pb-4 sm:pl-10 lg:pl-16">
                           <ProductGroupedTable
                             products={owner.products}
                             onEdit={onEdit}
