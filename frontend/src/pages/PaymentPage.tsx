@@ -299,7 +299,8 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
         subtitle={bill ? `Bill ${bill.bill_number}` : "Loading…"}
         actions={
           <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate(listPath)}>
-            Back to bills
+            <span className="sm:hidden">Back</span>
+            <span className="hidden sm:inline">Back to bills</span>
           </Button>
         }
       />
@@ -316,24 +317,24 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
       )}
 
       {bill && !billLoading ? (
-        <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
-          <Card>
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+          <Card className="min-w-0">
             <CardHeader title="Bill summary" />
             <CardBody className="space-y-2 text-sm">
               <div className="flex justify-between gap-3">
-                <span className="text-ink-muted">Customer</span>
-                <span className="font-medium text-ink">{bill.customer_name ?? "—"}</span>
+                <span className="shrink-0 text-ink-muted">Customer</span>
+                <span className="min-w-0 truncate text-right font-medium text-ink">{bill.customer_name ?? "—"}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-ink-muted">Grand total</span>
+                <span className="shrink-0 text-ink-muted">Grand total</span>
                 <span className="v2-mono font-semibold">{formatInr(bill.grand_total)}</span>
               </div>
               <div className="flex justify-between gap-3">
-                <span className="text-ink-muted">Amount due</span>
+                <span className="shrink-0 text-ink-muted">Amount due</span>
                 <span className="v2-mono font-semibold text-primary-700 dark:text-primary-200">{formatInr(due)}</span>
               </div>
-              <div className="flex justify-between gap-3">
-                <span className="text-ink-muted">Status</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="shrink-0 text-ink-muted">Status</span>
                 <PaymentPill status={bill.payment_status} />
               </div>
               <p className="pt-2 text-xs text-ink-subtle">
@@ -355,7 +356,7 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
               </CardBody>
             </Card>
           ) : (
-            <Card>
+            <Card className="min-w-0">
               <CardHeader title="New payment" subtitle="Pick the Cash or Bank account (or a set-off balance)." />
               <CardBody>
                 <form onSubmit={submit} className="space-y-4">

@@ -41,6 +41,66 @@ function prependUniquePayment(payment: Payment, items: Payment[]): Payment[] {
   return [payment, ...items];
 }
 
+function PaymentMobileCard({
+  payment,
+  highlighted,
+  busy,
+  onVoid,
+}: {
+  payment: Payment;
+  highlighted: boolean;
+  busy: boolean;
+  onVoid: () => void;
+}) {
+  const base = payment.bill_type === "purchase" ? "/purchase-bills" : "/sales-bills";
+  const theme = themeForBillType(payment.bill_type ?? "sales");
+  const isSetoff = payment.payment_mode === "setoff" || payment.linked_payment_id != null;
+  return (
+    <Card
+      className={cn(
+        "overflow-hidden border-line/80",
+        highlighted && "border-emerald-300/80 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/40"
+      )}
+    >
+      <CardBody className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <Link
+              to={`${base}/${payment.bill_id}`}
+              className={cn("v2-mono text-lg font-bold hover:underline", theme.billLink)}
+            >
+              {payment.bill_number ?? `#${payment.bill_id}`}
+            </Link>
+            <Badge size="sm" tone={theme.badgeTone}>
+              {theme.label}
+            </Badge>
+          </div>
+          <p className="v2-mono shrink-0 text-lg font-bold tabular-nums text-ink">{formatInr(payment.amount)}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="truncate font-medium text-ink">{payment.customer_name ?? "—"}</p>
+          <p className="text-sm text-ink-subtle">{formatDateTime(payment.paid_at)}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge size="sm" tone={isSetoff ? "info" : "primary"}>
+            {paymentModeLabel(payment.payment_mode)}
+          </Badge>
+          {payment.payment_mode === "bank" && payment.bank_account_name ? (
+            <span className="truncate text-xs text-ink-subtle">{payment.bank_account_name}</span>
+          ) : null}
+        </div>
+        {isSetoff ? (
+          <p className="text-sm text-ink-muted">Linked set-off — void the primary payment instead.</p>
+        ) : (
+          <Button size="md" variant="danger" className="w-full sm:w-auto" loading={busy} onClick={onVoid}>
+            Void payment
+          </Button>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
 export default function PaymentsPage() {
   const location = useLocation();
   const createdParam = new URLSearchParams(location.search).get("created");
@@ -252,12 +312,12 @@ export default function PaymentsPage() {
   ];
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         title="Payments"
         subtitle="Active payments against sales and purchase bills. Voiding a primary payment cascades to its set-off rows."
         actions={
-          <Link to="/payments/new">
+          <Link to="/payments/new" className="hidden sm:inline-flex">
             <Button leftIcon={<Plus className="h-4 w-4" />}>Record payment</Button>
           </Link>
         }
@@ -285,10 +345,10 @@ export default function PaymentsPage() {
           <div className="mb-4 grid gap-3 sm:grid-cols-2">
             <Card className={cn("border-line/80", BILL_TYPE_THEME.sales.filterGradient)}>
               <CardBody className="flex items-center gap-3 p-4 sm:p-5">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
                   <ShoppingCart className="h-5 w-5" aria-hidden="true" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-medium text-primary-700/80 dark:text-primary-300/80">Sales payments</p>
                   <p className="text-2xl font-bold text-primary-800 dark:text-primary-100">{salesCount}</p>
                 </div>
@@ -296,33 +356,49 @@ export default function PaymentsPage() {
             </Card>
             <Card className={cn("border-line/80", BILL_TYPE_THEME.purchase.filterGradient)}>
               <CardBody className="flex items-center gap-3 p-4 sm:p-5">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
                   <PackagePlus className="h-5 w-5" aria-hidden="true" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-medium text-emerald-800/80 dark:text-emerald-300/80">Purchase payments</p>
                   <p className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">{purchaseCount}</p>
                 </div>
               </CardBody>
             </Card>
           </div>
-          <Table
-            columns={columns}
-            rows={rows}
-            rowKey={(p) => p.id}
-            caption="Active payments"
-            rowClassName={(p) =>
-              cn(
-                themeForBillType(p.bill_type ?? "sales").row,
-                highlightedId != null && samePaymentId(p.id, highlightedId)
-                  ? "bg-emerald-50/90 dark:bg-emerald-950/40"
-                  : undefined
-              )
-            }
-            zebra
-            compact
-            stickyHeader={false}
-          />
+          <div className="space-y-3 lg:hidden">
+            {rows.map((p) => (
+              <PaymentMobileCard
+                key={p.id}
+                payment={p}
+                highlighted={highlightedId != null && samePaymentId(p.id, highlightedId)}
+                busy={busy && pending?.id === p.id}
+                onVoid={() => {
+                  voidIdemRef.current = null;
+                  setPending(p);
+                }}
+              />
+            ))}
+          </div>
+          <div className="hidden lg:block">
+            <Table
+              columns={columns}
+              rows={rows}
+              rowKey={(p) => p.id}
+              caption="Active payments"
+              rowClassName={(p) =>
+                cn(
+                  themeForBillType(p.bill_type ?? "sales").row,
+                  highlightedId != null && samePaymentId(p.id, highlightedId)
+                    ? "bg-emerald-50/90 dark:bg-emerald-950/40"
+                    : undefined
+                )
+              }
+              zebra
+              compact
+              stickyHeader={false}
+            />
+          </div>
           <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
         </>
       )}
@@ -343,6 +419,13 @@ export default function PaymentsPage() {
         confirmLabel="Void"
         authError={voidAuthError || undefined}
       />
-    </>
+      <Link
+        to="/payments/new"
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label="Record payment"
+      >
+        <Plus className="h-6 w-6" />
+      </Link>
+    </div>
   );
 }

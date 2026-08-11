@@ -92,6 +92,92 @@ function prependUnique(entry: CashBookEntry, items: CashBookEntry[]): CashBookEn
   return [entry, ...items];
 }
 
+function CashBookMobileCard({
+  entry,
+  highlighted,
+  canVoid,
+  busy,
+  onVoid,
+}: {
+  entry: CashBookEntry;
+  highlighted: boolean;
+  canVoid: boolean;
+  busy: boolean;
+  onVoid: () => void;
+}) {
+  return (
+    <Card
+      className={cn(
+        "overflow-hidden border-line/80",
+        highlighted && "border-emerald-300/80 bg-emerald-50/70 dark:border-emerald-800 dark:bg-emerald-950/40",
+        entry.voided_at && "opacity-70"
+      )}
+    >
+      <CardBody className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              {entryIcon(entry)}
+              {entryTypeBadge(entry)}
+              {entry.voided_at ? (
+                <Badge tone="danger" size="sm">
+                  Voided
+                </Badge>
+              ) : (
+                <Badge tone="success" size="sm">
+                  Active
+                </Badge>
+              )}
+            </div>
+            <p className="truncate font-semibold text-ink">{entry.category_name ?? "—"}</p>
+            <p className="v2-mono text-sm text-ink-muted">{formatDate(entry.entry_date)}</p>
+          </div>
+          <p className="v2-mono shrink-0 text-lg font-bold tabular-nums text-ink">{formatInr(entry.amount)}</p>
+        </div>
+        <p className="truncate text-sm text-ink-muted">{modeLabel(entry)}</p>
+        {(entry.description || entry.reference_no) && (
+          <p className="truncate text-xs text-ink-subtle">
+            {entry.description ?? ""}
+            {entry.description && entry.reference_no ? " · " : ""}
+            {entry.reference_no ? `Ref ${entry.reference_no}` : ""}
+          </p>
+        )}
+        {entry.bill_id ? (
+          <Link
+            to={`/sales-bills/${entry.bill_id}`}
+            className="v2-mono text-sm font-medium text-primary-600 hover:underline"
+          >
+            {entry.bill_number ?? `#${entry.bill_id}`}
+          </Link>
+        ) : null}
+        <div className="flex flex-wrap gap-2 border-t border-line/70 pt-3">
+          <Link to={`/accounts/cashbook/${entry.id}/edit`} className="min-w-0 flex-1 sm:flex-none">
+            <Button size="md" variant="secondary" className="w-full sm:w-auto">
+              Open
+            </Button>
+          </Link>
+          {!entry.voided_at && canVoid ? (
+            <Button
+              size="md"
+              variant="outline"
+              leftIcon={<Ban className="h-3.5 w-3.5" />}
+              className={cn(
+                "w-full border-rose-200/80 bg-rose-50/40 font-medium text-rose-700 sm:w-auto",
+                "hover:border-rose-300 hover:bg-rose-100/80 hover:text-rose-800",
+                "dark:border-rose-800/50 dark:bg-rose-950/25 dark:text-rose-300"
+              )}
+              loading={busy}
+              onClick={onVoid}
+            >
+              Void
+            </Button>
+          ) : null}
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
 export default function CashBookListPage() {
   const { canVoid } = usePermissions();
   const location = useLocation();
@@ -378,13 +464,13 @@ export default function CashBookListPage() {
   );
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         eyebrow="Accounts"
         title="Cash book"
         subtitle="Non-bill money movements: expenses, income, and transfers. Owner can void wrong entries — balances reverse automatically."
         actions={
-          <Link to="/accounts/cashbook/new">
+          <Link to="/accounts/cashbook/new" className="hidden sm:inline-flex">
             <Button leftIcon={<Plus className="h-4 w-4" />}>New entry</Button>
           </Link>
         }
@@ -677,20 +763,37 @@ export default function CashBookListPage() {
               </>
             )}
           </div>
-          <Table
-            columns={columns}
-            rows={displayRows}
-            rowKey={(r) => `cashbook-${r.id}`}
-            caption="Cash book entries"
-            zebra
-            compact
-            stickyHeader={false}
-            rowClassName={(r) =>
-              highlightedEntry && sameEntryId(r.id, highlightedEntry.id)
-                ? "bg-emerald-50/90 dark:bg-emerald-950/40"
-                : undefined
-            }
-          />
+          <div className="space-y-3 lg:hidden">
+            {displayRows.map((r) => (
+              <CashBookMobileCard
+                key={`cashbook-m-${r.id}`}
+                entry={r}
+                highlighted={Boolean(highlightedEntry && sameEntryId(r.id, highlightedEntry.id))}
+                canVoid={canVoid}
+                busy={busy && pending?.id === r.id}
+                onVoid={() => {
+                  idemRef.current = null;
+                  setPending(r);
+                }}
+              />
+            ))}
+          </div>
+          <div className="hidden lg:block">
+            <Table
+              columns={columns}
+              rows={displayRows}
+              rowKey={(r) => `cashbook-${r.id}`}
+              caption="Cash book entries"
+              zebra
+              compact
+              stickyHeader={false}
+              rowClassName={(r) =>
+                highlightedEntry && sameEntryId(r.id, highlightedEntry.id)
+                  ? "bg-emerald-50/90 dark:bg-emerald-950/40"
+                  : undefined
+              }
+            />
+          </div>
           <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
         </div>
       )}
@@ -712,6 +815,13 @@ export default function CashBookListPage() {
         confirmLabel={busy ? "Voiding…" : "Void"}
         authError={voidAuthError || undefined}
       />
-    </>
+      <Link
+        to="/accounts/cashbook/new"
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label="New cash book entry"
+      >
+        <Plus className="h-6 w-6" />
+      </Link>
+    </div>
   );
 }
