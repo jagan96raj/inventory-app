@@ -375,7 +375,7 @@ export default function StockDisposalPage() {
               </div>
             </OperationSection>
           </CardBody>
-          <CardFooter className="flex flex-col gap-3 border-t border-line/60 sm:flex-row sm:items-center sm:justify-between">
+          <CardFooter className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-line/60 bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-sm text-danger-700 dark:text-danger-300">
               <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
               {qtyKg > 0 ? `${formatQtyKg(qtyKg)} will be written off` : "Select stock to dispose"}

@@ -1199,12 +1199,13 @@ export default function BillFormPage({
               )}
             </FormField>
 
-            <div className="flex flex-wrap justify-end gap-3 border-t border-line/60 pt-4">
+            <div className="sticky bottom-0 z-20 -mx-5 mt-2 flex flex-col-reverse gap-2 border-t border-line/60 bg-surface/95 px-5 py-3 backdrop-blur supports-[backdrop-filter]:bg-surface/80 sm:flex-row sm:justify-end">
               {editMode ? (
                 bill && (
                   <V13Button
                     type="button"
                     size="lg"
+                    className="w-full sm:w-auto"
                     disabled={submitDisabled || totalsInvalid}
                     loading={submitting}
                     onClick={submitEdit}
@@ -1216,6 +1217,7 @@ export default function BillFormPage({
                 <V13Button
                   type="button"
                   size="lg"
+                  className="w-full sm:w-auto"
                   disabled={submitDisabled || totalsInvalid}
                   loading={submitting}
                   onClick={submitCreate}

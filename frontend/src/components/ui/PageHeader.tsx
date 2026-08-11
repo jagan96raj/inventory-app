@@ -69,7 +69,11 @@ export default function PageHeader({
             <p className="mt-1 text-sm text-indigo-700/85 sm:max-w-2xl dark:text-indigo-200/85">{subtitle}</p>
           )}
         </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {actions && (
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end [&_a]:w-full [&_a]:sm:w-auto [&_button]:w-full [&_button]:sm:w-auto">
+            {actions}
+          </div>
+        )}
       </div>
     </header>
   );

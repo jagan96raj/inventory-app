@@ -770,7 +770,7 @@ export default function InventoryPage() {
                   )}
               </div>
             </div>
-            <div className="flex shrink-0 justify-end gap-2">
+            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
               <Button variant="ghost" onClick={closeAddStock} disabled={saving}>
                 Cancel
               </Button>
@@ -802,7 +802,7 @@ export default function InventoryPage() {
               {editSummary ? <p className="truncate text-sm text-ink-muted">{editSummary}</p> : null}
               <p className="v2-mono text-2xl font-bold tabular-nums text-ink">{formatQtyKg(editPreviewKg)}</p>
             </div>
-            <div className="flex shrink-0 justify-end gap-2">
+            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
               <Button variant="ghost" onClick={closeEdit} disabled={saving}>
                 Cancel
               </Button>

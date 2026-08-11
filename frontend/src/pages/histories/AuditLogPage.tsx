@@ -133,8 +133,8 @@ export default function AuditLogPage() {
       />
 
       <Card>
-        <CardBody className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <FormField label="Action">
+        <CardBody className="grid min-w-0 gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <FormField label="Action" className="min-w-0">
             {({ id }) => (
               <Select
                 id={id}
@@ -150,7 +150,7 @@ export default function AuditLogPage() {
               </Select>
             )}
           </FormField>
-          <FormField label="Entity type">
+          <FormField label="Entity type" className="min-w-0">
             {({ id }) => (
               <Select
                 id={id}
@@ -166,17 +166,17 @@ export default function AuditLogPage() {
               </Select>
             )}
           </FormField>
-          <FormField label="From date">
+          <FormField label="From date" className="min-w-0">
             {({ id }) => (
               <Input id={id} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             )}
           </FormField>
-          <FormField label="To date">
+          <FormField label="To date" className="min-w-0">
             {({ id }) => (
               <Input id={id} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             )}
           </FormField>
-          <FormField label="Search label">
+          <FormField label="Search label" className="min-w-0 md:col-span-2 lg:col-span-1">
             {({ id }) => (
               <Input
                 id={id}
@@ -194,14 +194,49 @@ export default function AuditLogPage() {
         <EmptyState title="Could not load audit log" description={error} />
       ) : (
         <>
-          <Table
-            columns={columns}
-            rows={rows}
-            rowKey={(row) => row.id}
-            caption="Audit log"
-            loading={loading}
-            empty={<span className="text-base text-ink-muted">No audit events match your filters.</span>}
-          />
+          <div className="space-y-3 lg:hidden">
+            {loading ? (
+              <Card>
+                <CardBody className="text-sm text-ink-muted">Loading…</CardBody>
+              </Card>
+            ) : rows.length === 0 ? (
+              <Card>
+                <CardBody className="text-sm text-ink-muted">No audit events match your filters.</CardBody>
+              </Card>
+            ) : (
+              rows.map((row) => (
+                <Card key={row.id} className="min-w-0 overflow-hidden">
+                  <CardBody className="space-y-2 p-4">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-ink">{auditActionLabel(row.action)}</p>
+                        <p className="text-xs text-ink-muted">{formatDateTime(row.created_at)}</p>
+                      </div>
+                      <p className="text-xs text-ink-muted">
+                        {auditEntityTypeLabel(row.entity_type)}
+                        {row.entity_id != null ? ` #${row.entity_id}` : ""}
+                      </p>
+                    </div>
+                    <p className="truncate text-sm text-ink">{row.entity_label ?? "—"}</p>
+                    <p className="truncate text-xs text-ink-muted">
+                      {row.user_email ?? (row.user_id != null ? `User #${row.user_id}` : "—")}
+                    </p>
+                    <p className="line-clamp-2 text-xs text-ink-muted">{metadataSnippet(row.metadata)}</p>
+                  </CardBody>
+                </Card>
+              ))
+            )}
+          </div>
+          <div className="hidden lg:block">
+            <Table
+              columns={columns}
+              rows={rows}
+              rowKey={(row) => row.id}
+              caption="Audit log"
+              loading={loading}
+              empty={<span className="text-base text-ink-muted">No audit events match your filters.</span>}
+            />
+          </div>
           <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} />
         </>
       )}
