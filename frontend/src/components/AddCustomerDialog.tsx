@@ -162,7 +162,7 @@ export default function AddCustomerDialog({ open, onClose, onCreated }: Props) {
         </div>
 
         <div className="border-t border-line/70 pt-5">
-          <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-violet-700 dark:text-violet-300">
+          <p className="mb-4 flex items-center gap-2 text-sm font-semibold text-primary-700 dark:text-primary-300">
             <MapPin className="h-4 w-4" aria-hidden="true" />
             Address <span className="font-normal text-ink-subtle">(optional)</span>
           </p>

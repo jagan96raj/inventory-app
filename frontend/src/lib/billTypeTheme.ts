@@ -5,9 +5,9 @@ export const BILL_TYPE_THEME = {
     billNumber: "text-primary-700 dark:text-primary-300",
     billLink: "font-semibold text-primary-700 hover:text-primary-800 hover:underline dark:text-primary-300",
     badgeTone: "primary" as const,
-    tableHeader: "text-indigo-700/90 dark:text-indigo-200/90",
+    tableHeader: "text-primary-800/90 dark:text-primary-200/90",
     filterGradient:
-      "bg-gradient-to-br from-primary-50/55 via-surface to-violet-50/35 dark:from-primary-950/30 dark:via-surface dark:to-violet-950/20",
+      "bg-gradient-to-br from-primary-50/55 via-surface to-primary-50/35 dark:from-primary-950/30 dark:via-surface dark:to-primary-950/20",
     filterIcon: "text-primary-600 dark:text-primary-300",
     label: "Sales",
     party: "Customer",

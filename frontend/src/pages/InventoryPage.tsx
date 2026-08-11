@@ -557,13 +557,13 @@ export default function InventoryPage() {
           </FormField>
         </div>
 
-        <div className="rounded-2xl border-2 border-violet-200/70 bg-violet-50/40 p-4 dark:border-violet-800/50 dark:bg-violet-950/20">
+        <div className="rounded-2xl border-2 border-primary-200/70 bg-primary-50/40 p-4 dark:border-primary-800/50 dark:bg-primary-950/20">
           <div className="mb-3 flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-500 text-sm font-bold text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-600 text-sm font-bold text-white">
               2
             </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary-700 dark:text-primary-300">
                 Product
               </p>
               <p className="text-sm text-ink-muted">What commodity is this?</p>
@@ -1098,7 +1098,7 @@ export default function InventoryPage() {
       <button
         type="button"
         onClick={openAddStock}
-        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
         aria-label="Add stock"
       >
         <Plus className="h-6 w-6" />

@@ -6,7 +6,7 @@ type Props = {
   gradientId?: string;
 };
 
-export default function KpiSparkline({ data, color = "#6366f1", gradientId = "spark" }: Props) {
+export default function KpiSparkline({ data, color = "#737c50", gradientId = "spark" }: Props) {
   if (!data?.length) return null;
   return (
     <ResponsiveContainer width="100%" height="100%">

@@ -59,7 +59,7 @@ function entrySourceLabel(entry: CashBookEntry): string {
 
 function amountTone(entry: CashBookEntry): string {
   if (entry.entry_type === "income") return "text-emerald-700 dark:text-emerald-300";
-  if (entry.entry_type === "transfer") return "text-indigo-700 dark:text-indigo-300";
+  if (entry.entry_type === "transfer") return "text-primary-700 dark:text-primary-300";
   return "text-rose-700 dark:text-rose-300";
 }
 

@@ -59,7 +59,7 @@ export default function Table<T>({
         </colgroup>
         <thead
           className={cn(
-            "bg-surface-muted text-base font-semibold uppercase tracking-wide text-indigo-700/90 dark:bg-surface-muted dark:text-indigo-200/90",
+            "bg-surface-muted text-base font-semibold uppercase tracking-wide text-primary-800/90 dark:bg-surface-muted dark:text-primary-200/90",
             stickyHeader && "sticky top-16 z-10",
             headerClassName
           )}

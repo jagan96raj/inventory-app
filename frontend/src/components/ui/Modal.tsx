@@ -76,7 +76,7 @@ export default function Modal({
                     className={cn(
                       "relative flex shrink-0 items-start justify-between gap-3 border-b border-line",
                       headerTone === "accent"
-                        ? "bg-gradient-to-br from-primary-500/10 via-violet-500/5 to-transparent px-5 pb-4 pt-5 dark:from-primary-500/15 dark:via-violet-500/10"
+                        ? "bg-gradient-to-br from-primary-500/10 via-primary-500/5 to-transparent px-5 pb-4 pt-5 dark:from-primary-500/15 dark:via-primary-500/10"
                         : "px-5 pb-3 pt-5"
                     )}
                   >
@@ -86,7 +86,7 @@ export default function Modal({
                           className={cn(
                             "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-md",
                             headerTone === "accent"
-                              ? "bg-gradient-to-br from-primary-500 to-violet-500 text-white shadow-primary-500/30"
+                              ? "bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-primary-500/30"
                               : "border border-line bg-surface-subtle text-primary-600 dark:text-primary-300"
                           )}
                           aria-hidden="true"

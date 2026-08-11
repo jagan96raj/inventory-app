@@ -7,7 +7,7 @@ import { formatQtyKg } from "../../lib/format";
 const sectionTone = {
   primary:
     "border-primary-200/70 bg-primary-50/40 dark:border-primary-800/50 dark:bg-primary-950/25",
-  violet: "border-violet-200/70 bg-violet-50/40 dark:border-violet-800/50 dark:bg-violet-950/20",
+  violet: "border-primary-200/70 bg-primary-50/40 dark:border-primary-800/50 dark:bg-primary-950/20",
   emerald:
     "border-emerald-200/70 bg-emerald-50/40 dark:border-emerald-800/50 dark:bg-emerald-950/25",
   warning:

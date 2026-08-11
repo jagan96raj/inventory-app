@@ -65,11 +65,11 @@ function avatarAccent(role: UserRole | null | undefined): string {
     case "owner":
       return "from-amber-400/25 via-orange-400/15 to-rose-400/20 text-amber-900 ring-amber-400/25 dark:text-amber-100";
     case "writer":
-      return "from-sky-400/25 via-blue-400/15 to-indigo-400/20 text-sky-900 ring-sky-400/25 dark:text-sky-100";
+      return "from-sky-400/25 via-teal-400/15 to-primary-400/20 text-sky-900 ring-sky-400/25 dark:text-sky-100";
     case "stock_manager":
       return "from-emerald-400/25 via-green-400/15 to-teal-400/20 text-emerald-900 ring-emerald-400/25 dark:text-emerald-100";
     case "factory_manager":
-      return "from-violet-400/25 via-purple-400/15 to-fuchsia-400/20 text-violet-900 ring-violet-400/25 dark:text-violet-100";
+      return "from-primary-400/25 via-primary-300/15 to-accent-400/20 text-primary-900 ring-primary-400/25 dark:text-primary-100";
     default:
       return "from-zinc-300/30 via-zinc-200/20 to-zinc-400/20 text-zinc-700 ring-zinc-300/40 dark:text-zinc-200";
   }
@@ -434,7 +434,7 @@ export default function UsersPage() {
           <CardBody className="p-0">
             {users.length === 0 ? (
               <div className="flex flex-col items-center justify-center px-4 py-12 text-center sm:px-6 sm:py-16">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500/15 to-violet-500/10 ring-1 ring-primary-500/15">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500/15 to-primary-500/10 ring-1 ring-primary-500/15">
                   <UserRound className="h-7 w-7 text-primary-600 dark:text-primary-300" aria-hidden />
                 </div>
                 <p className="mt-4 text-base font-semibold text-ink">No users yet</p>

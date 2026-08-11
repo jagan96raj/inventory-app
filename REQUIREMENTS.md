@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.14** (app logo / brand mark); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.15** (Raj Agro olive brand theme); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.15** — Brand theme: replace indigo/violet/blue-lavender with Raj Agro logo olive/sage greens (Tailwind `primary`, CSS tokens, AuthShell/PageHeader/FAB gradients, legacy Aurora CSS aliases, `theme-color`). Light canvas warm-green tinted; dark olive-readable. No business logic. See **Spec v17.3.15** below.
 - **v17.3.14** — Custom app logo: transparent `frontend/public/logo-mark.png` (tractor + circular grain mark only; company wordmark cropped out); `AppBrand` shows mark + `VITE_APP_NAME` (**GrainTrack**); wired in Sidebar + AuthShell; favicon + desktop-shell `icon.ico`. See **Spec v17.3.14** below.
 - **v17.3.13** — Responsive UI **Phase 7** (layout only — final polish): Shared Modal/`CardFooter`/`PageHeader`/`EmptyState` mobile stacking; money-accounts + expense-category cards; audit/login history cards; sticky submit on Bill/JW/ops/cash-book forms; inventory/processing dialog button stacks. No new features. See **Spec v17.3.13** below.
 - **v17.3.12** — Responsive UI **Phase 6** (layout only): Customer balances + statement cards below `lg`; Users/Profile touch targets + stacked modal/save actions; AuthShell phone padding + wider register; Pending access stacked CTAs. Desktop tables unchanged. No Phase 7+. See **Spec v17.3.12** below.
@@ -344,14 +345,14 @@ See `TEST_PLAN.md` § "v13.0 UI redesign" for the 14-item manual smoke checklist
 - **Detail (`BillDetailPage`):** header summary card with status pills and totals; **Overview** tab shows product line items (**Lines** tab removed); redundant bill meta removed from Overview; **Payments** and **Fulfillment** tabs enlarged with mobile card layouts and `detailTh`/`detailTd` sizing.
 
 ### Fulfillment
-- `BILL_TYPE_THEME` / `themeForBillType()` in `src/lib/billTypeTheme.ts` — sales (indigo) vs purchase (emerald) row coloring, badges, and filter gradients.
+- `BILL_TYPE_THEME` / `themeForBillType()` in `src/lib/billTypeTheme.ts` — sales (olive primary) vs purchase (emerald) row coloring, badges, and filter gradients.
 - Bills grouped by bill number + customer in card blocks on `FulfillmentPage`.
 - Deliver / receive / return open **`FulfillmentActionDialog`** modal (`FulfillmentActionPanels` for context) instead of dedicated full pages.
 - `FulfillmentDeliverPage` / `FulfillmentReturnPage` redirect to `/fulfillment?action=…&line=…` (and `parent_entry_id` when needed) for deep links.
 - Sales fulfillment actions highlight the bill **source location**.
 
 ### Payments
-- Full-row tint by bill type (sales indigo / purchase emerald) via `BILL_TYPE_THEME`.
+- Full-row tint by bill type (sales olive primary / purchase emerald) via `BILL_TYPE_THEME`.
 - Summary cards for sales vs purchase counts; larger bill number, customer, amount, and date typography.
 
 ### Inventory
@@ -459,7 +460,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 
 ## UI — Aurora theme, layout & typography
 
-- **Theme:** “Aurora” — indigo / violet / cyan / amber palette, glassmorphism (`backdrop-filter`), gradients, animated KPI cards and charts (`index.css`).
+- **Theme (v17.3.15):** Olive / sage primary aligned to Raj Agro logo (`primary-700` ≈ `#586038`, `primary-500` ≈ `#737c50`, sage `50`/`100`); accent greens for secondary highlights; cyan/amber retained for status/charts. Glassmorphism + gradients remain; brand washes are warm-green, not indigo/violet. Legacy Aurora CSS keeps `--indigo` / `--violet` **aliases** remapped to olive.
 - **Fonts:** Inter (UI), Plus Jakarta Sans (headings), JetBrains Mono (numbers) — loaded in `index.html`.
 - **Motion:** page fade-in, staggered home cards, hover lift, animated nav/tabs/messages; `prefers-reduced-motion` respected.
 - **Qty inputs:** `type="number"` with empty placeholders (not pre-filled 0/1).
@@ -3355,6 +3356,14 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.15 — Raj Agro olive brand theme
+
+**Change:** Retheme the frontend so GrainTrack reads as olive/green brand (matching logo mark), not indigo/violet/blue-lavender.
+
+**Touches:** `frontend/tailwind.config.ts` primary (+ accent) scales; `frontend/src/styles/index.css` canvas/surface/ink/line/shadow/`--primary-rgb`; legacy `frontend/src/index.css` Aurora tokens (`--indigo*` / `--violet*` aliased to olive) + RGBA washes; hardcoded brand gradients in shared chrome (PageHeader, Modals, FABs, AuthShell, processing cards, etc.); `index.html` `theme-color` `#586038`.
+
+**Unchanged:** Business logic, APIs, and non-brand status colors (emerald purchase, amber/danger semantic).
 
 ## Spec v17.3.14 — App logo (GrainTrack brand mark)
 

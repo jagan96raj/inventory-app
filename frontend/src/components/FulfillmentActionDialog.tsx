@@ -383,7 +383,7 @@ export default function FulfillmentActionDialog({
       )}
 
       {!loading && line && isSales && isDeliver && salesLocationName && (
-        <div className="rounded-2xl border-2 border-primary-400/70 bg-gradient-to-r from-primary-100/95 via-violet-50/80 to-primary-50/60 px-5 py-4 dark:border-primary-500/50 dark:from-primary-950/55 dark:via-violet-950/35 dark:to-primary-950/25">
+        <div className="rounded-2xl border-2 border-primary-400/70 bg-gradient-to-r from-primary-100/95 via-primary-50/80 to-primary-50/60 px-5 py-4 dark:border-primary-500/50 dark:from-primary-950/55 dark:via-primary-950/35 dark:to-primary-950/25">
           <p className="text-xs font-semibold uppercase tracking-wider text-primary-700 dark:text-primary-300">
             Billed from this location
           </p>

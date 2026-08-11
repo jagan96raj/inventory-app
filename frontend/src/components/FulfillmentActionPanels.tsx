@@ -185,7 +185,7 @@ export function FulfillmentContextCard({
         </div>
 
         {!isPurchase && salesLocationName && !highlightBillLocation && (
-          <div className="rounded-xl border-2 border-primary-300/70 bg-gradient-to-r from-primary-50/90 to-violet-50/50 px-4 py-3.5 dark:border-primary-700/50 dark:from-primary-950/40 dark:to-violet-950/25">
+          <div className="rounded-xl border-2 border-primary-300/70 bg-gradient-to-r from-primary-50/90 to-primary-50/50 px-4 py-3.5 dark:border-primary-700/50 dark:from-primary-950/40 dark:to-primary-950/25">
             <p className="text-xs font-semibold uppercase tracking-wider text-primary-700 dark:text-primary-300">
               {mode === "return" ? "Originally billed from" : "Billed from location"}
             </p>

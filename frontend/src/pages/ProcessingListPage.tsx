@@ -135,9 +135,9 @@ export default function ProcessingListPage() {
       )}
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2">
-        <Card className="border-primary-200/70 bg-gradient-to-br from-primary-50/80 via-surface to-violet-50/40 dark:border-primary-800/40 dark:from-primary-950/35 dark:via-surface dark:to-violet-950/25">
+        <Card className="border-primary-200/70 bg-gradient-to-br from-primary-50/80 via-surface to-primary-50/40 dark:border-primary-800/40 dark:from-primary-950/35 dark:via-surface dark:to-primary-950/25">
           <CardBody className="flex items-center gap-4 p-5">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-md">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md">
               <Cog className="h-6 w-6" aria-hidden="true" />
             </span>
             <div>
@@ -351,7 +351,7 @@ export default function ProcessingListPage() {
       <button
         type="button"
         onClick={openJobDialog}
-        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
         aria-label="Open processing job"
       >
         <Plus className="h-6 w-6" />
