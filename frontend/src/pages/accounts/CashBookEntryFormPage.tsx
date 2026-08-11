@@ -517,6 +517,8 @@ export default function CashBookEntryFormPage() {
               ariaLabel="Entry type"
               value={state.entry_type}
               onChange={(v) => setType(v as CashBookEntryType)}
+              size="sm"
+              className="flex w-full flex-wrap sm:w-auto sm:flex-nowrap [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none"
               options={[
                 { value: "expense", label: "Expense", hint: "Money out" },
                 { value: "income", label: "Income", hint: "Money in" },
@@ -713,7 +715,7 @@ export default function CashBookEntryFormPage() {
           </FormField>
           </fieldset>
         </CardBody>
-        <CardFooter>
+        <CardFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end [&_button]:w-full sm:[&_button]:w-auto">
           <Button variant="ghost" onClick={() => navigate(-1)} disabled={busy || voidBusy}>
             {isVoided ? "Back to cash book" : "Cancel"}
           </Button>

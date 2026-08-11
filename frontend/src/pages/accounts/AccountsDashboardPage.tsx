@@ -215,25 +215,28 @@ export default function AccountsDashboardPage() {
         title="Accounts dashboard"
         subtitle="Live cash, bank, and customer balances. Powered by bills, payments, and cash book entries."
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Link to="/accounts/cashbook/new?type=expense">
-              <Button variant="secondary" leftIcon={<ArrowUpRight className="h-4 w-4" />}>
-                Record expense
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+            <Link to="/accounts/cashbook/new?type=expense" className="min-w-0 flex-1 sm:flex-none">
+              <Button variant="secondary" leftIcon={<ArrowUpRight className="h-4 w-4" />} className="w-full sm:w-auto">
+                <span className="sm:hidden">Expense</span>
+                <span className="hidden sm:inline">Record expense</span>
               </Button>
             </Link>
-            <Link to="/accounts/cashbook/new?type=income">
-              <Button variant="secondary" leftIcon={<ArrowDownLeft className="h-4 w-4" />}>
-                Record income
+            <Link to="/accounts/cashbook/new?type=income" className="min-w-0 flex-1 sm:flex-none">
+              <Button variant="secondary" leftIcon={<ArrowDownLeft className="h-4 w-4" />} className="w-full sm:w-auto">
+                <span className="sm:hidden">Income</span>
+                <span className="hidden sm:inline">Record income</span>
               </Button>
             </Link>
-            <Link to="/accounts/cashbook/new?type=transfer">
-              <Button variant="secondary" leftIcon={<ArrowLeftRight className="h-4 w-4" />}>
+            <Link to="/accounts/cashbook/new?type=transfer" className="min-w-0 flex-1 sm:flex-none">
+              <Button variant="secondary" leftIcon={<ArrowLeftRight className="h-4 w-4" />} className="w-full sm:w-auto">
                 Transfer
               </Button>
             </Link>
-            <Link to="/accounts/setup">
-              <Button variant="ghost" leftIcon={<Settings2 className="h-4 w-4" />}>
-                Opening balances
+            <Link to="/accounts/setup" className="min-w-0 flex-1 sm:flex-none">
+              <Button variant="ghost" leftIcon={<Settings2 className="h-4 w-4" />} className="w-full sm:w-auto">
+                <span className="sm:hidden">Setup</span>
+                <span className="hidden sm:inline">Opening balances</span>
               </Button>
             </Link>
           </div>
@@ -319,17 +322,55 @@ export default function AccountsDashboardPage() {
                 />
               </CardBody>
             ) : (
-              <Table
-                columns={bankColumns}
-                rows={summary.bank_accounts}
-                rowKey={(b) => b.id}
-                caption="Bank account balances"
-                zebra
-                compact
-                stickyHeader={false}
-                className={NESTED_TABLE_CLASS}
-                headerClassName="text-xs"
-              />
+              <>
+                <div className="space-y-3 px-4 pb-4 lg:hidden">
+                  {summary.bank_accounts.map((bank) => (
+                    <div
+                      key={bank.id}
+                      className="space-y-2 rounded-2xl border border-line/80 bg-surface-subtle/50 p-4"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="truncate font-semibold text-ink">{bank.name}</span>
+                        {bank.is_default ? <Badge size="sm" tone="primary">Default</Badge> : null}
+                        {!bank.is_active ? <Badge size="sm" tone="neutral">Inactive</Badge> : null}
+                      </div>
+                      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                        <div>
+                          <dt className="text-ink-subtle">A/C ending</dt>
+                          <dd className="v2-mono text-ink-muted">
+                            {bank.account_number_last4 ? `••${bank.account_number_last4}` : "—"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-ink-subtle">IFSC</dt>
+                          <dd className="v2-mono truncate text-ink-muted">{bank.ifsc ?? "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-ink-subtle">Opening</dt>
+                          <dd className="v2-mono text-ink-muted">{formatInr(bank.opening_balance)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-ink-subtle">Closing</dt>
+                          <dd className="v2-mono font-semibold text-ink">{formatInr(bank.balance)}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden lg:block">
+                  <Table
+                    columns={bankColumns}
+                    rows={summary.bank_accounts}
+                    rowKey={(b) => b.id}
+                    caption="Bank account balances"
+                    zebra
+                    compact
+                    stickyHeader={false}
+                    className={NESTED_TABLE_CLASS}
+                    headerClassName="text-xs"
+                  />
+                </div>
+              </>
             )}
           </Card>
 
@@ -359,17 +400,53 @@ export default function AccountsDashboardPage() {
                 />
               </CardBody>
             ) : (
-              <Table
-                columns={entryColumns}
-                rows={summary.recent_entries}
-                rowKey={(e) => e.id}
-                caption="Recent cash book entries"
-                zebra
-                compact
-                stickyHeader={false}
-                className={NESTED_TABLE_CLASS}
-                headerClassName="text-xs"
-              />
+              <>
+                <div className="space-y-3 px-4 pb-4 lg:hidden">
+                  {summary.recent_entries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="space-y-2 rounded-2xl border border-line/80 bg-surface-subtle/50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {entryTypeBadge(entry)}
+                            <span className="v2-mono text-sm text-ink-muted">{formatDate(entry.entry_date)}</span>
+                          </div>
+                          <p className="truncate font-medium text-ink">
+                            {entry.category_name ?? entryKindLabel(entry)}
+                          </p>
+                          <p className="truncate text-sm text-ink-muted">{entrySourceLabel(entry)}</p>
+                        </div>
+                        <p className={cn("v2-mono shrink-0 text-lg font-bold tabular-nums", amountTone(entry))}>
+                          {formatInr(entry.amount)}
+                        </p>
+                      </div>
+                      {entry.bill_number ? (
+                        <Link
+                          to={`/sales-bills/${entry.bill_id}`}
+                          className="v2-mono text-sm font-medium text-primary-600 hover:underline"
+                        >
+                          {entry.bill_number}
+                        </Link>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                <div className="hidden lg:block">
+                  <Table
+                    columns={entryColumns}
+                    rows={summary.recent_entries}
+                    rowKey={(e) => e.id}
+                    caption="Recent cash book entries"
+                    zebra
+                    compact
+                    stickyHeader={false}
+                    className={NESTED_TABLE_CLASS}
+                    headerClassName="text-xs"
+                  />
+                </div>
+              </>
             )}
           </Card>
         </div>

@@ -76,7 +76,7 @@ export function CardFooter({
   children: ReactNode;
 }) {
   return (
-    <div className={cn("flex items-center justify-end gap-2 border-t border-line px-5 py-3", className)}>
+    <div className={cn("flex flex-wrap items-center justify-end gap-2 border-t border-line px-4 py-3 sm:px-5", className)}>
       {children}
     </div>
   );
