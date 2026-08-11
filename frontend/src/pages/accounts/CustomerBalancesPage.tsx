@@ -127,7 +127,7 @@ export default function CustomerBalancesPage() {
   );
 
   return (
-    <>
+    <div className="min-w-0">
       <PageHeader
         eyebrow="Accounts"
         title="Customer balances"
@@ -141,12 +141,17 @@ export default function CustomerBalancesPage() {
       )}
 
       <Card className="mb-4">
-        <CardBody className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1 sm:col-span-2">
+        <CardBody className="grid min-w-0 gap-3 sm:grid-cols-3">
+          <div className="min-w-0 space-y-1 sm:col-span-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Search</label>
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Customer name, phone…" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Customer name, phone…"
+              className="min-w-0"
+            />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Balance</label>
             <Select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
               <option value="any">All customers</option>
@@ -165,10 +170,76 @@ export default function CustomerBalancesPage() {
         </Card>
       ) : (
         <>
-          <Table columns={columns} rows={rows} rowKey={(r) => r.customer_id} caption="Customer balances" />
+          <div className="space-y-3 lg:hidden">
+            {rows.map((r) => {
+              const name = formatCustomerName(r.customer_name);
+              return (
+                <Card key={r.customer_id} className="overflow-hidden">
+                  <CardBody className="space-y-3 p-4">
+                    <div className="min-w-0">
+                      <Link
+                        to={`/accounts/customers/${r.customer_id}`}
+                        className="block truncate text-base font-semibold tracking-tight text-ink hover:text-primary-700"
+                        title={name}
+                      >
+                        {name}
+                      </Link>
+                      <p className="mt-1 text-xs text-ink-muted">
+                        {r.last_activity_at ? `Last activity ${formatDateTime(r.last_activity_at)}` : "No activity yet"}
+                      </p>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">Customer owes</dt>
+                        <dd
+                          className={
+                            Number(r.debit_balance) > 0
+                              ? "v2-mono font-semibold text-emerald-700"
+                              : "v2-mono text-ink-subtle"
+                          }
+                        >
+                          {formatInr(r.debit_balance)}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">I owe</dt>
+                        <dd
+                          className={
+                            Number(r.credit_balance) > 0
+                              ? "v2-mono font-semibold text-amber-700"
+                              : "v2-mono text-ink-subtle"
+                          }
+                        >
+                          {formatInr(r.credit_balance)}
+                        </dd>
+                      </div>
+                      <div className="min-w-0 col-span-2 sm:col-span-1">
+                        <dt className="text-ink-subtle">Net</dt>
+                        <dd className="v2-mono font-semibold text-ink">{formatInr(r.net_balance)}</dd>
+                      </div>
+                    </dl>
+                    <div className="border-t border-line/60 pt-3">
+                      <Button
+                        size="md"
+                        variant="secondary"
+                        className="min-h-10 w-full sm:w-auto"
+                        leftIcon={<FileSearch className="h-3.5 w-3.5" />}
+                        onClick={() => navigate(`/accounts/customers/${r.customer_id}`)}
+                      >
+                        Statement
+                      </Button>
+                    </div>
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
+          <div className="hidden lg:block">
+            <Table columns={columns} rows={rows} rowKey={(r) => r.customer_id} caption="Customer balances" />
+          </div>
           <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
         </>
       )}
-    </>
+    </div>
   );
 }

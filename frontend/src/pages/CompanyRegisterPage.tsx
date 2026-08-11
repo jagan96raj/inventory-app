@@ -113,6 +113,7 @@ export default function CompanyRegisterPage() {
     <AuthShell
       title="Register your company"
       subtitle="Create a new company workspace with an owner account. Your books start empty."
+      wide
       footer={
         <p>
           Already have an account?{" "}
@@ -158,14 +159,18 @@ export default function CompanyRegisterPage() {
           )}
         </FormField>
 
-        <div className="space-y-3 rounded-lg border border-line/70 p-3">
+        <div className="min-w-0 space-y-3 rounded-lg border border-line/70 p-3 sm:p-4">
           <p className="flex items-center gap-2 text-sm font-medium text-ink">
-            <MapPin className="h-4 w-4 text-ink-subtle" aria-hidden="true" />
+            <MapPin className="h-4 w-4 shrink-0 text-ink-subtle" aria-hidden="true" />
             Company address <span className="font-normal text-ink-subtle">(optional)</span>
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {companyAddressFormFields.map((f) => (
-              <FormField key={f.key} label={f.label} className={f.wide ? "sm:col-span-2" : undefined}>
+              <FormField
+                key={f.key}
+                label={f.label}
+                className={"wide" in f && f.wide ? "min-w-0 sm:col-span-2" : "min-w-0"}
+              >
                 {({ id }) => (
                   <Input
                     id={id}
@@ -174,6 +179,7 @@ export default function CompanyRegisterPage() {
                     value={address[f.key]}
                     onChange={(e) => setAddr(f.key, e.target.value)}
                     placeholder={f.placeholder}
+                    className="min-w-0"
                   />
                 )}
               </FormField>

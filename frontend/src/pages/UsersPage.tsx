@@ -92,9 +92,9 @@ function UserRow({ user, saving, isSelf, onEdit, onOtp, onDelete, onToggleActive
   const isActive = user.is_active !== false;
 
   return (
-    <li className="group relative px-5 py-4 transition-colors hover:bg-surface-subtle/70 sm:px-6 sm:py-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 flex-1 items-start gap-4">
+    <li className="group relative px-4 py-4 transition-colors hover:bg-surface-subtle/70 sm:px-6 sm:py-5">
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
           <div
             className={cn(
               "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-sm font-semibold ring-1",
@@ -116,23 +116,21 @@ function UserRow({ user, saving, isSelf, onEdit, onOtp, onDelete, onToggleActive
               </Badge>
             </div>
             {user.name?.trim() && <p className="mt-0.5 truncate text-sm text-muted">{user.email}</p>}
-            <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted">
+            <p className="mt-2 inline-flex min-w-0 items-center gap-1.5 text-xs text-muted">
               <Clock className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-              {user.last_login_at ? (
-                <>Last login {formatDateTime(user.last_login_at)}</>
-              ) : (
-                <>Never signed in</>
-              )}
+              <span className="min-w-0 truncate">
+                {user.last_login_at ? <>Last login {formatDateTime(user.last_login_at)}</> : <>Never signed in</>}
+              </span>
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 border-t border-line/60 pt-4 lg:border-t-0 lg:pt-0 lg:pl-4">
+        <div className="flex min-w-0 flex-col gap-2 border-t border-line/60 pt-4 sm:flex-row sm:flex-wrap sm:items-center lg:border-t-0 lg:pt-0 lg:pl-4">
           <Select
             value={user.role ?? ""}
             disabled={saving}
             aria-label={`Role for ${user.email}`}
-            className="h-10 min-w-[11rem] flex-1 text-sm sm:flex-none"
+            className="h-11 w-full min-w-0 text-sm sm:h-10 sm:w-auto sm:min-w-[11rem]"
             onChange={(ev) => {
               const next = ev.target.value as UserRole;
               if (next) onRoleChange(user.id, next);
@@ -147,11 +145,11 @@ function UserRow({ user, saving, isSelf, onEdit, onOtp, onDelete, onToggleActive
               </option>
             ))}
           </Select>
-          <div className="flex items-center gap-1">
-            <IconButton label="Edit user" size="sm" variant="outline" disabled={saving} onClick={() => onEdit(user)}>
+          <div className="flex flex-wrap items-center gap-1">
+            <IconButton label="Edit user" size="md" variant="outline" disabled={saving} onClick={() => onEdit(user)}>
               <Pencil aria-hidden />
             </IconButton>
-            <IconButton label="Generate login OTP" size="sm" variant="outline" disabled={saving || !isActive} onClick={() => onOtp(user)}>
+            <IconButton label="Generate login OTP" size="md" variant="outline" disabled={saving || !isActive} onClick={() => onOtp(user)}>
               <KeyRound aria-hidden />
             </IconButton>
             <IconButton
@@ -162,7 +160,7 @@ function UserRow({ user, saving, isSelf, onEdit, onOtp, onDelete, onToggleActive
                     : "Disable user"
                   : "Enable user"
               }
-              size="sm"
+              size="md"
               variant="outline"
               disabled={saving || (isActive && isSelf)}
               onClick={() => onToggleActive(user)}
@@ -174,7 +172,7 @@ function UserRow({ user, saving, isSelf, onEdit, onOtp, onDelete, onToggleActive
             </IconButton>
             <IconButton
               label={isSelf ? "You cannot delete your own account" : "Delete user"}
-              size="sm"
+              size="md"
               variant="outline"
               disabled={saving || isSelf}
               onClick={() => onDelete(user)}
@@ -384,7 +382,7 @@ export default function UsersPage() {
   const userCountLabel = users.length === 1 ? "1 account" : `${users.length} accounts`;
 
   return (
-    <>
+    <div className="min-w-0">
       <PageHeader
         eyebrow="Administration"
         title="Users"
@@ -401,22 +399,22 @@ export default function UsersPage() {
         </Banner>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr] lg:items-start">
-        <Card className="lg:sticky lg:top-6">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
+        <Card className="min-w-0 lg:sticky lg:top-6">
           <CardHeader title="Create user" subtitle="New users get the selected role immediately." />
           <CardBody>
             <form onSubmit={onCreate} className="space-y-4">
               <FormField label="Email">
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="min-w-0" />
               </FormField>
               <FormField label="Password" hint={PASSWORD_REQUIREMENTS_HINT}>
-                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="min-w-0" />
               </FormField>
               <FormField label="Name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
+                <Input value={name} onChange={(e) => setName(e.target.value)} className="min-w-0" />
               </FormField>
               <FormField label="Role">
-                <Select value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+                <Select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="min-w-0">
                   {ROLES.map((r) => (
                     <option key={r} value={r}>
                       {ROLE_LABELS[r]}
@@ -424,24 +422,28 @@ export default function UsersPage() {
                   ))}
                 </Select>
               </FormField>
-              <Button type="submit" block loading={creating} disabled={createDisabled}>
+              <Button type="submit" block className="min-h-11" loading={creating} disabled={createDisabled}>
                 {creating ? "Saving…" : "Create user"}
               </Button>
             </form>
           </CardBody>
         </Card>
 
-        <Card className="overflow-hidden">
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader title="All users" subtitle={userCountLabel} />
           <CardBody className="p-0">
             {users.length === 0 ? (
-              <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+              <div className="flex flex-col items-center justify-center px-4 py-12 text-center sm:px-6 sm:py-16">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500/15 to-violet-500/10 ring-1 ring-primary-500/15">
                   <UserRound className="h-7 w-7 text-primary-600 dark:text-primary-300" aria-hidden />
                 </div>
                 <p className="mt-4 text-base font-semibold text-ink">No users yet</p>
                 <p className="mt-1 max-w-sm text-sm text-muted">
-                  Create the first account using the form on the left. Users will appear here with role badges and quick actions.
+                  <span className="lg:hidden">Create the first account using the form above.</span>
+                  <span className="hidden lg:inline">
+                    Create the first account using the form on the left. Users will appear here with role badges and
+                    quick actions.
+                  </span>
                 </p>
               </div>
             ) : (
@@ -472,11 +474,11 @@ export default function UsersPage() {
         description={editUser?.email}
         size="sm"
         footer={
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={closeEdit} disabled={saving}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={closeEdit} disabled={saving} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button type="submit" form="edit-user-form" loading={saving}>
+            <Button type="submit" form="edit-user-form" loading={saving} className="w-full sm:w-auto">
               Save changes
             </Button>
           </div>
@@ -509,8 +511,8 @@ export default function UsersPage() {
         description="Share this code with the user. It expires in 15 minutes and works once."
         size="sm"
         footer={
-          <div className="flex justify-end">
-            <Button type="button" onClick={closeOtp}>
+          <div className="flex flex-col sm:flex-row sm:justify-end">
+            <Button type="button" onClick={closeOtp} className="w-full sm:w-auto">
               Done
             </Button>
           </div>
@@ -518,13 +520,15 @@ export default function UsersPage() {
       >
         {otpResult && (
           <div className="space-y-4">
-            <p className="text-sm text-muted">
+            <p className="min-w-0 break-words text-sm text-muted">
               For <span className="font-medium text-ink">{otpResult.user_email}</span>
               {otpResult.user_name ? ` (${otpResult.user_name})` : ""}
             </p>
-            <div className="rounded-lg border border-line bg-surface-2 px-4 py-6 text-center">
+            <div className="rounded-lg border border-line bg-surface-2 px-3 py-6 text-center sm:px-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted">One-time code</p>
-              <p className="mt-2 font-mono text-3xl font-semibold tracking-[0.35em] text-ink">{otpResult.otp}</p>
+              <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.25em] text-ink sm:text-3xl sm:tracking-[0.35em]">
+                {otpResult.otp}
+              </p>
             </div>
             <p className="text-sm text-muted">
               Expires {formatDateTime(otpResult.expires_at)}. The user can sign in under{" "}
@@ -566,6 +570,6 @@ export default function UsersPage() {
         }
         confirmLabel="Delete user"
       />
-    </>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Wheat } from "lucide-react";
+import { cn } from "../lib/cn";
 import AppAmbientBackground from "./AppAmbientBackground";
 
 type Props = {
@@ -8,6 +9,8 @@ type Props = {
   subtitle: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Wider form column for multi-section pages (e.g. company register). */
+  wide?: boolean;
 };
 
 const ROTATING = [
@@ -27,7 +30,7 @@ const ROTATING = [
 
 const APP_NAME = (import.meta.env.VITE_APP_NAME as string) || "GrainTrack";
 
-export default function AuthShell({ title, subtitle, children, footer }: Props) {
+export default function AuthShell({ title, subtitle, children, footer, wide }: Props) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setIdx((i) => (i + 1) % ROTATING.length), 4200);
@@ -36,7 +39,7 @@ export default function AuthShell({ title, subtitle, children, footer }: Props) 
   const current = ROTATING[idx];
 
   return (
-    <div className="v2-auth-canvas grid min-h-screen grid-cols-1 text-ink lg:grid-cols-[1.05fr_1fr]">
+    <div className="v2-auth-canvas grid min-h-svh min-h-screen grid-cols-1 text-ink lg:grid-cols-[1.05fr_1fr]">
       {/* Hero */}
       <section className="relative hidden overflow-hidden bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white lg:flex lg:flex-col lg:justify-between lg:p-12">
         <AppAmbientBackground variant="auth" />
@@ -97,13 +100,13 @@ export default function AuthShell({ title, subtitle, children, footer }: Props) 
         </footer>
       </section>
 
-      {/* Card */}
-      <section className="flex flex-col justify-center px-6 py-10 sm:px-10">
+      {/* Form column */}
+      <section className="flex min-w-0 flex-col justify-center px-4 py-8 sm:px-10 sm:py-10">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
-          className="mx-auto w-full max-w-md"
+          className={cn("mx-auto w-full min-w-0", wide ? "max-w-lg" : "max-w-md")}
         >
           <div className="mb-6 flex items-center gap-3 lg:hidden">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary-600 text-white">
@@ -113,7 +116,7 @@ export default function AuthShell({ title, subtitle, children, footer }: Props) 
           </div>
           <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
           <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
-          <div className="mt-6">{children}</div>
+          <div className="mt-6 min-w-0">{children}</div>
           {footer && <div className="mt-6 text-sm text-ink-muted">{footer}</div>}
         </motion.div>
       </section>
