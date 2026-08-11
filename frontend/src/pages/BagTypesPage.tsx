@@ -173,13 +173,13 @@ export default function BagTypesPage() {
   };
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         title="Bag types"
         subtitle="Standard bag weights (50 / 30 / 25 kg) and loose-by-kg variants used across bills and inventory."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd}>
+            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd} className="hidden sm:inline-flex">
               Add bag type
             </Button>
             <Button
@@ -187,7 +187,8 @@ export default function BagTypesPage() {
               leftIcon={<Sparkles className="h-4 w-4" />}
               onClick={() => void seed()}
             >
-              Seed defaults
+              <span className="sm:hidden">Seed</span>
+              <span className="hidden sm:inline">Seed defaults</span>
             </Button>
           </div>
         }
@@ -260,66 +261,110 @@ export default function BagTypesPage() {
             />
           </CardBody>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="v2-data-table min-w-full w-full text-base">
-              <caption className="sr-only">Bag types</caption>
-              <thead>
-                <tr>
-                  <th scope="col" className={LIST_TH}>
-                    Name
-                  </th>
-                  <th scope="col" className={cn(LIST_TH, "text-right")}>
-                    Weight
-                  </th>
-                  <th scope="col" className={LIST_TH}>
-                    Type
-                  </th>
-                  <th scope="col" className={cn(LIST_TH, "text-right")}>
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={cn(
-                      "border-l-4",
-                      row.is_loose
-                        ? "border-l-sky-500 bg-sky-50/40 dark:bg-sky-950/20 [&>td]:bg-sky-50/40 dark:[&>td]:bg-sky-950/20"
-                        : "border-l-emerald-500 bg-emerald-50/35 dark:bg-emerald-950/20 [&>td]:bg-emerald-50/35 dark:[&>td]:bg-emerald-950/20"
-                    )}
-                  >
-                    <td className={cn(LIST_TD, "font-semibold text-ink")}>{row.name}</td>
-                    <td className={cn(LIST_TD, "v2-mono text-right font-semibold tabular-nums")}>
-                      {formatBagTypeWeight(row)}
-                    </td>
-                    <td className={LIST_TD}>
-                      {row.is_loose ? (
-                        <Badge tone="info" size="md">
-                          Loose
-                        </Badge>
-                      ) : (
-                        <Badge tone="success" size="md">
-                          Bagged
-                        </Badge>
-                      )}
-                    </td>
-                    <td className={cn(LIST_TD, "text-right")}>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                        onClick={() => setPendingDelete(row)}
-                      >
-                        Delete
-                      </Button>
-                    </td>
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="v2-data-table min-w-full w-full text-base">
+                <caption className="sr-only">Bag types</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className={LIST_TH}>
+                      Name
+                    </th>
+                    <th scope="col" className={cn(LIST_TH, "text-right")}>
+                      Weight
+                    </th>
+                    <th scope="col" className={LIST_TH}>
+                      Type
+                    </th>
+                    <th scope="col" className={cn(LIST_TH, "text-right")}>
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={cn(
+                        "border-l-4",
+                        row.is_loose
+                          ? "border-l-sky-500 bg-sky-50/40 dark:bg-sky-950/20 [&>td]:bg-sky-50/40 dark:[&>td]:bg-sky-950/20"
+                          : "border-l-emerald-500 bg-emerald-50/35 dark:bg-emerald-950/20 [&>td]:bg-emerald-50/35 dark:[&>td]:bg-emerald-950/20"
+                      )}
+                    >
+                      <td className={cn(LIST_TD, "font-semibold text-ink")}>{row.name}</td>
+                      <td className={cn(LIST_TD, "v2-mono text-right font-semibold tabular-nums")}>
+                        {formatBagTypeWeight(row)}
+                      </td>
+                      <td className={LIST_TD}>
+                        {row.is_loose ? (
+                          <Badge tone="info" size="md">
+                            Loose
+                          </Badge>
+                        ) : (
+                          <Badge tone="success" size="md">
+                            Bagged
+                          </Badge>
+                        )}
+                      </td>
+                      <td className={cn(LIST_TD, "text-right")}>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                          onClick={() => setPendingDelete(row)}
+                        >
+                          Delete
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="space-y-3 border-t border-line p-4 lg:hidden">
+              {rows.map((row) => (
+                <div
+                  key={row.id}
+                  className={cn(
+                    "space-y-3 rounded-2xl border border-l-4 p-4",
+                    row.is_loose
+                      ? "border-line/80 border-l-sky-500 bg-sky-50/40 dark:bg-sky-950/20"
+                      : "border-line/80 border-l-emerald-500 bg-emerald-50/35 dark:bg-emerald-950/20"
+                  )}
+                >
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-ink">{row.name}</p>
+                      <p className="v2-mono mt-0.5 text-sm font-semibold tabular-nums text-ink">
+                        {formatBagTypeWeight(row)}
+                      </p>
+                    </div>
+                    {row.is_loose ? (
+                      <Badge tone="info" size="md">
+                        Loose
+                      </Badge>
+                    ) : (
+                      <Badge tone="success" size="md">
+                        Bagged
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="border-t border-line/60 pt-3">
+                    <Button
+                      size="md"
+                      variant="danger"
+                      className="min-h-10 w-full sm:w-auto"
+                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                      onClick={() => setPendingDelete(row)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
         <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="px-4" />
       </Card>
@@ -332,11 +377,16 @@ export default function BagTypesPage() {
         title="Add bag type"
         description="Weight and bagged/loose setting are permanent after save. Review carefully."
         footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={closeAdd} disabled={saving}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={closeAdd} disabled={saving} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button type="submit" form="add-bag-type-form" leftIcon={<Plus className="h-4 w-4" />}>
+            <Button
+              type="submit"
+              form="add-bag-type-form"
+              leftIcon={<Plus className="h-4 w-4" />}
+              className="w-full sm:w-auto"
+            >
               Review & add
             </Button>
           </div>
@@ -394,11 +444,21 @@ export default function BagTypesPage() {
         headerIcon={<Package className="h-5 w-5" />}
         title="Confirm bag type"
         footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={saving}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmOpen(false)}
+              disabled={saving}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
-            <Button loading={saving} disabled={saving || submitDisabled} onClick={() => void createBagType()}>
+            <Button
+              loading={saving}
+              disabled={saving || submitDisabled}
+              onClick={() => void createBagType()}
+              className="w-full sm:w-auto"
+            >
               Confirm & create
             </Button>
           </div>
@@ -440,6 +500,15 @@ export default function BagTypesPage() {
         confirmLabel="Delete"
         authError={voidAuthError || undefined}
       />
-    </>
+
+      <button
+        type="button"
+        onClick={openAdd}
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label="Add bag type"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+    </div>
   );
 }

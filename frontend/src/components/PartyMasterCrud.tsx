@@ -275,12 +275,12 @@ export default function PartyMasterCrud<T extends { id: number }>({
   };
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         title={title}
         subtitle={subtitle}
         actions={
-          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd}>
+          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd} className="hidden sm:inline-flex">
             {meta.addButton}
           </Button>
         }
@@ -293,15 +293,15 @@ export default function PartyMasterCrud<T extends { id: number }>({
       )}
 
       <Card>
-        <div className="flex flex-col gap-3 border-b border-line px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-b border-line px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <h3 className="text-sm font-semibold text-ink">{meta.listTitle}</h3>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {searchable && (
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name or phone…"
-                className="w-full min-w-[12rem] sm:w-56"
+                className="w-full min-w-0 sm:w-56"
               />
             )}
             <Badge tone="muted" size="sm">
@@ -322,58 +322,117 @@ export default function PartyMasterCrud<T extends { id: number }>({
             />
           </CardBody>
         ) : (
-          <div className="overflow-x-auto border-t border-line">
-            <table className="v2-data-table min-w-full text-base">
-              <thead className="bg-surface-subtle text-base font-semibold uppercase tracking-wide text-ink-subtle">
-                <tr>
-                  {columns.map((c) => (
-                    <th key={c.key} className="px-5 py-3.5 text-left">
-                      {c.label}
-                    </th>
+          <>
+            <div className="hidden overflow-x-auto border-t border-line lg:block">
+              <table className="v2-data-table min-w-full text-base">
+                <thead className="bg-surface-subtle text-base font-semibold uppercase tracking-wide text-ink-subtle">
+                  <tr>
+                    {columns.map((c) => (
+                      <th key={c.key} className="px-5 py-3.5 text-left">
+                        {c.label}
+                      </th>
+                    ))}
+                    <th className="px-5 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={
+                        editId === row.id
+                          ? "border-t border-line/70 bg-primary-50/40 dark:bg-primary-900/20"
+                          : "border-t border-line/70"
+                      }
+                    >
+                      {columns.map((c) => (
+                        <td key={c.key} className="px-5 py-4 text-ink">
+                          {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? "")}
+                        </td>
+                      ))}
+                      <td className="px-5 py-4 text-right">
+                        <div className="inline-flex items-center justify-end gap-0.5">
+                          <IconButton
+                            label={kind === "customer" ? "Edit customer" : "Edit location"}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => startEdit(row)}
+                          >
+                            <Pencil />
+                          </IconButton>
+                          <IconButton
+                            label={kind === "customer" ? "Delete customer" : "Delete location"}
+                            size="sm"
+                            onClick={() => setPendingDelete(row)}
+                            className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                          >
+                            <Trash2 />
+                          </IconButton>
+                        </div>
+                      </td>
+                    </tr>
                   ))}
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
+                </tbody>
+              </table>
+            </div>
+            <div className="space-y-3 border-t border-line p-4 lg:hidden">
+              {rows.map((row) => {
+                const primary = columns[0];
+                const rest = columns.slice(1);
+                const primaryValue = primary
+                  ? primary.render
+                    ? primary.render(row)
+                    : String((row as Record<string, unknown>)[primary.key] ?? "")
+                  : `#${row.id}`;
+                return (
+                  <div
                     key={row.id}
                     className={
                       editId === row.id
-                        ? "border-t border-line/70 bg-primary-50/40 dark:bg-primary-900/20"
-                        : "border-t border-line/70"
+                        ? "space-y-3 rounded-2xl border border-primary-200/80 bg-primary-50/40 p-4 dark:border-primary-800 dark:bg-primary-900/20"
+                        : "space-y-3 rounded-2xl border border-line/80 bg-surface p-4"
                     }
                   >
-                    {columns.map((c) => (
-                      <td key={c.key} className="px-5 py-4 text-ink">
-                        {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? "")}
-                      </td>
-                    ))}
-                    <td className="px-5 py-4 text-right">
-                      <div className="inline-flex items-center justify-end gap-0.5">
-                        <IconButton
-                          label={kind === "customer" ? "Edit customer" : "Edit location"}
-                          size="sm"
-                          variant="outline"
-                          onClick={() => startEdit(row)}
-                        >
-                          <Pencil />
-                        </IconButton>
-                        <IconButton
-                          label={kind === "customer" ? "Delete customer" : "Delete location"}
-                          size="sm"
-                          onClick={() => setPendingDelete(row)}
-                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                        >
-                          <Trash2 />
-                        </IconButton>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    <div className="min-w-0 font-semibold text-ink">{primaryValue}</div>
+                    {rest.length > 0 && (
+                      <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                        {rest.map((c) => (
+                          <div key={c.key} className="min-w-0">
+                            <dt className="text-ink-subtle">{c.label}</dt>
+                            <dd className="min-w-0 text-ink">
+                              {c.render
+                                ? c.render(row)
+                                : String((row as Record<string, unknown>)[c.key] ?? "")}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    <div className="flex flex-wrap gap-2 border-t border-line/60 pt-3">
+                      <Button
+                        size="md"
+                        variant="secondary"
+                        className="min-h-10 flex-1 sm:flex-none"
+                        leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                        onClick={() => startEdit(row)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="md"
+                        variant="danger"
+                        className="min-h-10 flex-1 sm:flex-none"
+                        leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                        onClick={() => setPendingDelete(row)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
         <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="px-4" />
       </Card>
@@ -386,11 +445,17 @@ export default function PartyMasterCrud<T extends { id: number }>({
         title={editId ? meta.editTitle : meta.addTitle}
         description={meta.formHint}
         footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={closeForm} disabled={saving}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={closeForm} disabled={saving} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button type="submit" form="party-master-form" loading={saving} disabled={saving || submitDisabled}>
+            <Button
+              type="submit"
+              form="party-master-form"
+              loading={saving}
+              disabled={saving || submitDisabled}
+              className="w-full sm:w-auto"
+            >
               {editId ? "Save changes" : meta.addButton}
             </Button>
           </div>
@@ -435,6 +500,15 @@ export default function PartyMasterCrud<T extends { id: number }>({
         confirmLabel="Delete"
         authError={voidAuthError || undefined}
       />
-    </>
+
+      <button
+        type="button"
+        onClick={openAdd}
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label={meta.addButton}
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+    </div>
   );
 }

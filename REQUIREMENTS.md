@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.10** (responsive UI Phase 4: Inventory + stock ops); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.11** (responsive UI Phase 5: masters + book settings); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.11** — Responsive UI **Phase 5** (layout only): Masters lists (products/brands via `MasterCrud`; customers/locations via `PartyMasterCrud`; bag types) use cards below `lg` + Add FAB; book settings Save full-width on phone + `min-w-0` comboboxes; `AddCustomerDialog` footer stacks on xs. Desktop tables unchanged. No Phase 6+. See **Spec v17.3.11** below.
 - **v17.3.10** — Responsive UI **Phase 4** (layout only): Inventory stock line cards below `lg` + Add-stock FAB; Summary/Detail SegmentedControl; bag-change / transfer / disposal history mobile cards via shared `OperationHistoryPage`; OperationPageHeader shortens History CTA. Desktop tables unchanged. No Phase 5+. See **Spec v17.3.10** below.
 - **v17.3.9** — Responsive UI **Phase 3** (layout only): Fulfillment + JW fulfillment line cards below `lg`; processing open-job FAB + history log cards; job-work list FAB / detail line cards + header CTAs; SegmentedControl wrap on filters/allocation. Desktop tables unchanged. No Phase 4+. See **Spec v17.3.9** below.
 - **v17.3.8** — Responsive UI **Phase 2** (layout only): Payments list mobile cards + FAB; Payment form stack/`min-w-0`; Cash book list cards + FAB; cash-book entry type segment wrap + stacked footer actions; Accounts dashboard bank/recent-entry cards + shorter header CTAs on phone. Desktop tables unchanged. No Phase 3+. See **Spec v17.3.8** below.
@@ -302,7 +303,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/inventory` | `InventoryPage` | Location-grouped tables with product `rowspan` column; low-stock amber highlight; add opening stock via `Modal` only. **v13.1:** larger product names; canvas background. | **#3 v12.1** opening qty only; PUT rejected; **#12 v12.3** row locking. |
 | `/operations/processing`, `/operations/processing/:id` | `ProcessingListPage`, `ProcessingJobPage` | Open job in `Modal`; job detail with compact summary strip, **At a glance** In/Out/Balance panel, collapsible batch log. | **#8 v9.4** reprocess guard hidden when no balance returned; **v9.3** mass-balance enforced. |
 | `/operations/bag-change`, `/operations/product-transfer`, `/operations/stock-disposal` and their `/histories/*` | `BagChangePage`, `ProductTransferPage`, `StockDisposalPage` + history pages | Sectioned forms via `OperationFormBlocks` (`OperationSection`, balance/flow hints, sticky footers). | — |
-| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
+| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page; **v17.3.11** cards below `lg` + FAB. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
 
 ### Accessibility commitments
 - Focus rings via `:focus-visible` with 2-px primary halo on the new `body.app-shell-v2`.
@@ -462,7 +463,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
 - **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
 - **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
-- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops — see Specs v17.3.7–v17.3.10.
+- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops. **Phase 5 (v17.3.11):** Masters + book settings — see Specs v17.3.7–v17.3.11.
 - **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
 - **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
 
@@ -3351,6 +3352,20 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.11 — Responsive UI Phase 5 (masters and book settings)
+
+**Problem:** Master list pages and bag types forced wide tables on phones; book-settings save/actions and add-customer dialog footers crowded ~375px.
+
+**Solution (Phase 5 only — layout/CSS; no business-logic changes):**
+- **Products / brands (`MasterCrud`):** Cards below `lg`; desktop table from `lg`; header Add from `sm`; Add FAB + `pb-24`; modal footer stacks on xs.
+- **Customers / locations (`PartyMasterCrud`):** Same cards/table/FAB/footer pattern; search `min-w-0`.
+- **Bag types:** Same pattern; Seed label shortens on xs; confirm/add modal footers stack.
+- **Book settings:** `min-w-0` on form/comboboxes; Save full-width on phone.
+- **Shared:** `AddCustomerDialog` footer stacks full-width buttons on xs.
+- **Out of scope:** Phase 6+ (reports, users, auth/login histories).
+
+**Unchanged:** Aurora design language; master APIs, void-delete rules, book-settings payload.
 
 ## Spec v17.3.10 — Responsive UI Phase 4 (inventory and stock ops)
 
