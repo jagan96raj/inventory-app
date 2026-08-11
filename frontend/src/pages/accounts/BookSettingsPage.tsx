@@ -76,7 +76,7 @@ export default function BookSettingsPage() {
   };
 
   return (
-    <>
+    <div className="min-w-0">
       <PageHeader
         eyebrow="Accounts"
         title="Book settings"
@@ -98,12 +98,12 @@ export default function BookSettingsPage() {
         </Banner>
       )}
 
-      <form onSubmit={submit} className="space-y-5">
-        <Card className="max-w-xl">
+      <form onSubmit={submit} className="min-w-0 space-y-5">
+        <Card className="max-w-xl min-w-0">
           <CardHeader title="Cash opening balance" subtitle="Starting cash balance used by the Accounts dashboard." />
           <CardBody className="space-y-3">
             {settings && (
-              <p className="text-sm text-ink-muted">
+              <p className="min-w-0 text-sm text-ink-muted">
                 Current value:{" "}
                 <span className="v2-mono font-semibold text-ink">{formatInr(settings.cash_opening_balance)}</span>
                 {" · "}
@@ -124,13 +124,13 @@ export default function BookSettingsPage() {
           </CardBody>
         </Card>
 
-        <Card className="max-w-2xl">
+        <Card className="max-w-2xl min-w-0">
           <CardHeader
             title="Consolidated powder destination"
             subtitle="All processing powder posts here — not per cereal product. Inventory is split by owner (Owned vs Job work)."
           />
-          <CardBody className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Powder product" hint="Generic product master (e.g. product name Powder)">
+          <CardBody className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <FormField label="Powder product" hint="Generic product master (e.g. product name Powder)" className="min-w-0">
               <AsyncSearchCombobox
                 value={powderProductId}
                 onChange={(id) => setPowderProductId(id)}
@@ -140,7 +140,7 @@ export default function BookSettingsPage() {
                 initialLabel={settings?.powder_product_name ?? undefined}
               />
             </FormField>
-            <FormField label="Powder brand">
+            <FormField label="Powder brand" className="min-w-0">
               <AsyncSearchCombobox
                 value={powderBrandId}
                 onChange={(id) => setPowderBrandId(id)}
@@ -150,7 +150,7 @@ export default function BookSettingsPage() {
                 initialLabel={settings?.powder_brand_name ?? undefined}
               />
             </FormField>
-            <FormField label="Location">
+            <FormField label="Location" className="min-w-0">
               <AsyncSearchCombobox
                 value={powderLocationId}
                 onChange={(id) => setPowderLocationId(id)}
@@ -160,7 +160,7 @@ export default function BookSettingsPage() {
                 initialLabel={settings?.powder_location_name ?? undefined}
               />
             </FormField>
-            <FormField label="Bag type" hint="Loose recommended for a common powder pile">
+            <FormField label="Bag type" hint="Loose recommended for a common powder pile" className="min-w-0">
               <AsyncSearchCombobox
                 value={powderBagTypeId}
                 onChange={(id) => setPowderBagTypeId(id)}
@@ -171,13 +171,19 @@ export default function BookSettingsPage() {
               />
             </FormField>
           </CardBody>
-          <CardFooter>
-            <Button type="submit" loading={busy} disabled={busy || submitDisabled} leftIcon={<Save className="h-4 w-4" />}>
+          <CardFooter className="flex-col-reverse sm:flex-row">
+            <Button
+              type="submit"
+              loading={busy}
+              disabled={busy || submitDisabled}
+              leftIcon={<Save className="h-4 w-4" />}
+              className="min-h-11 w-full sm:w-auto"
+            >
               Save
             </Button>
           </CardFooter>
         </Card>
       </form>
-    </>
+    </div>
   );
 }

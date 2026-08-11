@@ -163,12 +163,12 @@ export default function MasterCrud<T extends { id: number }>({
   const addLabel = `Add ${title.toLowerCase().replace(/s$/, "")}`;
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         title={title}
         subtitle={subtitle}
         actions={
-          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd}>
+          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAdd} className="hidden sm:inline-flex">
             {addLabel}
           </Button>
         }
@@ -194,58 +194,117 @@ export default function MasterCrud<T extends { id: number }>({
             />
           </CardBody>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="v2-data-table min-w-full text-base">
-              <thead className="bg-surface-subtle text-base font-semibold uppercase tracking-wide text-ink-subtle">
-                <tr>
-                  {columns.map((c) => (
-                    <th key={c.key} className="px-5 py-3.5 text-left">
-                      {c.label}
-                    </th>
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="v2-data-table min-w-full text-base">
+                <thead className="bg-surface-subtle text-base font-semibold uppercase tracking-wide text-ink-subtle">
+                  <tr>
+                    {columns.map((c) => (
+                      <th key={c.key} className="px-5 py-3.5 text-left">
+                        {c.label}
+                      </th>
+                    ))}
+                    <th className="px-5 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={
+                        editId === row.id
+                          ? "border-t border-line/70 bg-primary-50/40 dark:bg-primary-900/20"
+                          : "border-t border-line/70"
+                      }
+                    >
+                      {columns.map((c) => (
+                        <td key={c.key} className="px-5 py-4 text-ink">
+                          {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? "")}
+                        </td>
+                      ))}
+                      <td className="px-5 py-4 text-right">
+                        <div className="inline-flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                            onClick={() => startEdit(row)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                            onClick={() => setPendingDelete(row)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
                   ))}
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr
+                </tbody>
+              </table>
+            </div>
+            <div className="space-y-3 p-4 lg:hidden">
+              {rows.map((row) => {
+                const primary = columns[0];
+                const rest = columns.slice(1);
+                const primaryValue = primary
+                  ? primary.render
+                    ? primary.render(row)
+                    : String((row as Record<string, unknown>)[primary.key] ?? "")
+                  : `#${row.id}`;
+                return (
+                  <div
                     key={row.id}
                     className={
                       editId === row.id
-                        ? "border-t border-line/70 bg-primary-50/40 dark:bg-primary-900/20"
-                        : "border-t border-line/70"
+                        ? "space-y-3 rounded-2xl border border-primary-200/80 bg-primary-50/40 p-4 dark:border-primary-800 dark:bg-primary-900/20"
+                        : "space-y-3 rounded-2xl border border-line/80 bg-surface p-4"
                     }
                   >
-                    {columns.map((c) => (
-                      <td key={c.key} className="px-5 py-4 text-ink">
-                        {c.render ? c.render(row) : String((row as Record<string, unknown>)[c.key] ?? "")}
-                      </td>
-                    ))}
-                    <td className="px-5 py-4 text-right">
-                      <div className="inline-flex gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          leftIcon={<Pencil className="h-3.5 w-3.5" />}
-                          onClick={() => startEdit(row)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                          onClick={() => setPendingDelete(row)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    <p className="min-w-0 font-semibold text-ink">{primaryValue}</p>
+                    {rest.length > 0 && (
+                      <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                        {rest.map((c) => (
+                          <div key={c.key} className="min-w-0">
+                            <dt className="text-ink-subtle">{c.label}</dt>
+                            <dd className="truncate text-ink">
+                              {c.render
+                                ? c.render(row)
+                                : String((row as Record<string, unknown>)[c.key] ?? "")}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    <div className="flex flex-wrap gap-2 border-t border-line/60 pt-3">
+                      <Button
+                        size="md"
+                        variant="secondary"
+                        className="min-h-10 flex-1 sm:flex-none"
+                        leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                        onClick={() => startEdit(row)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="md"
+                        variant="danger"
+                        className="min-h-10 flex-1 sm:flex-none"
+                        leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                        onClick={() => setPendingDelete(row)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
         <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="px-4" />
       </Card>
@@ -257,11 +316,17 @@ export default function MasterCrud<T extends { id: number }>({
         title={editId ? `Edit ${title.toLowerCase().replace(/s$/, "")}` : addLabel}
         description={editId ? "Update the details below." : `Create a new ${title.toLowerCase().slice(0, -1) || title.toLowerCase()}.`}
         footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={closeForm} disabled={saving}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={closeForm} disabled={saving} className="w-full sm:w-auto">
               Cancel
             </Button>
-            <Button type="submit" form="master-crud-form" loading={saving} disabled={saving || submitDisabled}>
+            <Button
+              type="submit"
+              form="master-crud-form"
+              loading={saving}
+              disabled={saving || submitDisabled}
+              className="w-full sm:w-auto"
+            >
               {editId ? "Save changes" : addLabel}
             </Button>
           </div>
@@ -321,6 +386,15 @@ export default function MasterCrud<T extends { id: number }>({
         confirmLabel="Delete"
         authError={voidAuthError || undefined}
       />
-    </>
+
+      <button
+        type="button"
+        onClick={openAdd}
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label={addLabel}
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+    </div>
   );
 }

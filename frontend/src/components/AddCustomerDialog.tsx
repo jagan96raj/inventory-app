@@ -93,11 +93,23 @@ export default function AddCustomerDialog({ open, onClose, onCreated }: Props) {
       description="Name and contact details only — manage opening balances from the Customers page."
       bodyClassName="bg-surface-subtle/20 dark:bg-surface-subtle/10"
       footer={
-        <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" type="button" onClick={onClose} disabled={saving}>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="w-full sm:w-auto"
+          >
             Cancel
           </Button>
-          <Button type="submit" form="add-customer-form" loading={saving} leftIcon={<User className="h-4 w-4" />}>
+          <Button
+            type="submit"
+            form="add-customer-form"
+            loading={saving}
+            leftIcon={<User className="h-4 w-4" />}
+            className="w-full sm:w-auto"
+          >
             Add customer
           </Button>
         </div>
