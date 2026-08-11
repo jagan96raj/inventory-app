@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.15** (Raj Agro olive brand theme); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.16** (square app icons); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.16** — App icons: regenerate Windows `desktop-shell/icon.png` + `icon.ico` and add `apple-touch-icon.png` from emblem-only `logo-icon.png` — square canvas, letterboxed (~15% pad) on solid `#586038` (no stretch / no full-transparency). Favicon padded the same way. Script: `scripts/generate_app_icons.py`. See **Spec v17.3.16** below.
 - **v17.3.15** — Brand theme: replace indigo/violet/blue-lavender with Raj Agro logo olive/sage greens (Tailwind `primary`, CSS tokens, AuthShell/PageHeader/FAB gradients, legacy Aurora CSS aliases, `theme-color`). Light canvas warm-green tinted; dark olive-readable. No business logic. See **Spec v17.3.15** below.
 - **v17.3.14** — Custom app logo: transparent `frontend/public/logo-mark.png` (tractor + circular grain mark only; company wordmark cropped out); `AppBrand` shows mark + `VITE_APP_NAME` (**GrainTrack**); wired in Sidebar + AuthShell; favicon + desktop-shell `icon.ico`. See **Spec v17.3.14** below.
 - **v17.3.13** — Responsive UI **Phase 7** (layout only — final polish): Shared Modal/`CardFooter`/`PageHeader`/`EmptyState` mobile stacking; money-accounts + expense-category cards; audit/login history cards; sticky submit on Bill/JW/ops/cash-book forms; inventory/processing dialog button stacks. No new features. See **Spec v17.3.13** below.
@@ -3357,6 +3358,21 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
 
+## Spec v17.3.16 — Square app icons (Windows + Apple touch)
+
+**Problem:** Desktop `icon.png` / `icon.ico` were derived from the wide tractor+emblem mark and stretched in the Windows taskbar / installer. iPad “Add to Home Screen” clipped the transparent favicon (`apple-touch-icon` pointed at `favicon.png`).
+
+**Solution:**
+- Source: `frontend/public/logo-icon.png` (emblem only — **not** `logo-mark`).
+- Canvas: square ≥256, contain/letterbox with ~12–18% padding on solid brand green `#586038` (matches `theme-color`).
+- Outputs: `desktop-shell/icon.png` (512), `desktop-shell/icon.ico` (multi-size incl. 256 for electron-builder), `frontend/public/apple-touch-icon.png` (180), improved `favicon.png` (256).
+- Regenerator: `python scripts/generate_app_icons.py`.
+- `index.html`: `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />`.
+
+**Rebuild after merge:** `cd desktop-shell && npm run dist` then reinstall the NSIS package. Redeploy frontend static assets (Lightsail / host) so Safari picks up the new apple-touch-icon.
+
+**Unchanged:** In-app `AppBrand` logo-mark usage; business logic.
+
 ## Spec v17.3.15 — Raj Agro olive brand theme
 
 **Change:** Retheme the frontend so GrainTrack reads as olive/green brand (matching logo mark), not indigo/violet/blue-lavender.
@@ -3369,9 +3385,9 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 
 **Change:** Replace Lucide `Wheat` app glyph with custom tractor + circular grain emblem from the Raj Agro visiting-card artwork (text wordmark **not** used in the asset). App name under the mark remains `VITE_APP_NAME` (default **GrainTrack**).
 
-**Assets:** `frontend/public/logo-mark.png` (tractor + emblem), `logo-icon.png` (emblem only), `logo.png` (same as mark), `favicon.png`; extract script `scripts/extract_app_logo.py`. Desktop shell: `desktop-shell/icon.ico` (+ `icon.png`) wired in electron-builder.
+**Assets:** `frontend/public/logo-mark.png` (tractor + emblem), `logo-icon.png` (emblem only), `logo.png` (same as mark), `favicon.png`; extract script `scripts/extract_app_logo.py`. Desktop/square icons regenerated via `scripts/generate_app_icons.py` (**v17.3.16**). Desktop shell: `desktop-shell/icon.ico` (+ `icon.png`) wired in electron-builder.
 
-**UI:** `AppBrand` / `AppLogoMark` in Sidebar brand area and AuthShell (login/register); `index.html` favicon links.
+**UI:** `AppBrand` / `AppLogoMark` in Sidebar brand area and AuthShell (login/register); `index.html` favicon + apple-touch-icon links.
 
 **Unchanged:** Nav item icons (Processing/Products still use Lucide Wheat); business logic.
 
