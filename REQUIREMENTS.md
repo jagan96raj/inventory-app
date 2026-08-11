@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.13** (responsive UI Phase 7: final polish); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.14** (app logo / brand mark); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.14** — Custom app logo: transparent `frontend/public/logo-mark.png` (tractor + circular grain mark only; company wordmark cropped out); `AppBrand` shows mark + `VITE_APP_NAME` (**GrainTrack**); wired in Sidebar + AuthShell; favicon + desktop-shell `icon.ico`. See **Spec v17.3.14** below.
 - **v17.3.13** — Responsive UI **Phase 7** (layout only — final polish): Shared Modal/`CardFooter`/`PageHeader`/`EmptyState` mobile stacking; money-accounts + expense-category cards; audit/login history cards; sticky submit on Bill/JW/ops/cash-book forms; inventory/processing dialog button stacks. No new features. See **Spec v17.3.13** below.
 - **v17.3.12** — Responsive UI **Phase 6** (layout only): Customer balances + statement cards below `lg`; Users/Profile touch targets + stacked modal/save actions; AuthShell phone padding + wider register; Pending access stacked CTAs. Desktop tables unchanged. No Phase 7+. See **Spec v17.3.12** below.
 - **v17.3.11** — Responsive UI **Phase 5** (layout only): Masters lists (products/brands via `MasterCrud`; customers/locations via `PartyMasterCrud`; bag types) use cards below `lg` + Add FAB; book settings Save full-width on phone + `min-w-0` comboboxes; `AddCustomerDialog` footer stacks on xs. Desktop tables unchanged. No Phase 6+. See **Spec v17.3.11** below.
@@ -3354,6 +3355,16 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.14 — App logo (GrainTrack brand mark)
+
+**Change:** Replace Lucide `Wheat` app glyph with custom tractor + circular grain emblem from the Raj Agro visiting-card artwork (text wordmark **not** used in the asset). App name under the mark remains `VITE_APP_NAME` (default **GrainTrack**).
+
+**Assets:** `frontend/public/logo-mark.png` (tractor + emblem), `logo-icon.png` (emblem only), `logo.png` (same as mark), `favicon.png`; extract script `scripts/extract_app_logo.py`. Desktop shell: `desktop-shell/icon.ico` (+ `icon.png`) wired in electron-builder.
+
+**UI:** `AppBrand` / `AppLogoMark` in Sidebar brand area and AuthShell (login/register); `index.html` favicon links.
+
+**Unchanged:** Nav item icons (Processing/Products still use Lucide Wheat); business logic.
 
 ## Spec v17.3.13 — Responsive UI Phase 7 (final polish)
 
