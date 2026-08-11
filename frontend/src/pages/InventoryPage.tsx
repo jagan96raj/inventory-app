@@ -54,6 +54,7 @@ import NumberInput from "../components/ui/NumberInput";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import Modal from "../components/ui/Modal";
 import PaginationBar from "../components/ui/PaginationBar";
+import SegmentedControl from "../components/ui/SegmentedControl";
 import Stat from "../components/ui/Stat";
 import Input from "../components/ui/Input";
 
@@ -703,12 +704,12 @@ export default function InventoryPage() {
     );
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         title="Inventory"
         subtitle="Stock by location, product, brand, and bag type. Quantities change only via fulfillment, operations, or processing."
         actions={
-          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAddStock}>
+          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openAddStock} className="hidden sm:inline-flex">
             Add stock
           </Button>
         }
@@ -919,25 +920,18 @@ export default function InventoryPage() {
           title="Stock on hand"
           subtitle="Summary or detail view by location and owner. Click stat tiles or chips to filter."
           actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-lg border border-line p-0.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={viewMode === "summary" ? "secondary" : "ghost"}
-                  onClick={() => onViewModeChange("summary")}
-                >
-                  Summary
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={viewMode === "detail" ? "secondary" : "ghost"}
-                  onClick={() => onViewModeChange("detail")}
-                >
-                  Detail
-                </Button>
-              </div>
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+              <SegmentedControl
+                ariaLabel="Inventory view"
+                value={viewMode}
+                onChange={(v) => onViewModeChange(v)}
+                size="sm"
+                className="flex w-full flex-wrap sm:w-auto sm:flex-nowrap [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none"
+                options={[
+                  { value: "summary", label: "Summary" },
+                  { value: "detail", label: "Detail" },
+                ]}
+              />
               {hasActiveFilters ? (
                 <Button variant="secondary" size="sm" onClick={clearFilters}>
                   Clear filters
@@ -983,7 +977,7 @@ export default function InventoryPage() {
                 Zero kg rows
               </Button>
             </div>
-            <FormField label="Search" className="min-w-[14rem] flex-1 lg:max-w-xs">
+            <FormField label="Search" className="min-w-0 w-full flex-1 lg:max-w-xs">
               {({ id }) => (
                 <Input
                   id={id}
@@ -1101,6 +1095,14 @@ export default function InventoryPage() {
       >
         <p className="whitespace-pre-line text-base text-ink-muted">{locationAddressPopup?.address}</p>
       </Modal>
-    </>
+      <button
+        type="button"
+        onClick={openAddStock}
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label="Add stock"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+    </div>
   );
 }

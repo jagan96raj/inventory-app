@@ -21,11 +21,12 @@ export default function OperationPageHeader({ title, subtitle, formTo, historyTo
         mode === "form" ? (
           <Link to={historyTo}>
             <Button variant="secondary" leftIcon={<History className="h-4 w-4" />}>
-              View history
+              <span className="sm:hidden">History</span>
+              <span className="hidden sm:inline">View history</span>
             </Button>
           </Link>
         ) : (
-          <Link to={formTo}>
+          <Link to={formTo} className="hidden sm:inline-flex">
             <Button leftIcon={<Plus className="h-4 w-4" />}>New record</Button>
           </Link>
         )

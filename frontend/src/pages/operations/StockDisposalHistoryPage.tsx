@@ -1,4 +1,5 @@
 import OperationHistoryPage, {
+  OperationHistoryVoidAction,
   OperationHistoryVoidCell,
 } from "../../components/operations/OperationHistoryPage";
 import { cn } from "../../lib/cn";
@@ -69,6 +70,45 @@ export default function StockDisposalHistoryPage() {
           </tbody>
         </table>
       )}
+      renderCards={(rows, onVoid) =>
+        rows.map((r) => {
+          const voided = Boolean(r.voided_at);
+          return (
+            <div
+              key={r.id}
+              className={cn(
+                "space-y-3 rounded-2xl border border-line/80 bg-surface p-4",
+                voided && "opacity-65"
+              )}
+            >
+              <div className="min-w-0">
+                <p className="font-semibold text-ink">
+                  {r.product_name} · {r.brand_name}
+                </p>
+                <p className="mt-0.5 text-sm text-ink-muted">{r.location_name}</p>
+                <p className="v2-mono text-xs text-ink-subtle">
+                  {new Date(r.operation_at).toLocaleString()}
+                </p>
+              </div>
+              <dl className={cn("grid grid-cols-2 gap-2 text-sm", voided && "line-through")}>
+                <div className="col-span-2">
+                  <dt className="text-ink-subtle">Bag / qty</dt>
+                  <dd className="text-ink">
+                    {r.bag_type_name}
+                    {r.bag_count > 0 ? ` (${r.bag_count} bags)` : ` (${r.loose_kg} kg loose)`} ·{" "}
+                    {formatQtyKg(r.quantity_kg)}
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-ink-subtle">Reason</dt>
+                  <dd className="text-ink">{r.reason || "—"}</dd>
+                </div>
+              </dl>
+              <OperationHistoryVoidAction voidedAt={r.voided_at} onVoid={() => onVoid(r)} />
+            </div>
+          );
+        })
+      }
     />
   );
 }

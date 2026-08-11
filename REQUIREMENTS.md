@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.9** (responsive UI Phase 3: Fulfillment, Processing, Job work); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.10** (responsive UI Phase 4: Inventory + stock ops); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.10** — Responsive UI **Phase 4** (layout only): Inventory stock line cards below `lg` + Add-stock FAB; Summary/Detail SegmentedControl; bag-change / transfer / disposal history mobile cards via shared `OperationHistoryPage`; OperationPageHeader shortens History CTA. Desktop tables unchanged. No Phase 5+. See **Spec v17.3.10** below.
 - **v17.3.9** — Responsive UI **Phase 3** (layout only): Fulfillment + JW fulfillment line cards below `lg`; processing open-job FAB + history log cards; job-work list FAB / detail line cards + header CTAs; SegmentedControl wrap on filters/allocation. Desktop tables unchanged. No Phase 4+. See **Spec v17.3.9** below.
 - **v17.3.8** — Responsive UI **Phase 2** (layout only): Payments list mobile cards + FAB; Payment form stack/`min-w-0`; Cash book list cards + FAB; cash-book entry type segment wrap + stacked footer actions; Accounts dashboard bank/recent-entry cards + shorter header CTAs on phone. Desktop tables unchanged. No Phase 3+. See **Spec v17.3.8** below.
 - **v17.3.7** — Responsive UI **Phase 1** (layout only): AppShell mobile drawer (full labels, body scroll-lock, theme/density in user menu on narrow); Dashboard card headers / summary-table min-widths; Bills list payment segment + FAB clearance; Bill detail product + linked-expense mobile cards; desktop tables unchanged. No Phase 2+. See **Spec v17.3.7** below.
@@ -114,7 +115,7 @@
 | Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4**, **v17.3.8** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight; Phase 2 responsive |
 | Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive |
 | Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0**, **v17.3.9** | deliver/return; audit log; product + brand filters on bills list; Phase 3 responsive |
-| Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment |
+| Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2**, **v17.3.10** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment; Phase 4 responsive |
 | Customers | v12.2, v13.2, **v14.0**, **v17.3.4** | `party_type`; `formatCustomerName` display |
 | Job Work orders | **v14.0**, **v14.3** | `services/job_work.py`, `routers/job_work.py`, JW-000001 counter; `/job-work` list/create/detail; activity log (receive + return events) |
 | Job Work fulfillment | **v14.0**, **v14.3** | `GET /api/job-work/fulfillment/orders`; receive/return/void receive on `/job-work/fulfillment`; `entry_type` on receipt rows — **not** bill `/fulfillment` |
@@ -461,7 +462,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
 - **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
 - **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
-- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work — see Specs v17.3.7–v17.3.9.
+- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops — see Specs v17.3.7–v17.3.10.
 - **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
 - **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
 
@@ -3350,6 +3351,20 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.10 — Responsive UI Phase 4 (inventory and stock ops)
+
+**Problem:** Inventory forced nested wide tables (`min-w-[44–52rem]`) with deep left padding on phones; bag-change / transfer / disposal histories were table-only shells with no mobile cards.
+
+**Solution (Phase 4 only — layout/CSS; no business-logic changes):**
+- **Inventory:** Summary/Detail SegmentedControl; search `min-w-0`; Add-stock FAB + `pb-24`; stock line cards below `lg` in `InventoryStockViews` (desktop tables from `lg`); softer nest padding on narrow.
+- **Stock ops forms:** Already stacked grids; OperationPageHeader shortens “View history” on xs.
+- **History (bag change / product transfer / stock disposal):** Shared `OperationHistoryPage` supports `renderCards`; table from `lg`; New-record FAB; per-page mobile cards with void actions.
+- **Out of scope:** Phase 5+ (masters, settings, reports, audit/login histories).
+
+**Unchanged:** Aurora design language; inventory quantity / ops APIs and void rules.
+
+---
 
 ## Spec v17.3.9 — Responsive UI Phase 3 (fulfillment, processing, job work)
 
