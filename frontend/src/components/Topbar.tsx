@@ -80,7 +80,7 @@ function deriveTitle(pathname: string): string {
   return "GrainTrack";
 }
 
-function ThemeToggle() {
+function ThemeToggle({ className }: { className?: string }) {
   const { resolved, mode, setMode } = useTheme();
   const cycle = () => {
     const next: "light" | "dark" | "system" =
@@ -96,9 +96,10 @@ function ThemeToggle() {
       aria-label={`Theme: ${modeLabel} (click to change)`}
       title={`Theme: ${modeLabel} (click to change)`}
       className={cn(
-        "inline-flex h-9 items-center gap-1.5 rounded-xl border border-line bg-surface px-2.5 text-sm font-medium text-ink-muted transition-colors",
+        "inline-flex h-9 min-h-9 items-center gap-1.5 rounded-xl border border-line bg-surface px-2.5 text-sm font-medium text-ink-muted transition-colors",
         "hover:bg-surface-subtle hover:text-ink",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50",
+        className
       )}
     >
       <Icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
@@ -108,7 +109,7 @@ function ThemeToggle() {
   );
 }
 
-function DensityToggle() {
+function DensityToggle({ className }: { className?: string }) {
   const { density, toggle } = useDensity();
   const compact = density === "compact";
   const Icon = compact ? Rows2 : Rows3;
@@ -120,11 +121,12 @@ function DensityToggle() {
       aria-label={label}
       title={label}
       className={cn(
-        "inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-medium transition-colors",
+        "inline-flex h-9 min-h-9 items-center gap-1.5 rounded-xl border px-2.5 text-sm font-medium transition-colors",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50",
         compact
           ? "border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-800/50 dark:bg-primary-900/30 dark:text-primary-200"
-          : "border-line bg-surface text-ink-muted hover:bg-surface-subtle hover:text-ink"
+          : "border-line bg-surface text-ink-muted hover:bg-surface-subtle hover:text-ink",
+        className
       )}
     >
       <Icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
@@ -137,17 +139,27 @@ function DensityToggle() {
 function UserMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { resolved, mode, setMode } = useTheme();
+  const { density, toggle: toggleDensity } = useDensity();
   const handleLogout = async () => {
     await logout();
     navigate("/login", { replace: true });
   };
+  const cycleTheme = () => {
+    const next: "light" | "dark" | "system" =
+      mode === "light" ? "dark" : mode === "dark" ? "system" : "light";
+    setMode(next);
+  };
+  const themeLabel = mode === "system" ? "System" : mode === "dark" ? "Dark" : "Light";
+  const ThemeIcon = mode === "system" ? SunMoon : resolved === "dark" ? Sun : Moon;
+  const compact = density === "compact";
   return (
     <Menu as="div" className="relative">
       <Menu.Button as={Fragment}>
         <button
           type="button"
           className={cn(
-            "flex h-9 items-center gap-2 rounded-full border border-line bg-surface pl-1 pr-3 transition-shadow hover:shadow-soft",
+            "flex h-10 min-h-10 items-center gap-2 rounded-full border border-line bg-surface pl-1 pr-2.5 transition-shadow hover:shadow-soft sm:pr-3",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50"
           )}
           aria-label="User menu"
@@ -159,7 +171,7 @@ function UserMenu() {
               {(user?.name || user?.email || "?").charAt(0).toUpperCase()}
             </span>
           )}
-          <span className="hidden max-w-[10rem] truncate text-xs font-medium text-ink sm:inline">
+          <span className="hidden max-w-[10rem] truncate text-xs font-medium text-ink md:inline">
             {user?.name || user?.email || "Account"}
           </span>
         </button>
@@ -184,12 +196,43 @@ function UserMenu() {
               <p className="truncate text-xs text-primary-700 dark:text-primary-300">{ROLE_LABELS[user.role]}</p>
             )}
           </div>
+          <div className="border-b border-line py-1 md:hidden">
+            <Menu.Item>
+              {({ active }) => (
+                <button
+                  type="button"
+                  onClick={cycleTheme}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2.5 text-sm",
+                    active && "bg-surface-muted"
+                  )}
+                >
+                  <ThemeIcon className="h-4 w-4" /> Theme: {themeLabel}
+                </button>
+              )}
+            </Menu.Item>
+            <Menu.Item>
+              {({ active }) => (
+                <button
+                  type="button"
+                  onClick={toggleDensity}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-2.5 text-sm",
+                    active && "bg-surface-muted"
+                  )}
+                >
+                  {compact ? <Rows2 className="h-4 w-4" /> : <Rows3 className="h-4 w-4" />}
+                  {compact ? "Compact spacing" : "Comfortable spacing"}
+                </button>
+              )}
+            </Menu.Item>
+          </div>
           <Menu.Item>
             {({ active }) => (
               <Link
                 to="/profile"
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 text-sm",
+                  "flex items-center gap-2 px-3 py-2.5 text-sm",
                   active && "bg-surface-muted"
                 )}
               >
@@ -202,7 +245,7 @@ function UserMenu() {
               <Link
                 to="/inventory"
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 text-sm",
+                  "flex items-center gap-2 px-3 py-2.5 text-sm",
                   active && "bg-surface-muted"
                 )}
               >
@@ -216,7 +259,7 @@ function UserMenu() {
                 type="button"
                 onClick={() => void handleLogout()}
                 className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-600",
+                  "flex w-full items-center gap-2 px-3 py-2.5 text-sm text-danger-600",
                   active && "bg-danger-50 dark:bg-danger-900/30"
                 )}
               >
@@ -281,8 +324,8 @@ export default function Topbar({ onOpenSidebar, onOpenPalette }: Props) {
       <IconButton label="Search (Cmd/Ctrl+K)" size="sm" onClick={onOpenPalette} className="md:hidden">
         <Search />
       </IconButton>
-      <DensityToggle />
-      <ThemeToggle />
+      <DensityToggle className="hidden md:inline-flex" />
+      <ThemeToggle className="hidden md:inline-flex" />
       <UserMenu />
     </header>
   );

@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.6** (production security: no plaintext passwords, hide API docs, COOKIE_SECURE warning); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.7** (responsive UI Phase 1: AppShell, Dashboard, Bills); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.7** — Responsive UI **Phase 1** (layout only): AppShell mobile drawer (full labels, body scroll-lock, theme/density in user menu on narrow); Dashboard card headers / summary-table min-widths; Bills list payment segment + FAB clearance; Bill detail product + linked-expense mobile cards; desktop tables unchanged. No Phase 2+. See **Spec v17.3.7** below.
 - **v17.3.6** — Production security hardening: stop storing/returning `users.password_plain` (migration `061` NULLs existing values); Users API/UI set-new-password only (never display passwords); `DISABLE_API_DOCS=true` hides `/docs`, `/redoc`, `/openapi.json`; startup **WARNING** when `COOKIE_SECURE` is false. See **Spec v17.3.6** below.
 - **v17.3.5** — Dashboard: cash-book **Expense** excludes category **Self Withdrawal** (case-insensitive trim); expose `self_withdrawal_total`; **gross_profit** = sales − purchase − expense (excl. SW); **net_profit** = sales − purchase − all expenses (incl. SW) on month + FY (+ monthly FY rows). UI Net profit cards + Self WD column. Auth: auto-logout after **10 minutes** idle (mousemove/keydown/click/touch/scroll); hidden/minimized time counts toward the same limit (wall clock); calls `POST /api/auth/logout` then `/login`. See **Spec v17.3.5** below.
 - **v17.3.4** — UX polish matching live lists: bills list `product_id` filter (`EXISTS` line); payments list newest-first + post-create `?created=` highlight (`paymentCreated`); cash-book / payments tables `stickyHeader={false}`; `formatCustomerName` collapses whitespace on Customers / balances / statement. See **Spec v17.3.4** below.
@@ -106,10 +107,10 @@
 |------|------|----------------|
 | Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; no plaintext passwords; idle logout; optional hide API docs |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
-| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5** | `dashboard-bundle` (+ FY, job work); expenses excl. Self Withdrawal; gross + net profit; qty-first UI |
+| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7** | `dashboard-bundle` (+ FY, job work); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1** | list aggregates; snapshot UI; void reopen + close empty |
 | Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight |
-| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4** | sales lines: `stock_source`; notes; list `product_id` filter; form UX |
+| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive |
 | Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0** | deliver/return; audit log; product + brand filters on bills list |
 | Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment |
 | Customers | v12.2, v13.2, **v14.0**, **v17.3.4** | `party_type`; `formatCustomerName` display |
@@ -458,7 +459,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
 - **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
 - **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
-- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll`; mobile hamburger drawer.
+- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills (list/detail) intentional on phone/tablet/desktop — see Spec v17.3.7.
 - **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
 - **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
 
@@ -3347,6 +3348,22 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.7 — Responsive UI Phase 1 (shell, dashboard, bills)
+
+**Problem:** On narrow viewports (~375px), AppShell chrome crowded the topbar; dashboard summary tables forced wide mins; bills payment segments and bill-detail product/expense tables required awkward horizontal scroll.
+
+**Solution (Phase 1 only — layout/CSS; no business-logic changes):**
+- **AppShell / Sidebar / Topbar:** Mobile drawer always shows full nav labels; collapse control desktop-only; body scroll locked while drawer open; Density/Theme move into User menu below `md` (icon toggles remain from `md` up).
+- **Shared CardHeader:** Title and actions stack on narrow, row from `sm`.
+- **Dashboard:** Softer `DASH_TABLE` min-widths by breakpoint; product-breakdown toolbar already wraps via CardHeader.
+- **Bills list:** Payment `SegmentedControl` `sm` + wrap/`flex-1` on phone; fulfillment filter `min-w-0`; bottom padding so FAB does not cover content.
+- **Bill detail:** Products and Linked expenses — table from `lg`, stacked cards below; PageHeader prioritizes Record payment; short “PDF” label on xs.
+- **Out of scope:** Phase 2+ pages; sticky bill-form save bar.
+
+**Unchanged:** Visual language / Aurora tokens; desktop table layouts; APIs and permission rules.
+
+---
 
 ## Spec v17.3.6 — Production security hardening
 

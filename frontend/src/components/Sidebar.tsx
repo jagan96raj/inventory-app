@@ -440,7 +440,8 @@ export default function Sidebar({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [activeLabel, closeMenus]);
 
-  const widthClass = collapsed ? "lg:w-[72px]" : "lg:w-52";
+  // Phone drawer always shows full labels; desktop may use collapsed icon rail.
+  const chromeCollapsed = mobile ? false : collapsed;
 
   return (
     <>
@@ -463,20 +464,20 @@ export default function Sidebar({
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-52 -translate-x-full flex-col border-r border-line/80 bg-surface/92 backdrop-blur-xl transition-transform duration-200",
           "lg:translate-x-0",
-          widthClass,
+          chromeCollapsed ? "lg:w-[72px]" : "lg:w-52",
           mobileOpen && "translate-x-0 shadow-2xl"
         )}
         aria-label="Primary"
         onMouseLeave={() => scheduleClose()}
       >
-        <NavBrand collapsed={collapsed} />
-        <div className="flex-1 overflow-y-auto px-2 py-3">
+        <NavBrand collapsed={chromeCollapsed} />
+        <div className="flex-1 overflow-y-auto overscroll-contain px-2 py-3">
           <nav className="flex flex-col gap-0.5" role="menubar" aria-orientation="vertical">
             {visibleNav.map((group) => (
               <NavGroupButton
                 key={group.label}
                 group={group}
-                collapsed={collapsed}
+                collapsed={chromeCollapsed}
                 active={groupIsActive(group, pathname)}
                 open={activeLabel === group.label}
                 onHover={() => {
@@ -501,21 +502,25 @@ export default function Sidebar({
         <div
           className={cn(
             "flex shrink-0 items-center border-t border-line px-2 py-2",
-            collapsed ? "justify-center" : "justify-between gap-2"
+            chromeCollapsed ? "justify-center" : "justify-between gap-2"
           )}
         >
           <IconButton
             label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             size="sm"
             onClick={onToggleCollapse}
-            className="shrink-0 text-ink-subtle"
+            className="hidden shrink-0 text-ink-subtle lg:inline-flex"
           >
             <ChevronLeft className={cn("transition-transform", collapsed && "rotate-180")} />
           </IconButton>
-          {!collapsed && (
+          {!chromeCollapsed && (
             <NavLink
               to="/home"
-              className="inline-flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-ink-subtle hover:bg-surface-muted hover:text-ink"
+              className={cn(
+                "inline-flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-ink-subtle hover:bg-surface-muted hover:text-ink",
+                "min-h-10"
+              )}
+              onClick={onMobileClose}
             >
               <Settings className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">About</span>

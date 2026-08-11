@@ -66,7 +66,7 @@ function formatBags(count: number): string {
   return `${count.toLocaleString("en-IN")} bag${count === 1 ? "" : "s"}`;
 }
 
-const DASH_TABLE = "v2-data-table dashboard-summary-table w-full min-w-[26rem] text-sm";
+const DASH_TABLE = "v2-data-table dashboard-summary-table w-full min-w-[18rem] sm:min-w-[22rem] lg:min-w-[26rem] text-sm";
 const DASH_LABEL_TH = "dashboard-summary-table__label px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide";
 const DASH_NUM_TH = "dashboard-summary-table__num px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wide";
 const DASH_LABEL_TD = "dashboard-summary-table__label px-3 py-2.5 text-ink";
