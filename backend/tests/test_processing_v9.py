@@ -253,25 +253,28 @@ class ProcessingV9ServiceTests(unittest.TestCase):
         self.assertEqual(batch_holder[0].dust_kg, Decimal("2.5"))
         self.assertEqual(batch_holder[0].stone_kg, Decimal("1"))
 
-    def test_complete_empty_without_batches_raises(self):
+    def test_complete_empty_without_batches_succeeds(self):
+        """v17.3.1: empty open job (no active batches) may be completed to free the slot."""
         db = MagicMock()
         job = self._open_job()
         db.scalar.return_value = None
 
         with patch("app.services.processing.load_processing_job", return_value=job):
-            with self.assertRaises(ValueError) as ctx:
-                complete_job(
-                    db,
-                    1,
-                    input_lines=[],
-                    output_lines=[],
-                    balance_return_lines=[],
-                    dust_kg=Decimal("0"),
-                    stone_kg=Decimal("0"),
-                    sack_weight_waste_kg=Decimal("0"),
-                    miscellaneous_waste_kg=Decimal("0"),
-                )
-        self.assertIn("at least one batch", str(ctx.exception).lower())
+            complete_job(
+                db,
+                1,
+                input_lines=[],
+                output_lines=[],
+                balance_return_lines=[],
+                dust_kg=Decimal("0"),
+                stone_kg=Decimal("0"),
+                sack_weight_waste_kg=Decimal("0"),
+                miscellaneous_waste_kg=Decimal("0"),
+            )
+
+        self.assertEqual(job.status, ProcessingJobStatus.completed)
+        self.assertIsNotNone(job.completed_at)
+        db.commit.assert_called()
 
     def test_completed_job_rejects_batch(self):
         db = MagicMock()

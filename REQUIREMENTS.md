@@ -1135,7 +1135,7 @@ Fresh input, balance return on Output tab, mass-balance v9.3, `net_balance_kg` f
   - Per commit: at least one input line, output line, or waste kg > 0. Per-batch incremental rules unchanged; **job-level** mass-balance guard with 100 kg tolerance — see **Spec v9.3**.
 - **Actions:**
   - `POST .../batches` — apply inventory for current body; job stays open.
-  - `POST .../complete` — if body has data: same as batch then complete; if empty: complete only when ≥1 batch exists. Completed jobs reject new batches (400).
+  - `POST .../complete` — if body has data: same as batch then complete; if empty: complete when ≥1 active batch **or** when zero active batches (**v17.3.1** Close empty process). Completed jobs reject new batches (400).
 - **API:** `POST/GET /api/operations/processing`, `GET /api/operations/processing/{id}`, `POST .../batches`, `POST .../complete`
 - **UI:** `/operations/processing` (new job + open jobs), `/operations/processing/:id` (batch history + form; disabled when completed).
 - **DB:** migration `011_spec_v9_processing` — `processing_jobs`, `processing_batches`, `processing_input_lines`, `processing_output_lines`.
