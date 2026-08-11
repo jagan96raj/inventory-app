@@ -650,11 +650,11 @@ export default function JobWorkFormPage() {
 
 
 
-        <div className="flex justify-end gap-2">
+        <div className="sticky bottom-0 z-20 -mx-1 flex flex-col-reverse gap-2 border-t border-line/60 bg-surface/95 px-1 py-3 backdrop-blur supports-[backdrop-filter]:bg-surface/80 sm:flex-row sm:justify-end">
 
-          <Link to="/job-work">
+          <Link to="/job-work" className="w-full sm:w-auto">
 
-            <Button variant="ghost" type="button" disabled={saving}>
+            <Button variant="ghost" type="button" disabled={saving} className="w-full sm:w-auto">
 
               Cancel
 
@@ -662,7 +662,7 @@ export default function JobWorkFormPage() {
 
           </Link>
 
-          <Button type="submit" loading={saving} leftIcon={<Briefcase className="h-4 w-4" />}>
+          <Button type="submit" loading={saving} leftIcon={<Briefcase className="h-4 w-4" />} className="w-full sm:w-auto">
 
             Create order
 

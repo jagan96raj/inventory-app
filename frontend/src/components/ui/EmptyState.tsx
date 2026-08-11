@@ -26,7 +26,7 @@ export default function EmptyState({ icon, title, description, action, className
         <p className="text-base font-semibold text-ink">{title}</p>
         {description && <p className="text-base text-ink-muted">{description}</p>}
       </div>
-      {action && <div className="mt-1">{action}</div>}
+      {action && <div className="mt-1 w-full max-w-xs [&_a]:block [&_a]:w-full [&_button]:w-full">{action}</div>}
     </div>
   );
 }

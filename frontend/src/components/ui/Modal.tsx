@@ -123,7 +123,7 @@ export default function Modal({
                 </div>
 
                 {footer && (
-                  <div className="shrink-0 border-t border-line bg-surface-subtle px-5 py-3">
+                  <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-line bg-surface-subtle px-4 py-3 sm:flex-row sm:justify-end sm:px-5 [&_button]:w-full sm:[&_button]:w-auto">
                     {footer}
                   </div>
                 )}

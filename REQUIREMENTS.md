@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.12** (responsive UI Phase 6: reports, users, profile, auth); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.13** (responsive UI Phase 7: final polish); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.13** — Responsive UI **Phase 7** (layout only — final polish): Shared Modal/`CardFooter`/`PageHeader`/`EmptyState` mobile stacking; money-accounts + expense-category cards; audit/login history cards; sticky submit on Bill/JW/ops/cash-book forms; inventory/processing dialog button stacks. No new features. See **Spec v17.3.13** below.
 - **v17.3.12** — Responsive UI **Phase 6** (layout only): Customer balances + statement cards below `lg`; Users/Profile touch targets + stacked modal/save actions; AuthShell phone padding + wider register; Pending access stacked CTAs. Desktop tables unchanged. No Phase 7+. See **Spec v17.3.12** below.
 - **v17.3.11** — Responsive UI **Phase 5** (layout only): Masters lists (products/brands via `MasterCrud`; customers/locations via `PartyMasterCrud`; bag types) use cards below `lg` + Add FAB; book settings Save full-width on phone + `min-w-0` comboboxes; `AddCustomerDialog` footer stacks on xs. Desktop tables unchanged. No Phase 6+. See **Spec v17.3.11** below.
 - **v17.3.10** — Responsive UI **Phase 4** (layout only): Inventory stock line cards below `lg` + Add-stock FAB; Summary/Detail SegmentedControl; bag-change / transfer / disposal history mobile cards via shared `OperationHistoryPage`; OperationPageHeader shortens History CTA. Desktop tables unchanged. No Phase 5+. See **Spec v17.3.10** below.
@@ -464,7 +465,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
 - **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
 - **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
-- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops. **Phase 5 (v17.3.11):** Masters + book settings. **Phase 6 (v17.3.12):** Reports/balances/statement + users/profile/auth — see Specs v17.3.7–v17.3.12.
+- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops. **Phase 5 (v17.3.11):** Masters + book settings. **Phase 6 (v17.3.12):** Reports/balances/statement + users/profile/auth. **Phase 7 (v17.3.13):** Final polish — see Specs v17.3.7–v17.3.13.
 - **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
 - **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
 
@@ -3353,6 +3354,20 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.13 — Responsive UI Phase 7 (final polish)
+
+**Problem:** After Phases 1–6, leftover phone pain remained in account masters, audit/login histories, shared dialog footers, and long forms whose primary CTA scrolled off-screen.
+
+**Solution (Phase 7 only — layout/CSS; no business-logic or new features):**
+- **Shared chrome:** `Modal` footer stacks + full-width buttons on xs; `CardFooter`/`PageHeader`/`EmptyState` mobile-friendly defaults.
+- **Money accounts + expense categories:** Cards below `lg`; desktop tables from `lg`; modal footers use Modal default stack.
+- **Audit log + login history:** Cards below `lg`; filter grids `min-w-0`.
+- **Sticky actions:** Bill form, job-work create, bag-change / transfer / disposal, cash-book entry footers stick on scroll with phone-friendly button widths.
+- **Dialogs:** Inventory add/edit stock + processing open-job action rows stack on xs.
+- **Out of scope:** New product features; intentional redesign beyond leftover mobile polish.
+
+**Unchanged:** Aurora design language; APIs and business rules.
 
 ## Spec v17.3.12 — Responsive UI Phase 6 (reports, users, profile, auth)
 

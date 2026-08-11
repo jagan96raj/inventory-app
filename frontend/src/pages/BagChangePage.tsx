@@ -588,7 +588,7 @@ export default function BagChangePage() {
               </div>
             </OperationSection>
           </CardBody>
-          <CardFooter className="flex flex-col gap-3 border-t border-line/60 sm:flex-row sm:items-center sm:justify-between">
+          <CardFooter className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-line/60 bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-sm text-ink-muted">
               <Package className="h-4 w-4 shrink-0" aria-hidden="true" />
               {balanced ? "Mass balanced" : "Adjust quantities until from = to + loss"}

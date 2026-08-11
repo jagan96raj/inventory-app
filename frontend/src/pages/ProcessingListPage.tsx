@@ -296,7 +296,7 @@ export default function ProcessingListPage() {
                 "Select product and brand to continue"
               )}
             </p>
-            <div className="flex justify-end gap-2">
+            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
               <Button variant="ghost" onClick={closeJobDialog} disabled={saving}>
                 Cancel
               </Button>

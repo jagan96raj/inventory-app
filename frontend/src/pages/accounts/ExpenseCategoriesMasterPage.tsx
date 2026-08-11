@@ -187,62 +187,104 @@ export default function ExpenseCategoriesMasterPage() {
             />
           </CardBody>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="v2-data-table w-full text-base">
-              <thead className="bg-surface-muted/70 text-base font-semibold uppercase tracking-wide text-ink-muted">
-                <tr>
-                  <th className="px-5 py-3.5 text-left">Name</th>
-                  <th className="px-5 py-3.5 text-left">Kind</th>
-                  <th className="px-5 py-3.5 text-left">Status</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((c) => (
-                  <tr key={c.id} className="border-t border-line/70">
-                    <td className="px-5 py-4 font-semibold text-ink">
-                      <span className="inline-flex items-center gap-2">
-                        {c.is_system && <Lock className="h-3.5 w-3.5 text-ink-subtle" aria-label="System category" />}
-                        {c.name}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="v2-data-table w-full text-base">
+                <thead className="bg-surface-muted/70 text-base font-semibold uppercase tracking-wide text-ink-muted">
+                  <tr>
+                    <th className="px-5 py-3.5 text-left">Name</th>
+                    <th className="px-5 py-3.5 text-left">Kind</th>
+                    <th className="px-5 py-3.5 text-left">Status</th>
+                    <th className="px-5 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c) => (
+                    <tr key={c.id} className="border-t border-line/70">
+                      <td className="px-5 py-4 font-semibold text-ink">
+                        <span className="inline-flex items-center gap-2">
+                          {c.is_system && <Lock className="h-3.5 w-3.5 text-ink-subtle" aria-label="System category" />}
+                          {c.name}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <Badge tone={kindTone[c.kind]} size="sm">
+                          {c.kind}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-4">
+                        {c.is_active ? <Badge tone="success" size="sm">Active</Badge> : <Badge tone="neutral" size="sm">Inactive</Badge>}
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="inline-flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                            onClick={() => openEdit(c)}
+                            disabled={c.is_system}
+                            title={c.is_system ? "System category" : undefined}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                            onClick={() => setPendingDelete(c)}
+                            disabled={c.is_system}
+                            title={c.is_system ? "System category" : undefined}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="space-y-3 border-t border-line p-4 lg:hidden">
+              {rows.map((c) => (
+                <div key={c.id} className="space-y-3 rounded-2xl border border-line/80 bg-surface p-4">
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <p className="inline-flex min-w-0 items-center gap-2 font-semibold text-ink">
+                      {c.is_system && <Lock className="h-3.5 w-3.5 shrink-0 text-ink-subtle" aria-label="System category" />}
+                      <span className="truncate">{c.name}</span>
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
                       <Badge tone={kindTone[c.kind]} size="sm">
                         {c.kind}
                       </Badge>
-                    </td>
-                    <td className="px-5 py-4">
                       {c.is_active ? <Badge tone="success" size="sm">Active</Badge> : <Badge tone="neutral" size="sm">Inactive</Badge>}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <div className="inline-flex gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          leftIcon={<Pencil className="h-3.5 w-3.5" />}
-                          onClick={() => openEdit(c)}
-                          disabled={c.is_system}
-                          title={c.is_system ? "System category" : undefined}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                          onClick={() => setPendingDelete(c)}
-                          disabled={c.is_system}
-                          title={c.is_system ? "System category" : undefined}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 border-t border-line/60 pt-3">
+                    <Button
+                      size="md"
+                      variant="secondary"
+                      className="min-h-10 flex-1 sm:flex-none"
+                      leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                      onClick={() => openEdit(c)}
+                      disabled={c.is_system}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="md"
+                      variant="danger"
+                      className="min-h-10 flex-1 sm:flex-none"
+                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                      onClick={() => setPendingDelete(c)}
+                      disabled={c.is_system}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
         <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="px-4" />
       </Card>
@@ -253,7 +295,7 @@ export default function ExpenseCategoriesMasterPage() {
         title={editing ? "Edit category" : "Add category"}
         size="md"
         footer={
-          <div className="flex justify-end gap-2">
+          <>
             <Button variant="ghost" onClick={close} disabled={busy}>
               Cancel
             </Button>
@@ -266,7 +308,7 @@ export default function ExpenseCategoriesMasterPage() {
             >
               {editing ? "Save changes" : "Add"}
             </Button>
-          </div>
+          </>
         }
       >
         <form id="cat-form" onSubmit={submit} className="space-y-4">

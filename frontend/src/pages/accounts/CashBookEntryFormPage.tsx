@@ -715,7 +715,7 @@ export default function CashBookEntryFormPage() {
           </FormField>
           </fieldset>
         </CardBody>
-        <CardFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end [&_button]:w-full sm:[&_button]:w-auto">
+        <CardFooter className="sticky bottom-0 z-20 flex-col-reverse gap-2 border-t border-line/60 bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80 sm:flex-row sm:justify-end [&_button]:w-full sm:[&_button]:w-auto">
           <Button variant="ghost" onClick={() => navigate(-1)} disabled={busy || voidBusy}>
             {isVoided ? "Back to cash book" : "Cancel"}
           </Button>

@@ -253,82 +253,157 @@ export default function BankAccountsMasterPage() {
             />
           </CardBody>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="v2-data-table w-full min-w-[68rem] text-base">
-              <thead className="bg-surface-muted/70 text-base font-semibold uppercase tracking-wide text-ink-muted">
-                <tr>
-                  <th className="px-5 py-3.5 text-left">Name</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Type</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-left">A/C ending</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-left">IFSC</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Opening</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Closing</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Opened</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-left">Status</th>
-                  <th className="whitespace-nowrap px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((b) => (
-                  <tr key={b.id} className="border-t border-line/70">
-                    <td className="px-5 py-4 font-semibold text-ink">{b.name}</td>
-                    <td className="whitespace-nowrap px-5 py-4">
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="v2-data-table w-full min-w-[68rem] text-base">
+                <thead className="bg-surface-muted/70 text-base font-semibold uppercase tracking-wide text-ink-muted">
+                  <tr>
+                    <th className="px-5 py-3.5 text-left">Name</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-left">Type</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-left">A/C ending</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-left">IFSC</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-right">Opening</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-right">Closing</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-left">Opened</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-left">Status</th>
+                    <th className="whitespace-nowrap px-5 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((b) => (
+                    <tr key={b.id} className="border-t border-line/70">
+                      <td className="px-5 py-4 font-semibold text-ink">{b.name}</td>
+                      <td className="whitespace-nowrap px-5 py-4">
+                        <Badge tone={b.kind === "cash" ? "info" : "neutral"} size="sm">
+                          {accountKindLabel(b.kind ?? "bank")}
+                        </Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">
+                        {b.kind === "bank" && b.account_number_last4 ? `••${b.account_number_last4}` : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">
+                        {b.kind === "bank" ? b.ifsc ?? "—" : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 text-right v2-mono tabular-nums">{formatInr(b.opening_balance)}</td>
+                      <td className="whitespace-nowrap px-5 py-4 text-right v2-mono tabular-nums font-semibold text-ink">{formatInr(b.balance)}</td>
+                      <td className="whitespace-nowrap px-5 py-4 text-ink-muted">{formatDate(b.opening_balance_at)}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {b.is_default && b.kind === "bank" ? <Badge tone="primary" size="sm">Default</Badge> : null}
+                          {b.is_active ? <Badge tone="success" size="sm">Active</Badge> : <Badge tone="neutral" size="sm">Inactive</Badge>}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="inline-flex items-center justify-end gap-0.5">
+                          {b.kind === "bank" && !b.is_default && b.is_active ? (
+                            <IconButton
+                              label="Make default"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void makeDefault(b)}
+                            >
+                              <Star />
+                            </IconButton>
+                          ) : null}
+                          <IconButton label="Edit account" size="sm" variant="outline" onClick={() => openEdit(b)}>
+                            <Pencil />
+                          </IconButton>
+                          <IconButton
+                            label={
+                              b.kind === "cash"
+                                ? "Cannot delete Cash"
+                                : b.is_default
+                                  ? "Cannot delete the default bank"
+                                  : "Delete account"
+                            }
+                            size="sm"
+                            onClick={() => setPendingDelete(b)}
+                            disabled={b.kind === "cash" || b.is_default}
+                            className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:hover:bg-transparent dark:text-rose-400 dark:hover:bg-rose-950/40"
+                          >
+                            <Trash2 />
+                          </IconButton>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="space-y-3 border-t border-line p-4 lg:hidden">
+              {rows.map((b) => (
+                <div key={b.id} className="space-y-3 rounded-2xl border border-line/80 bg-surface p-4">
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-ink">{b.name}</p>
+                      <p className="v2-mono mt-1 text-lg font-semibold tabular-nums text-ink">{formatInr(b.balance)}</p>
+                      <p className="text-xs text-ink-muted">Closing · opened {formatDate(b.opening_balance_at)}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
                       <Badge tone={b.kind === "cash" ? "info" : "neutral"} size="sm">
                         {accountKindLabel(b.kind ?? "bank")}
                       </Badge>
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">
-                      {b.kind === "bank" && b.account_number_last4 ? `••${b.account_number_last4}` : "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 v2-mono text-ink-muted">
-                      {b.kind === "bank" ? b.ifsc ?? "—" : "—"}
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right v2-mono tabular-nums">{formatInr(b.opening_balance)}</td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right v2-mono tabular-nums font-semibold text-ink">{formatInr(b.balance)}</td>
-                    <td className="whitespace-nowrap px-5 py-4 text-ink-muted">{formatDate(b.opening_balance_at)}</td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {b.is_default && b.kind === "bank" ? <Badge tone="primary" size="sm">Default</Badge> : null}
-                        {b.is_active ? <Badge tone="success" size="sm">Active</Badge> : <Badge tone="neutral" size="sm">Inactive</Badge>}
+                      {b.is_default && b.kind === "bank" ? <Badge tone="primary" size="sm">Default</Badge> : null}
+                      {b.is_active ? <Badge tone="success" size="sm">Active</Badge> : <Badge tone="neutral" size="sm">Inactive</Badge>}
+                    </div>
+                  </div>
+                  {b.kind === "bank" && (
+                    <dl className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">A/C ending</dt>
+                        <dd className="v2-mono text-ink">{b.account_number_last4 ? `••${b.account_number_last4}` : "—"}</dd>
                       </div>
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      <div className="inline-flex items-center justify-end gap-0.5">
-                        {b.kind === "bank" && !b.is_default && b.is_active ? (
-                          <IconButton
-                            label="Make default"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => void makeDefault(b)}
-                          >
-                            <Star />
-                          </IconButton>
-                        ) : null}
-                        <IconButton label="Edit account" size="sm" variant="outline" onClick={() => openEdit(b)}>
-                          <Pencil />
-                        </IconButton>
-                        <IconButton
-                          label={
-                            b.kind === "cash"
-                              ? "Cannot delete Cash"
-                              : b.is_default
-                                ? "Cannot delete the default bank"
-                                : "Delete account"
-                          }
-                          size="sm"
-                          onClick={() => setPendingDelete(b)}
-                          disabled={b.kind === "cash" || b.is_default}
-                          className="text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:hover:bg-transparent dark:text-rose-400 dark:hover:bg-rose-950/40"
-                        >
-                          <Trash2 />
-                        </IconButton>
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">IFSC</dt>
+                        <dd className="v2-mono truncate text-ink">{b.ifsc ?? "—"}</dd>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <div className="min-w-0 col-span-2">
+                        <dt className="text-ink-subtle">Opening</dt>
+                        <dd className="v2-mono text-ink">{formatInr(b.opening_balance)}</dd>
+                      </div>
+                    </dl>
+                  )}
+                  {b.kind === "cash" && (
+                    <p className="text-sm text-ink-muted">
+                      Opening <span className="v2-mono font-medium text-ink">{formatInr(b.opening_balance)}</span>
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2 border-t border-line/60 pt-3">
+                    {b.kind === "bank" && !b.is_default && b.is_active ? (
+                      <Button
+                        size="md"
+                        variant="secondary"
+                        className="min-h-10 flex-1 sm:flex-none"
+                        leftIcon={<Star className="h-3.5 w-3.5" />}
+                        onClick={() => void makeDefault(b)}
+                      >
+                        Default
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="md"
+                      variant="secondary"
+                      className="min-h-10 flex-1 sm:flex-none"
+                      leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                      onClick={() => openEdit(b)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="md"
+                      variant="danger"
+                      className="min-h-10 flex-1 sm:flex-none"
+                      leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                      onClick={() => setPendingDelete(b)}
+                      disabled={b.kind === "cash" || b.is_default}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
         <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} className="px-4" />
       </Card>
@@ -347,7 +422,7 @@ export default function BankAccountsMasterPage() {
         }
         size="md"
         footer={
-          <div className="flex justify-end gap-2">
+          <>
             <Button variant="ghost" onClick={close} disabled={busy}>
               Cancel
             </Button>
@@ -360,7 +435,7 @@ export default function BankAccountsMasterPage() {
             >
               {editing ? "Save changes" : isCash ? "Add Cash" : "Add Bank"}
             </Button>
-          </div>
+          </>
         }
       >
         <form id="money-account-form" onSubmit={submit} className="space-y-4">

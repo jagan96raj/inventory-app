@@ -118,8 +118,8 @@ export default function LoginHistoryPage() {
       />
 
       <Card>
-        <CardBody className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <FormField label="Result">
+        <CardBody className="grid min-w-0 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <FormField label="Result" className="min-w-0">
             {({ id }) => (
               <Select id={id} value={successFilter} onChange={(e) => setSuccessFilter(e.target.value)}>
                 <option value="">All</option>
@@ -128,17 +128,17 @@ export default function LoginHistoryPage() {
               </Select>
             )}
           </FormField>
-          <FormField label="From date">
+          <FormField label="From date" className="min-w-0">
             {({ id }) => (
               <Input id={id} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             )}
           </FormField>
-          <FormField label="To date">
+          <FormField label="To date" className="min-w-0">
             {({ id }) => (
               <Input id={id} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             )}
           </FormField>
-          <FormField label="Search email">
+          <FormField label="Search email" className="min-w-0">
             {({ id }) => (
               <Input
                 id={id}
@@ -156,14 +156,51 @@ export default function LoginHistoryPage() {
         <EmptyState title="Could not load login history" description={error} />
       ) : (
         <>
-          <Table
-            columns={columns}
-            rows={rows}
-            rowKey={(row) => row.id}
-            caption="Login history"
-            loading={loading}
-            empty={<span className="text-base text-ink-muted">No login events match your filters.</span>}
-          />
+          <div className="space-y-3 lg:hidden">
+            {loading ? (
+              <Card>
+                <CardBody className="text-sm text-ink-muted">Loading…</CardBody>
+              </Card>
+            ) : rows.length === 0 ? (
+              <Card>
+                <CardBody className="text-sm text-ink-muted">No login events match your filters.</CardBody>
+              </Card>
+            ) : (
+              rows.map((row) => (
+                <Card key={row.id} className="min-w-0 overflow-hidden">
+                  <CardBody className="space-y-2 p-4">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-ink">{row.email}</p>
+                        <p className="text-xs text-ink-muted">{formatDateTime(row.created_at)}</p>
+                      </div>
+                      <Badge tone={row.success ? "success" : "danger"}>{row.success ? "Success" : "Failed"}</Badge>
+                    </div>
+                    <dl className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">Reason</dt>
+                        <dd className="text-ink">{loginFailureReasonLabel(row.failure_reason)}</dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">IP</dt>
+                        <dd className="truncate text-ink">{row.ip_address ?? "—"}</dd>
+                      </div>
+                    </dl>
+                  </CardBody>
+                </Card>
+              ))
+            )}
+          </div>
+          <div className="hidden lg:block">
+            <Table
+              columns={columns}
+              rows={rows}
+              rowKey={(row) => row.id}
+              caption="Login history"
+              loading={loading}
+              empty={<span className="text-base text-ink-muted">No login events match your filters.</span>}
+            />
+          </div>
           <PaginationBar total={total} limit={limit} offset={offset} onPageChange={setOffset} />
         </>
       )}
