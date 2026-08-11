@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.16** (square app icons); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.17** (cream app icons); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.17** — App icons (clip + invert): rebuild centered emblem-only `logo-icon.png` (four-grain mark, no tractor scraps); OS icons on visiting-card cream `#E7E8E3` with dark olive `#586038` ink and ~24% pad so rounded masks don’t clip tips. See **Spec v17.3.17** below.
 - **v17.3.16** — App icons: regenerate Windows `desktop-shell/icon.png` + `icon.ico` and add `apple-touch-icon.png` from emblem-only `logo-icon.png` — square canvas, letterboxed (~15% pad) on solid `#586038` (no stretch / no full-transparency). Favicon padded the same way. Script: `scripts/generate_app_icons.py`. See **Spec v17.3.16** below.
 - **v17.3.15** — Brand theme: replace indigo/violet/blue-lavender with Raj Agro logo olive/sage greens (Tailwind `primary`, CSS tokens, AuthShell/PageHeader/FAB gradients, legacy Aurora CSS aliases, `theme-color`). Light canvas warm-green tinted; dark olive-readable. No business logic. See **Spec v17.3.15** below.
 - **v17.3.14** — Custom app logo: transparent `frontend/public/logo-mark.png` (tractor + circular grain mark only; company wordmark cropped out); `AppBrand` shows mark + `VITE_APP_NAME` (**GrainTrack**); wired in Sidebar + AuthShell; favicon + desktop-shell `icon.ico`. See **Spec v17.3.14** below.
