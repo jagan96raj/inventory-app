@@ -722,7 +722,7 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
           <p className="text-sm text-ink-muted">No products on this bill.</p>
         ) : (
           <>
-            <div className="overflow-x-auto rounded-2xl border border-line/80 bg-surface">
+            <div className="hidden overflow-x-auto rounded-2xl border border-line/80 bg-surface lg:block">
               <table className="v2-data-table min-w-full text-base">
                 <caption className="sr-only">Bill line items</caption>
                 <thead>
@@ -785,6 +785,58 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
                 </tbody>
               </table>
             </div>
+
+            <div className="space-y-3 lg:hidden">
+              {bill.lines.map((line) => (
+                <div
+                  key={line.id}
+                  className="space-y-3 rounded-2xl border border-line/80 bg-surface-subtle/50 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-ink">
+                        {line.product_name ?? `Product #${line.product_id}`}
+                      </p>
+                      <p className="mt-0.5 text-sm text-ink-muted">
+                        {line.brand_name} · {line.bag_type_name}
+                      </p>
+                      {isSales && lineStockMeta(line) && (
+                        <p className="mt-1">
+                          <Badge tone="info" size="sm">
+                            {lineStockMeta(line)}
+                          </Badge>
+                        </p>
+                      )}
+                    </div>
+                    <DeliveryPill status={line.line_delivery_status} />
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div>
+                      <dt className="text-ink-subtle">{qtyLabel}</dt>
+                      <dd className="v2-mono font-medium tabular-nums text-ink">{orderedQty(line)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-subtle">{deliveredLabel}</dt>
+                      <dd className="v2-mono font-medium tabular-nums text-ink">{deliveredQty(line)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-subtle">Remaining</dt>
+                      <dd className="v2-mono font-medium tabular-nums text-ink">{remainingQty(line)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-subtle">Rate/kg</dt>
+                      <dd className="v2-mono font-medium tabular-nums text-ink">{formatInr(line.rate_per_kg)}</dd>
+                    </div>
+                  </dl>
+                  <div className="flex items-center justify-between border-t border-line/60 pt-3">
+                    <span className="text-sm text-ink-muted">Line total</span>
+                    <span className="v2-mono text-lg font-bold tabular-nums text-ink">
+                      {formatInr(line.line_total)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
             <div className="mt-6 flex flex-col items-end gap-2 border-t border-line/70 pt-5 text-base">
               <div className="flex w-full max-w-xs justify-between gap-4 text-ink-muted">
                 <span>Subtotal</span>
@@ -846,55 +898,94 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
             }
           />
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-line/80 bg-surface">
-            <table className="v2-data-table min-w-full">
-              <caption className="sr-only">Linked cash book expenses</caption>
-              <thead>
-                <tr>
-                  <th className={detailTh}>Date</th>
-                  <th className={detailTh}>Category</th>
-                  <th className={cn(detailTh, "text-right")}>Amount</th>
-                  <th className={detailTh}>Mode / Bank</th>
-                  <th className={detailTh}>Description</th>
-                  <th className={cn(detailTh, "text-right")}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linkedExpenses.map((e) => (
-                  <tr key={e.id}>
-                    <td className={cn(detailTd, "v2-mono text-ink-muted")}>{e.entry_date}</td>
-                    <td className={cn(detailTd, "font-medium")}>{e.category_name ?? "—"}</td>
-                    <td className={cn(detailTd, "text-right v2-mono font-semibold")}>{formatInr(e.amount)}</td>
-                    <td className={detailTd}>
-                      {e.source_payment_mode === "bank" ? e.source_bank_account_name ?? "Bank" : "Cash"}
-                    </td>
-                    <td className={cn(detailTd, "text-ink-muted")}>
-                      <p className="truncate text-sm">{e.description ?? "—"}</p>
-                      {e.reference_no && <p className="text-xs text-ink-subtle">Ref: {e.reference_no}</p>}
-                    </td>
-                    <td className={cn(detailTd, "text-right")}>
-                      <Link to={`/accounts/cashbook/${e.id}/edit`}>
-                        <Button size="sm" variant="ghost">
-                          Open
-                        </Button>
-                      </Link>
-                    </td>
+          <>
+            <div className="hidden overflow-x-auto rounded-2xl border border-line/80 bg-surface lg:block">
+              <table className="v2-data-table min-w-full">
+                <caption className="sr-only">Linked cash book expenses</caption>
+                <thead>
+                  <tr>
+                    <th className={detailTh}>Date</th>
+                    <th className={detailTh}>Category</th>
+                    <th className={cn(detailTh, "text-right")}>Amount</th>
+                    <th className={detailTh}>Mode / Bank</th>
+                    <th className={detailTh}>Description</th>
+                    <th className={cn(detailTh, "text-right")}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={2} className={cn(detailTd, "text-right font-semibold text-ink-muted")}>
-                    Total linked expenses
-                  </td>
-                  <td className={cn(detailTd, "text-right v2-mono font-bold")}>
-                    {formatInr(linkedExpensesTotal)}
-                  </td>
-                  <td colSpan={3} className={detailTd} />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {linkedExpenses.map((e) => (
+                    <tr key={e.id}>
+                      <td className={cn(detailTd, "v2-mono text-ink-muted")}>{e.entry_date}</td>
+                      <td className={cn(detailTd, "font-medium")}>{e.category_name ?? "—"}</td>
+                      <td className={cn(detailTd, "text-right v2-mono font-semibold")}>{formatInr(e.amount)}</td>
+                      <td className={detailTd}>
+                        {e.source_payment_mode === "bank" ? e.source_bank_account_name ?? "Bank" : "Cash"}
+                      </td>
+                      <td className={cn(detailTd, "text-ink-muted")}>
+                        <p className="truncate text-sm">{e.description ?? "—"}</p>
+                        {e.reference_no && <p className="text-xs text-ink-subtle">Ref: {e.reference_no}</p>}
+                      </td>
+                      <td className={cn(detailTd, "text-right")}>
+                        <Link to={`/accounts/cashbook/${e.id}/edit`}>
+                          <Button size="sm" variant="ghost">
+                            Open
+                          </Button>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={2} className={cn(detailTd, "text-right font-semibold text-ink-muted")}>
+                      Total linked expenses
+                    </td>
+                    <td className={cn(detailTd, "text-right v2-mono font-bold")}>
+                      {formatInr(linkedExpensesTotal)}
+                    </td>
+                    <td colSpan={3} className={detailTd} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="space-y-3 lg:hidden">
+              {linkedExpenses.map((e) => (
+                <div
+                  key={e.id}
+                  className="space-y-3 rounded-2xl border border-line/80 bg-surface-subtle/50 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-ink">{e.category_name ?? "—"}</p>
+                      <p className="mt-0.5 v2-mono text-sm text-ink-muted">{e.entry_date}</p>
+                    </div>
+                    <p className="v2-mono shrink-0 text-lg font-bold tabular-nums text-ink">
+                      {formatInr(e.amount)}
+                    </p>
+                  </div>
+                  <p className="text-sm text-ink-muted">
+                    {e.source_payment_mode === "bank" ? e.source_bank_account_name ?? "Bank" : "Cash"}
+                    {e.description ? ` · ${e.description}` : ""}
+                  </p>
+                  {e.reference_no && (
+                    <p className="text-xs text-ink-subtle">Ref: {e.reference_no}</p>
+                  )}
+                  <Link to={`/accounts/cashbook/${e.id}/edit`} className="block">
+                    <Button size="md" variant="secondary" className="w-full sm:w-auto">
+                      Open
+                    </Button>
+                  </Link>
+                </div>
+              ))}
+              <div className="flex items-center justify-between rounded-xl border border-line/70 bg-surface px-4 py-3">
+                <span className="text-sm font-semibold text-ink-muted">Total linked expenses</span>
+                <span className="v2-mono text-base font-bold tabular-nums text-ink">
+                  {formatInr(linkedExpensesTotal)}
+                </span>
+              </div>
+            </div>
+          </>
         )}
       </CardBody>
     </Card>
@@ -927,9 +1018,13 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
         subtitle={`${bill.customer_name ?? "—"} · ${bill.bill_date}`}
         actions={
           <>
-            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate(base)}>
-              Back
-            </Button>
+            {!isVoided && due > 0 && (
+              <Link to={`${base}/${bill.id}/payment`} className="order-first w-full sm:w-auto">
+                <Button leftIcon={<IndianRupee className="h-4 w-4" />} className="w-full sm:w-auto">
+                  Record payment
+                </Button>
+              </Link>
+            )}
             <Link to={`${base}/${bill.id}/edit`}>
               <Button variant="secondary" leftIcon={<Pencil className="h-4 w-4" />} disabled={isVoided}>
                 Edit
@@ -942,19 +1037,18 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
             </Link>
             <Link to={`${base}/${bill.id}/print?download=1`} target="_blank" rel="noopener noreferrer">
               <Button variant="secondary" leftIcon={<Download className="h-4 w-4" />}>
-                Download PDF
+                <span className="sm:hidden">PDF</span>
+                <span className="hidden sm:inline">Download PDF</span>
               </Button>
             </Link>
-            {!isVoided && due > 0 && (
-              <Link to={`${base}/${bill.id}/payment`}>
-                <Button leftIcon={<IndianRupee className="h-4 w-4" />}>Record payment</Button>
-              </Link>
-            )}
             {canVoidBill && (
               <Button variant="danger" leftIcon={<Ban className="h-4 w-4" />} onClick={askVoidBill}>
                 Void bill
               </Button>
             )}
+            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate(base)}>
+              Back
+            </Button>
           </>
         }
       />

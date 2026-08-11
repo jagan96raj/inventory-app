@@ -385,7 +385,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
   const showToolbar = !loading;
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         eyebrow={isSales ? "Outbound" : "Inbound"}
         title={`${isSales ? "Sales" : "Purchase"} bills`}
@@ -509,13 +509,14 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                 )}
               </FormField>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="min-w-0 w-full flex-1 space-y-1.5">
                   <p className="text-sm font-medium text-ink-muted">Payment</p>
                   <SegmentedControl
                     ariaLabel="Payment status"
                     value={paymentStatusFilter}
                     onChange={(v) => setPaymentStatusFilter(v)}
-                    className="w-full sm:w-auto"
+                    size="sm"
+                    className="flex w-full flex-wrap sm:w-auto sm:flex-nowrap [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none"
                     options={[
                       { value: "all", label: "All" },
                       { value: "unpaid", label: "Unpaid" },
@@ -524,7 +525,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                     ]}
                   />
                 </div>
-                <FormField label={theme.fulfillmentFilterLabel} htmlFor="bills-fulfillment" className="min-w-[12rem]">
+                <FormField label={theme.fulfillmentFilterLabel} htmlFor="bills-fulfillment" className="min-w-0 w-full sm:min-w-[12rem] sm:w-auto">
                   {({ id }) => (
                     <Select
                       id={id}
@@ -768,6 +769,6 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       >
         <Plus className="h-6 w-6" />
       </Link>
-    </>
+    </div>
   );
 }
