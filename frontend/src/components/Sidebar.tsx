@@ -33,6 +33,7 @@ import {
   type LucideProps,
 } from "lucide-react";
 import { cn } from "../lib/cn";
+import { AppBrand } from "./AppBrand";
 import IconButton from "./ui/IconButton";
 import { usePermissions, type Permission } from "../lib/permissions";
 
@@ -141,7 +142,6 @@ const RAINBOW_HOVER = [
 ];
 
 const STORAGE_KEY = "v13.sidebar.collapsed";
-const APP_NAME = (import.meta.env.VITE_APP_NAME as string) || "GrainTrack";
 
 export function useSidebarCollapsed(): [boolean, (v: boolean) => void, () => void] {
   const [collapsed, setCollapsedState] = useState<boolean>(() => {
@@ -183,19 +183,12 @@ function NavBrand({ collapsed }: { collapsed: boolean }) {
     <NavLink
       to="/"
       className={cn(
-        "flex h-14 shrink-0 items-center border-b border-line px-2",
-        collapsed ? "justify-center" : "gap-3 px-3"
+        "flex h-auto min-h-14 shrink-0 items-center border-b border-line px-2 py-2",
+        collapsed ? "justify-center" : "px-3"
       )}
+      aria-label="Home"
     >
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-glow">
-        <Wheat className="h-5 w-5" />
-      </span>
-      {!collapsed && (
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-tight text-ink">{APP_NAME}</p>
-          <p className="truncate text-[11px] text-ink-subtle">Pulses · Millets · Cereals</p>
-        </div>
-      )}
+      <AppBrand collapsed={collapsed} />
     </NavLink>
   );
 }

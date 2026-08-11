@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Wheat } from "lucide-react";
 import { cn } from "../lib/cn";
 import AppAmbientBackground from "./AppAmbientBackground";
+import { AppBrand, APP_NAME } from "./AppBrand";
 
 type Props = {
   title: string;
@@ -27,8 +27,6 @@ const ROTATING = [
     body: "Mass-balanced processing jobs with v9.3 tolerance and reprocess guards.",
   },
 ];
-
-const APP_NAME = (import.meta.env.VITE_APP_NAME as string) || "GrainTrack";
 
 export default function AuthShell({ title, subtitle, children, footer, wide }: Props) {
   const [idx, setIdx] = useState(0);
@@ -55,13 +53,9 @@ export default function AuthShell({ title, subtitle, children, footer, wide }: P
           aria-hidden="true"
           className="pointer-events-none absolute -bottom-40 right-0 h-[28rem] w-[28rem] rounded-full bg-accent-400/30 blur-3xl"
         />
-        <header className="relative z-[1] flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 backdrop-blur">
-            <Wheat className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="text-lg font-semibold tracking-tight">{APP_NAME}</p>
-            <p className="text-xs text-white/70">Pulses · Millets · Cereals</p>
+        <header className="relative z-[1]">
+          <div className="inline-flex rounded-2xl bg-white/95 px-4 py-3 shadow-lg ring-1 ring-white/40">
+            <AppBrand showTagline />
           </div>
         </header>
         <div className="relative z-[1] max-w-md">
@@ -108,11 +102,8 @@ export default function AuthShell({ title, subtitle, children, footer, wide }: P
           transition={{ duration: 0.25, ease: "easeOut" }}
           className={cn("mx-auto w-full min-w-0", wide ? "max-w-lg" : "max-w-md")}
         >
-          <div className="mb-6 flex items-center gap-3 lg:hidden">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary-600 text-white">
-              <Wheat className="h-5 w-5" />
-            </span>
-            <span className="text-base font-semibold">{APP_NAME}</span>
+          <div className="mb-6 lg:hidden">
+            <AppBrand showTagline={false} />
           </div>
           <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
           <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
@@ -123,3 +114,5 @@ export default function AuthShell({ title, subtitle, children, footer, wide }: P
     </div>
   );
 }
+
+export { APP_NAME };
