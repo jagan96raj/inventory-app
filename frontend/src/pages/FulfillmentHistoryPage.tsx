@@ -352,6 +352,8 @@ export default function FulfillmentHistoryPage() {
               ariaLabel="Bill type"
               value={billTypeFilter}
               onChange={setBillTypeFilter}
+              size="sm"
+              className="flex w-full flex-wrap sm:w-auto sm:flex-nowrap [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none"
               options={[
                 { value: "all", label: "All", hint: "Both" },
                 { value: "sales", label: "Sales", hint: "Deliver" },

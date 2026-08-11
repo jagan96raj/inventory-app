@@ -185,12 +185,12 @@ function LineActions({
   const actionLabel = isPurchase ? "Receive" : "Deliver";
 
   return (
-    <div className="flex flex-wrap justify-end gap-1.5">
+    <div className="flex w-full flex-wrap justify-stretch gap-2 sm:justify-end sm:gap-1.5">
       {canDeliver(ln) && (
         <Button
           size="sm"
           variant="primary"
-          className={fTheme.actionBtn}
+          className={cn("min-h-10 flex-1 sm:flex-none", fTheme.actionBtn)}
           onClick={() => onDeliver(ln.line_id)}
         >
           {actionLabel}
@@ -204,15 +204,17 @@ function LineActions({
                 size="sm"
                 variant="outline"
                 title={entry.location_name}
+                className="min-h-10 min-w-0 flex-1 sm:flex-none"
                 onClick={() => onReturn(ln.line_id, entry.entry_id)}
               >
-                Return ({entry.location_name})
+                <span className="truncate">Return ({entry.location_name})</span>
               </Button>
             ))
           : (
             <Button
               size="sm"
               variant="outline"
+              className="min-h-10 flex-1 sm:flex-none"
               onClick={() =>
                 onReturn(
                   ln.line_id,
@@ -285,7 +287,7 @@ function FulfillmentBillGroup({
         </div>
       </header>
 
-      <div className="overflow-x-auto bg-surface/50">
+      <div className="hidden overflow-x-auto bg-surface/50 lg:block">
         <table className="v2-data-table min-w-[48rem] w-full text-base">
           <caption className="sr-only">
             Lines for bill {bill.bill_number}, {bill.customer_name}
@@ -363,6 +365,63 @@ function FulfillmentBillGroup({
             })}
           </tbody>
         </table>
+      </div>
+
+      <div className="space-y-3 bg-surface/50 p-3 lg:hidden">
+        {bill.lines.map((ln) => {
+          const dimmed = visibilityFilter === "actionable" && !lineNeedsAction(ln);
+          return (
+            <div
+              key={ln.line_id}
+              className={cn(
+                "space-y-3 rounded-2xl border border-line/80 bg-surface p-4",
+                dimmed && "opacity-60"
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">{ln.product_name}</p>
+                  <p className="mt-0.5 text-sm text-ink-muted">
+                    {ln.brand_name} · {ln.bag_type_name}
+                  </p>
+                </div>
+                <DeliveryPill status={ln.line_delivery_status} />
+              </div>
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                <div>
+                  <dt className="text-ink-subtle">Ordered</dt>
+                  <dd>
+                    <QtyCell bags={ln.ordered_bags} kg={ln.ordered_kg} isLoose={ln.is_loose} />
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-ink-subtle">{fulfilledHeader}</dt>
+                  <dd>
+                    <ProgressCell ln={ln} billType={bill.bill_type} />
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-ink-subtle">Remaining</dt>
+                  <dd>
+                    {Number(ln.remaining_kg) <= 0 ? (
+                      <span className="text-sm text-ink-subtle">Complete</span>
+                    ) : (
+                      <QtyCell
+                        bags={ln.remaining_bags}
+                        kg={ln.remaining_kg}
+                        isLoose={ln.is_loose}
+                        tone="remaining"
+                      />
+                    )}
+                  </dd>
+                </div>
+              </dl>
+              <div className="border-t border-line/60 pt-3">
+                <LineActions bill={bill} line={ln} onDeliver={onDeliver} onReturn={onReturn} />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -549,7 +608,8 @@ export default function FulfillmentPage() {
         actions={
           <Link to="/histories/fulfillment">
             <Button variant="secondary" leftIcon={<History className="h-4 w-4" />}>
-              Audit log
+              <span className="sm:hidden">Audit</span>
+              <span className="hidden sm:inline">Audit log</span>
             </Button>
           </Link>
         }
@@ -598,6 +658,8 @@ export default function FulfillmentPage() {
               ariaLabel="Bill type"
               value={billTypeFilter}
               onChange={setBillTypeFilter}
+              size="sm"
+              className="flex w-full flex-wrap sm:w-auto sm:flex-nowrap [&>button]:min-w-0 [&>button]:flex-1 sm:[&>button]:flex-none"
               options={[
                 { value: "all", label: "All", hint: "Both" },
                 { value: "purchase", label: "Purchase", hint: "Receive" },

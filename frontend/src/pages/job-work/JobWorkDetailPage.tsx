@@ -194,30 +194,35 @@ export default function JobWorkDetailPage() {
         title={<span className="v2-mono">{order.job_number}</span>}
         subtitle={`${order.customer_name} · ${formatDate(order.job_date)}`}
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Link to="/job-work">
-              <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />}>
-                Back
-              </Button>
-            </Link>
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             {isActive && (
-              <Link to="/job-work/fulfillment">
-                <Button leftIcon={<Truck className="h-4 w-4" />}>Receive / Return</Button>
+              <Link to="/job-work/fulfillment" className="order-first min-w-0 flex-1 sm:order-none sm:flex-none">
+                <Button leftIcon={<Truck className="h-4 w-4" />} className="w-full sm:w-auto">
+                  <span className="sm:hidden">Fulfill</span>
+                  <span className="hidden sm:inline">Receive / Return</span>
+                </Button>
               </Link>
             )}
             {canVoidOrder && (
               <Button
                 variant="danger"
                 leftIcon={<Ban className="h-4 w-4" />}
+                className="min-w-0 flex-1 sm:flex-none"
                 onClick={() => {
                   voidIdemRef.current = null;
                   setVoidAuthError("");
                   setVoidOpen(true);
                 }}
               >
-                Void order
+                <span className="sm:hidden">Void</span>
+                <span className="hidden sm:inline">Void order</span>
               </Button>
             )}
+            <Link to="/job-work" className="min-w-0 flex-1 sm:flex-none">
+              <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />} className="w-full sm:w-auto">
+                Back
+              </Button>
+            </Link>
           </div>
         }
       />
@@ -269,7 +274,63 @@ export default function JobWorkDetailPage() {
       <Card className="mb-5">
         <CardHeader title="Lines" subtitle={isActive ? REMAINING_HELP : undefined} />
         <CardBody>
-          <Table columns={lineColumns} rows={order.lines} rowKey={(ln) => ln.id} caption="Job work lines" />
+          <div className="hidden lg:block">
+            <Table columns={lineColumns} rows={order.lines} rowKey={(ln) => ln.id} caption="Job work lines" />
+          </div>
+          <div className="space-y-3 lg:hidden">
+            {order.lines.map((ln) => {
+              const loose = lineIsLoose(ln);
+              return (
+                <div
+                  key={ln.id}
+                  className="space-y-3 rounded-2xl border border-line/80 bg-surface-subtle/50 p-4"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{ln.product_name}</p>
+                    <p className="mt-0.5 text-sm text-ink-muted">
+                      {ln.brand_name} · {ln.bag_type_name}
+                    </p>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div>
+                      <dt className="text-ink-subtle">Ordered</dt>
+                      <dd>
+                        <JwQtyCell qty={jwOrderedQty({ ...ln, is_loose: loose })} />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-subtle">Received (net)</dt>
+                      <dd>
+                        <JwQtyCell qty={jwNetReceivedQty({ ...ln, is_loose: loose })} emphasize />
+                        {(ln.returned_bags > 0 || Number(ln.returned_quantity_kg) > 0) && (
+                          <p className="mt-1 text-xs text-ink-muted">
+                            Returned:{" "}
+                            {formatJwPrimaryQty({
+                              is_loose: loose,
+                              bags: ln.returned_bags,
+                              loose_kg: ln.returned_loose_kg,
+                              kg: ln.returned_quantity_kg,
+                            })}
+                          </p>
+                        )}
+                      </dd>
+                    </div>
+                    {isActive ? (
+                      <div className="col-span-2">
+                        <dt className="text-ink-subtle">Remaining</dt>
+                        <dd>
+                          <JwQtyCell
+                            qty={jwRemainingReceiveQty({ ...ln, is_loose: loose })}
+                            emphasize
+                          />
+                        </dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </div>
+              );
+            })}
+          </div>
         </CardBody>
       </Card>
 

@@ -109,19 +109,19 @@ export default function ProcessingListPage() {
   };
 
   return (
-    <>
+    <div className="pb-24 lg:pb-0">
       <PageHeader
         eyebrow="Operations"
         title="Processing"
         subtitle="Open a job per raw product and brand. Record batches incrementally — input, output, balance return, and waste. Mass-balance guard with 100 kg tolerance enforced on submit."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Link to="/histories/processing">
+            <Link to="/histories/processing" className="hidden sm:inline-flex">
               <Button variant="secondary" leftIcon={<History className="h-4 w-4" />}>
                 View history
               </Button>
             </Link>
-            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openJobDialog}>
+            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openJobDialog} className="hidden sm:inline-flex">
               Open job
             </Button>
           </div>
@@ -191,7 +191,7 @@ export default function ProcessingListPage() {
             />
           ) : (
             <>
-              <div className="hidden overflow-x-auto md:block">
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="v2-data-table min-w-full w-full text-base">
                   <caption className="sr-only">Open processing jobs</caption>
                   <thead>
@@ -240,7 +240,7 @@ export default function ProcessingListPage() {
                 </table>
               </div>
 
-              <div className="space-y-3 md:hidden">
+              <div className="space-y-3 lg:hidden">
                 {openJobs.map((j) => (
                   <div
                     key={j.id}
@@ -348,6 +348,14 @@ export default function ProcessingListPage() {
           </FormField>
         </form>
       </Modal>
-    </>
+      <button
+        type="button"
+        onClick={openJobDialog}
+        className="fixed bottom-6 right-6 z-30 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary-500 to-violet-600 text-white shadow-glow transition-transform hover:scale-105 active:scale-95 lg:hidden"
+        aria-label="Open processing job"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
+    </div>
   );
 }
