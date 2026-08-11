@@ -9,6 +9,7 @@ import {
   PackagePlus,
   Plus,
   Receipt,
+  TrendingDown,
   TrendingUp,
   Wallet,
 } from "lucide-react";
@@ -188,9 +189,15 @@ export default function DashboardPage() {
   };
 
   const grossProfit = summary ? Number(summary.gross_profit) : 0;
+  const netProfit = summary ? Number(summary.net_profit) : 0;
   const profitTone = grossProfit >= 0 ? "success" : "danger";
+  const netProfitTone = netProfit >= 0 ? "success" : "danger";
   const fyGross = fiscalYear ? Number(fiscalYear.gross_profit) : 0;
+  const fyNet = fiscalYear ? Number(fiscalYear.net_profit) : 0;
   const fyProfitTone = fyGross >= 0 ? "success" : "danger";
+  const fyNetTone = fyNet >= 0 ? "success" : "danger";
+  const monthSw = summary ? Number(summary.self_withdrawal_total ?? 0) : 0;
+  const fySw = fiscalYear ? Number(fiscalYear.self_withdrawal_total ?? 0) : 0;
 
   return (
     <>
@@ -202,7 +209,7 @@ export default function DashboardPage() {
           </span>
         }
         title="Business dashboard"
-        subtitle="Month totals for sales and purchase, expenses from the cash book, and product quantities ordered."
+        subtitle="Month sales and purchase, cash-book expenses (Self Withdrawal shown separately), and product quantities ordered."
         actions={
           <>
             <Button variant="secondary" onClick={setPreviousMonth}>
@@ -290,8 +297,8 @@ export default function DashboardPage() {
       )}
 
       {loading ? (
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
             <Card key={i}>
               <CardBody>
                 <Skeleton className="mb-3 h-3 w-20" />
@@ -303,7 +310,7 @@ export default function DashboardPage() {
         </div>
       ) : summary ? (
         <>
-          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <Stat
               tone="primary"
               label="Sales (this month)"
@@ -333,14 +340,26 @@ export default function DashboardPage() {
               label="Expenses (cash book)"
               value={formatInrCompact(summary.expense_total)}
               icon={<Wallet />}
-              footer={<span>Active expense entries this month</span>}
+              footer={
+                <span>
+                  Excludes Self Withdrawal
+                  {monthSw > 0 ? ` · SW ${formatInrCompact(summary.self_withdrawal_total)}` : ""}
+                </span>
+              }
             />
             <Stat
               tone={profitTone}
               label="Gross profit (month)"
               value={formatInrCompact(summary.gross_profit)}
               icon={<TrendingUp />}
-              footer={<span>Sales − purchase − expenses</span>}
+              footer={<span>Sales − purchase − expenses (excl. SW)</span>}
+            />
+            <Stat
+              tone={netProfitTone}
+              label="Net profit (month)"
+              value={formatInrCompact(summary.net_profit)}
+              icon={<TrendingDown />}
+              footer={<span>Sales − purchase − all expenses (incl. SW)</span>}
             />
           </div>
 
@@ -348,10 +367,10 @@ export default function DashboardPage() {
             <Card className="mb-6">
               <CardHeader
                 title={`${fiscalYear.label} year report`}
-                subtitle={`1 Apr ${fiscalYear.start_year} – 31 Mar ${fiscalYear.end_year} · Gross profit = sales − purchase − expenses`}
+                subtitle={`1 Apr ${fiscalYear.start_year} – 31 Mar ${fiscalYear.end_year} · Gross excl. Self Withdrawal · Net includes Self Withdrawal`}
               />
               <CardBody className="space-y-5 pt-0">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   <Stat
                     tone="primary"
                     label="FY sales"
@@ -381,14 +400,26 @@ export default function DashboardPage() {
                     label="FY expenses"
                     value={formatInrCompact(fiscalYear.expense_total)}
                     icon={<Wallet />}
-                    footer={<span>Cash book expenses in FY</span>}
+                    footer={
+                      <span>
+                        Excl. Self Withdrawal
+                        {fySw > 0 ? ` · SW ${formatInrCompact(fiscalYear.self_withdrawal_total)}` : ""}
+                      </span>
+                    }
                   />
                   <Stat
                     tone={fyProfitTone}
                     label="FY gross profit"
                     value={formatInrCompact(fiscalYear.gross_profit)}
                     icon={<TrendingUp />}
-                    footer={<span>Sales − purchase − expenses</span>}
+                    footer={<span>Sales − purchase − expenses (excl. SW)</span>}
+                  />
+                  <Stat
+                    tone={fyNetTone}
+                    label="FY net profit"
+                    value={formatInrCompact(fiscalYear.net_profit)}
+                    icon={<TrendingDown />}
+                    footer={<span>Sales − purchase − all expenses (incl. SW)</span>}
                   />
                 </div>
                 <div className="overflow-x-auto">
@@ -399,12 +430,15 @@ export default function DashboardPage() {
                         <th className={DASH_NUM_TH}>Sales</th>
                         <th className={DASH_NUM_TH}>Purchase</th>
                         <th className={DASH_NUM_TH}>Expense</th>
+                        <th className={DASH_NUM_TH}>Self WD</th>
                         <th className={DASH_NUM_TH}>Gross profit</th>
+                        <th className={DASH_NUM_TH}>Net profit</th>
                       </tr>
                     </thead>
                     <tbody>
                       {fiscalYear.months.map((row) => {
                         const gp = Number(row.gross_profit);
+                        const np = Number(row.net_profit);
                         return (
                           <tr key={`${row.year}-${row.month}`} className="border-t border-line/70">
                             <td className={DASH_LABEL_TD}>
@@ -413,6 +447,7 @@ export default function DashboardPage() {
                             <td className={DASH_NUM_TD}>{formatInr(row.sales_amount)}</td>
                             <td className={DASH_NUM_TD}>{formatInr(row.purchase_amount)}</td>
                             <td className={DASH_NUM_TD}>{formatInr(row.expense_total)}</td>
+                            <td className={DASH_NUM_TD}>{formatInr(row.self_withdrawal_total)}</td>
                             <td
                               className={cn(
                                 DASH_NUM_TD,
@@ -421,6 +456,15 @@ export default function DashboardPage() {
                               )}
                             >
                               {formatInr(row.gross_profit)}
+                            </td>
+                            <td
+                              className={cn(
+                                DASH_NUM_TD,
+                                "font-semibold",
+                                np >= 0 ? "text-accent-700 dark:text-accent-300" : "text-danger-700 dark:text-danger-300"
+                              )}
+                            >
+                              {formatInr(row.net_profit)}
                             </td>
                           </tr>
                         );
@@ -432,6 +476,7 @@ export default function DashboardPage() {
                         <td className={DASH_NUM_TD}>{formatInr(fiscalYear.sales.bill_amount)}</td>
                         <td className={DASH_NUM_TD}>{formatInr(fiscalYear.purchase.bill_amount)}</td>
                         <td className={DASH_NUM_TD}>{formatInr(fiscalYear.expense_total)}</td>
+                        <td className={DASH_NUM_TD}>{formatInr(fiscalYear.self_withdrawal_total)}</td>
                         <td
                           className={cn(
                             DASH_NUM_TD,
@@ -439,6 +484,14 @@ export default function DashboardPage() {
                           )}
                         >
                           {formatInr(fiscalYear.gross_profit)}
+                        </td>
+                        <td
+                          className={cn(
+                            DASH_NUM_TD,
+                            fyNet >= 0 ? "text-accent-700 dark:text-accent-300" : "text-danger-700 dark:text-danger-300"
+                          )}
+                        >
+                          {formatInr(fiscalYear.net_profit)}
                         </td>
                       </tr>
                     </tfoot>

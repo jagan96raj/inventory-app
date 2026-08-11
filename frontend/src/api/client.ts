@@ -576,9 +576,14 @@ export type BusinessSummary = {
   month: number;
   sales: BusinessTypeSummary;
   purchase: BusinessTypeSummary;
+  /** Cash-book expenses excluding Self Withdrawal. */
   expense_total: string;
-  /** Sales − purchase − cash-book expenses for the month. */
+  /** Cash-book Self Withdrawal category total. */
+  self_withdrawal_total: string;
+  /** Sales − purchase − expense_total (excl. Self Withdrawal). */
   gross_profit: string;
+  /** Sales − purchase − all expenses including Self Withdrawal. */
+  net_profit: string;
 };
 
 export type FiscalYearMonthRow = {
@@ -587,7 +592,9 @@ export type FiscalYearMonthRow = {
   sales_amount: string;
   purchase_amount: string;
   expense_total: string;
+  self_withdrawal_total: string;
   gross_profit: string;
+  net_profit: string;
 };
 
 export type FiscalYearSummary = {
@@ -599,8 +606,11 @@ export type FiscalYearSummary = {
   sales: BusinessTypeSummary;
   purchase: BusinessTypeSummary;
   expense_total: string;
-  /** Sales − purchase − cash-book expenses for 1 Apr–31 Mar. */
+  self_withdrawal_total: string;
+  /** Sales − purchase − expense_total (excl. Self Withdrawal) for 1 Apr–31 Mar. */
   gross_profit: string;
+  /** Sales − purchase − all expenses including Self Withdrawal. */
+  net_profit: string;
   months: FiscalYearMonthRow[];
 };
 

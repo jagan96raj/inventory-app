@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 7 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.4** (dashboard FY/expenses, cash-book totals, bills product filter, payments UX, processing reopen); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 11 Aug 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.5** (dashboard Self Withdrawal / net profit + 10‑min idle logout); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.5** — Dashboard: cash-book **Expense** excludes category **Self Withdrawal** (case-insensitive trim); expose `self_withdrawal_total`; **gross_profit** = sales − purchase − expense (excl. SW); **net_profit** = sales − purchase − all expenses (incl. SW) on month + FY (+ monthly FY rows). UI Net profit cards + Self WD column. Auth: auto-logout after **10 minutes** idle (mousemove/keydown/click/touch/scroll); hidden/minimized time counts toward the same limit (wall clock); calls `POST /api/auth/logout` then `/login`. See **Spec v17.3.5** below.
 - **v17.3.4** — UX polish matching live lists: bills list `product_id` filter (`EXISTS` line); payments list newest-first + post-create `?created=` highlight (`paymentCreated`); cash-book / payments tables `stickyHeader={false}`; `formatCustomerName` collapses whitespace on Customers / balances / statement. See **Spec v17.3.4** below.
 - **v17.3.3** — Cash book list: filter card above table (incl. money **Account** filter); response totals `amount_total` / `expense_total` / `income_total` / `transfer_total` over full filtered set (not page only); KPI cards between filters and table; post-create “Just recorded” highlight. See **Spec v17.3.3** below.
 - **v17.3.2** — Dashboard reflects current app: month KPIs = Sales / Purchase / **Expenses (cash book)** / **Gross profit** (`sales − purchase − expenses`); Indian **FY Apr–Mar** strip + monthly table via bundle `fiscal_year` and `GET /api/reports/fiscal-year-summary`; **Job order** qty breakdown (`job_work`); optional `customer_id` on product + JW sections only; qty-first tables (no money columns / charts / MoM strip in UI). See **Spec v17.3.2** below.
@@ -102,9 +103,9 @@
 
 | Area | Spec | Implementation |
 |------|------|----------------|
-| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0** | `routers/auth.py`, `/login`, `/signup`, JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; `company_id` on user |
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; `company_id` on user; **10‑min idle auto-logout** |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
-| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2** | `dashboard-bundle` (+ `fiscal_year`, `job_work`); expenses + gross profit; qty-first UI |
+| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5** | `dashboard-bundle` (+ FY, job work); expenses excl. Self Withdrawal; gross + net profit; qty-first UI |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1** | list aggregates; snapshot UI; void reopen + close empty |
 | Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight |
 | Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4** | sales lines: `stock_source`; notes; list `product_id` filter; form UX |
@@ -220,7 +221,7 @@
 
 **Operations:** `POST/GET /api/operations/bag-change|product-transfer|stock-disposal|processing/…`
 
-**Reports:** `GET /api/reports/dashboard-bundle` (v16.0.2 + **v17.3.2** — summary, compare, daily, by_product, by_customer, by_location, **fiscal_year**, **job_work**; optional `customer_id` on product/JW); `GET /api/reports/fiscal-year-summary`; `GET /api/reports/business-*`, `by-*`, `bills-export`; legacy `sales-*` retained
+**Reports:** `GET /api/reports/dashboard-bundle` (v16.0.2 + **v17.3.2**/**v17.3.5** — summary with expense/self_withdrawal/gross/net, compare, daily, by_product, by_customer, by_location, **fiscal_year**, **job_work**; optional `customer_id` on product/JW); `GET /api/reports/fiscal-year-summary`; `GET /api/reports/business-*`, `by-*`, `bills-export`; legacy `sales-*` retained
 
 ## Frontend routes (summary)
 
@@ -286,7 +287,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
 | `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). | — |
-| `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (cash book) / Gross profit; FY Apr–Mar strip + monthly table; product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** expenses/FY/JW |
+| `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
 | `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
 | `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
@@ -3345,6 +3346,30 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
 
+## Spec v17.3.5 — Dashboard Self Withdrawal / net profit + idle logout
+
+**Problem:** Owner draws tagged as cash-book category **Self Withdrawal** inflated “Expense” and depressed gross profit. Sessions also stayed open indefinitely when the app was left idle or minimized.
+
+**Solution — dashboard profit math:**
+- Match Self Withdrawal by `expense_categories.name` with `lower(trim(name)) == "self withdrawal"` and `kind=expense`.
+- Month + FY (+ each FY month row):
+  - `expense_total` — active cash-book expenses **excluding** Self Withdrawal
+  - `self_withdrawal_total` — Self Withdrawal only
+  - `gross_profit` = sales − purchase − `expense_total`
+  - `net_profit` = sales − purchase − (`expense_total` + `self_withdrawal_total`)
+- UI: Net profit Stat (month + FY); expense footers note excl. SW and show SW amount when &gt; 0; FY monthly table adds Self WD + Net profit columns.
+
+**Solution — idle logout:**
+- While authenticated, after **10 minutes** wall-clock with no `mousemove` / `mousedown` / `keydown` / `click` / `touchstart` / `scroll`, call existing `POST /api/auth/logout` (revokes JWT) and navigate to `/login`.
+- Minimized / `document.visibilityState === "hidden"` does **not** log out immediately; hidden time still counts toward the 10 minutes (checked on interval + when becoming visible).
+- Works in browser and Electron shell loading the site (`IdleSessionGuard` + `useIdleLogout`).
+
+**Files:** `backend/app/services/reports.py`, `backend/app/schemas.py`, `frontend/src/pages/DashboardPage.tsx`, `frontend/src/api/client.ts`, `frontend/src/hooks/useIdleLogout.ts`, `frontend/src/components/IdleSessionGuard.tsx`, `frontend/src/main.tsx`, `backend/tests/test_dashboard_bundle_v1602.py`.
+
+**Tests:** `test_self_withdrawal_excluded_from_expense_adds_net_profit`; existing expense/FY assertions updated for `self_withdrawal_total` / `net_profit`.
+
+**Unchanged:** Cash book list totals (still include all expense categories); Self Withdrawal remains a normal cash-book expense category for books.
+
 ## Spec v17.3.4 — Bills product filter, payments newest-first, customer name display
 
 **Problem:** Hard to find bills that contain a product; newest payments/cash-book rows were easy to miss under sticky headers; customer names with odd whitespace looked messy.
@@ -3376,7 +3401,9 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 - **FY (India Apr–Mar):** `get_fiscal_year_summary(start_year)`; included as `fiscal_year` on dashboard-bundle (FY containing selected month); also `GET /api/reports/fiscal-year-summary`. Fields: label, date range, sales/purchase, expense_total, gross_profit, `months[]`.
 - **Job work:** bundle `job_work` — per product/(brand) ordered/received qty from non-cancelled JW orders with `job_date` in month.
 - **Optional `customer_id`:** filters `by_product` (bills) and `job_work` (orders) only — not summary/FY/top customers/locations.
-- **UI:** 4 month Stats; FY strip + monthly table; product qty table + share bars; job-order table; top customers/locations without amount columns; no AreaChart / sparklines / MoM strip (API may still return `daily`/`compare` unused by main UI).
+- **UI:** month Stats; FY strip + monthly table; product qty table + share bars; job-order table; top customers/locations without amount columns; no AreaChart / sparklines / MoM strip (API may still return `daily`/`compare` unused by main UI).
+
+**Amended by v17.3.5:** expense excludes Self Withdrawal; add `self_withdrawal_total` + `net_profit`; UI Net profit cards.
 
 **Files:** `backend/app/services/reports.py`, `routers/reports.py`, `schemas.py`, `frontend/src/pages/DashboardPage.tsx`, `tests/test_dashboard_bundle_v1602.py`.
 

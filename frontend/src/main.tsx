@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
+import IdleSessionGuard from "./components/IdleSessionGuard";
 import { ThemeProvider } from "./lib/theme";
 import { DensityProvider } from "./lib/density";
 import Toaster from "./components/ui/Toaster";
@@ -18,6 +19,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <DensityProvider>
         <BrowserRouter>
           <AuthProvider>
+            <IdleSessionGuard />
             <App />
             <Toaster />
           </AuthProvider>

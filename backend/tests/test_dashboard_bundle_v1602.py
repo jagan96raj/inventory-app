@@ -240,8 +240,10 @@ class DashboardBundleV1602Tests(unittest.TestCase):
 
         summary = reports.get_business_summary(self.db, 2025, 5)
         self.assertEqual(summary["expense_total"], Decimal("150.00"))
+        self.assertEqual(summary["self_withdrawal_total"], Decimal("0.00"))
         # Sales 1000 − purchase 500 − expense 150 = 350
         self.assertEqual(summary["gross_profit"], Decimal("350.00"))
+        self.assertEqual(summary["net_profit"], Decimal("350.00"))
 
         res = self.client.get(
             "/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales&group_by=product"
@@ -249,7 +251,91 @@ class DashboardBundleV1602Tests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(body["summary"]["expense_total"], "150.00")
+        self.assertEqual(body["summary"]["self_withdrawal_total"], "0.00")
         self.assertEqual(body["summary"]["gross_profit"], "350.00")
+        self.assertEqual(body["summary"]["net_profit"], "350.00")
+
+    def test_self_withdrawal_excluded_from_expense_adds_net_profit(self):
+        from datetime import datetime, timezone
+
+        from app.models.entities import (
+            BankAccount,
+            BankAccountKind,
+            CashBookEntry,
+            CashBookEntryType,
+            ExpenseCategory,
+            ExpenseCategoryKind,
+        )
+
+        rent = ExpenseCategory(name="Rent", kind=ExpenseCategoryKind.expense, is_system=False)
+        # Mixed case / whitespace should still match as Self Withdrawal.
+        sw = ExpenseCategory(
+            name="  Self Withdrawal  ",
+            kind=ExpenseCategoryKind.expense,
+            is_system=False,
+        )
+        cash = BankAccount(
+            company_id=1,
+            name="Cash SW",
+            kind=BankAccountKind.cash,
+            opening_balance=Decimal("0"),
+            opening_balance_at=date(2025, 1, 1),
+            is_default=False,
+            is_active=True,
+        )
+        self.db.add_all([rent, sw, cash])
+        self.db.flush()
+        self.db.add_all(
+            [
+                CashBookEntry(
+                    entry_type=CashBookEntryType.expense,
+                    category_id=rent.id,
+                    amount=Decimal("150.00"),
+                    entry_date=date(2025, 5, 8),
+                    entry_at=datetime(2025, 5, 8, 12, 0, tzinfo=timezone.utc),
+                    description="May rent",
+                    source_account_id=cash.id,
+                ),
+                CashBookEntry(
+                    entry_type=CashBookEntryType.expense,
+                    category_id=sw.id,
+                    amount=Decimal("200.00"),
+                    entry_date=date(2025, 5, 9),
+                    entry_at=datetime(2025, 5, 9, 12, 0, tzinfo=timezone.utc),
+                    description="Owner draw",
+                    source_account_id=cash.id,
+                ),
+            ]
+        )
+        self.db.commit()
+
+        summary = reports.get_business_summary(self.db, 2025, 5)
+        self.assertEqual(summary["expense_total"], Decimal("150.00"))
+        self.assertEqual(summary["self_withdrawal_total"], Decimal("200.00"))
+        # Gross: 1000 − 500 − 150 = 350 (SW excluded)
+        self.assertEqual(summary["gross_profit"], Decimal("350.00"))
+        # Net: 1000 − 500 − 150 − 200 = 150
+        self.assertEqual(summary["net_profit"], Decimal("150.00"))
+
+        body = self.client.get(
+            "/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales&group_by=product"
+        ).json()
+        self.assertEqual(body["summary"]["expense_total"], "150.00")
+        self.assertEqual(body["summary"]["self_withdrawal_total"], "200.00")
+        self.assertEqual(body["summary"]["gross_profit"], "350.00")
+        self.assertEqual(body["summary"]["net_profit"], "150.00")
+
+        fy = reports.get_fiscal_year_summary(self.db, 2025)
+        # Seeded FY also has Jun sales 100 from setUp; May SW/rent only in May.
+        # Sales May+Jun = 1100, purchase 500, expense excl SW 150, SW 200
+        # → gross 1100−500−150=450; net 450−200=250
+        self.assertEqual(fy["expense_total"], Decimal("150.00"))
+        self.assertEqual(fy["self_withdrawal_total"], Decimal("200.00"))
+        may = next(r for r in fy["months"] if r["year"] == 2025 and r["month"] == 5)
+        self.assertEqual(may["expense_total"], Decimal("150.00"))
+        self.assertEqual(may["self_withdrawal_total"], Decimal("200.00"))
+        self.assertEqual(may["gross_profit"], Decimal("350.00"))
+        self.assertEqual(may["net_profit"], Decimal("150.00"))
 
     def test_fiscal_year_summary_april_to_march(self):
         from datetime import datetime, timezone
@@ -323,12 +409,15 @@ class DashboardBundleV1602Tests(unittest.TestCase):
         self.assertEqual(fy["sales"]["bill_amount"], Decimal("1300.00"))
         self.assertEqual(fy["purchase"]["bill_amount"], Decimal("500.00"))
         self.assertEqual(fy["expense_total"], Decimal("100.00"))
+        self.assertEqual(fy["self_withdrawal_total"], Decimal("0.00"))
         self.assertEqual(fy["gross_profit"], Decimal("700.00"))
+        self.assertEqual(fy["net_profit"], Decimal("700.00"))
         self.assertEqual(len(fy["months"]), 12)
 
         res = self.client.get("/api/reports/fiscal-year-summary?start_year=2025")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["gross_profit"], "700.00")
+        self.assertEqual(res.json()["net_profit"], "700.00")
 
         derived = self.client.get("/api/reports/fiscal-year-summary?year=2026&month=2")
         self.assertEqual(derived.status_code, 200)
@@ -338,6 +427,7 @@ class DashboardBundleV1602Tests(unittest.TestCase):
             "/api/reports/dashboard-bundle?year=2025&month=5&bill_type=sales&group_by=product"
         ).json()
         self.assertEqual(bundle["fiscal_year"]["gross_profit"], "700.00")
+        self.assertEqual(bundle["fiscal_year"]["net_profit"], "700.00")
 
     def test_job_work_section_aggregates_month_orders(self):
         from app.models.entities import JobWorkLine, JobWorkOrder, JobWorkOrderStatus

@@ -17,6 +17,8 @@ from app.models.entities import (
     CashBookEntryType,
     Customer,
     DeliveryStatus,
+    ExpenseCategory,
+    ExpenseCategoryKind,
     JobWorkLine,
     JobWorkOrder,
     JobWorkOrderStatus,
@@ -175,56 +177,124 @@ def _month_sales_legacy_totals(db: Session, year: int, month: int, company_id: i
         "total_due": total_due,
         "avg_bill_value": avg_bill_value,
     }
-def _month_expense_total(db: Session, year: int, month: int, company_id: int = 1) -> Decimal:
-    """Active cash-book expense entries dated in the month."""
+SELF_WITHDRAWAL_CATEGORY_NAME = "self withdrawal"
+
+
+def _is_self_withdrawal_category_expr():
+    """Case-insensitive trimmed match for the seeded Self Withdrawal category name."""
+    return func.lower(func.trim(ExpenseCategory.name)) == SELF_WITHDRAWAL_CATEGORY_NAME
+
+
+def _month_expense_breakdown(
+    db: Session, year: int, month: int, company_id: int = 1
+) -> tuple[Decimal, Decimal]:
+    """Active cash-book expense entries dated in the month.
+
+    Returns ``(expense_total, self_withdrawal_total)`` where ``expense_total``
+    excludes category "Self Withdrawal" and ``self_withdrawal_total`` is only that category.
+    """
     start, end = month_date_range(year, month)
-    return _range_expense_total(db, start, end, company_id)
+    return _range_expense_breakdown(db, start, end, company_id)
 
 
-def _range_expense_total(db: Session, start: date, end: date, company_id: int = 1) -> Decimal:
-    """Active cash-book expense entries dated in an inclusive range."""
-    total = db.execute(
-        select(func.coalesce(func.sum(CashBookEntry.amount), 0)).where(
+def _range_expense_breakdown(
+    db: Session, start: date, end: date, company_id: int = 1
+) -> tuple[Decimal, Decimal]:
+    """Active cash-book expenses in range, split excluding vs Self Withdrawal."""
+    is_sw = _is_self_withdrawal_category_expr()
+    expense_total = db.execute(
+        select(func.coalesce(func.sum(CashBookEntry.amount), 0))
+        .select_from(CashBookEntry)
+        .join(ExpenseCategory, CashBookEntry.category_id == ExpenseCategory.id)
+        .where(
             CashBookEntry.company_id == company_id,
             CashBookEntry.entry_type == CashBookEntryType.expense,
             CashBookEntry.voided_at.is_(None),
             CashBookEntry.entry_date >= start,
             CashBookEntry.entry_date <= end,
+            ExpenseCategory.kind == ExpenseCategoryKind.expense,
+            ~is_sw,
         )
     ).scalar_one()
-    return q_money(total)
+    self_withdrawal_total = db.execute(
+        select(func.coalesce(func.sum(CashBookEntry.amount), 0))
+        .select_from(CashBookEntry)
+        .join(ExpenseCategory, CashBookEntry.category_id == ExpenseCategory.id)
+        .where(
+            CashBookEntry.company_id == company_id,
+            CashBookEntry.entry_type == CashBookEntryType.expense,
+            CashBookEntry.voided_at.is_(None),
+            CashBookEntry.entry_date >= start,
+            CashBookEntry.entry_date <= end,
+            ExpenseCategory.kind == ExpenseCategoryKind.expense,
+            is_sw,
+        )
+    ).scalar_one()
+    return q_money(expense_total), q_money(self_withdrawal_total)
+
+
+def _profit_from_parts(
+    sales_amount: Decimal,
+    purchase_amount: Decimal,
+    expense_total: Decimal,
+    self_withdrawal_total: Decimal,
+) -> tuple[Decimal, Decimal]:
+    """gross = sales − purchase − expenses(excl SW); net = sales − purchase − all expenses."""
+    gross_profit = q_money(sales_amount - purchase_amount - expense_total)
+    net_profit = q_money(
+        sales_amount - purchase_amount - expense_total - self_withdrawal_total
+    )
+    return gross_profit, net_profit
 
 
 def get_business_summary(db: Session, year: int, month: int, company_id: int = 1) -> dict:
     sales = _month_bill_totals(db, year, month, BillType.sales, company_id)
     purchase = _month_bill_totals(db, year, month, BillType.purchase, company_id)
-    expense_total = _month_expense_total(db, year, month, company_id)
-    gross_profit = q_money(sales["bill_amount"] - purchase["bill_amount"] - expense_total)
+    expense_total, self_withdrawal_total = _month_expense_breakdown(db, year, month, company_id)
+    gross_profit, net_profit = _profit_from_parts(
+        sales["bill_amount"],
+        purchase["bill_amount"],
+        expense_total,
+        self_withdrawal_total,
+    )
     return {
         "year": year,
         "month": month,
         "sales": sales,
         "purchase": purchase,
         "expense_total": expense_total,
+        "self_withdrawal_total": self_withdrawal_total,
         "gross_profit": gross_profit,
+        "net_profit": net_profit,
     }
 
 
 def get_fiscal_year_summary(db: Session, start_year: int, company_id: int = 1) -> dict:
-    """April–March fiscal year: sales, purchase, expense, and gross profit (sales − purchase − expense)."""
+    """April–March fiscal year: sales, purchase, expense (excl SW), gross/net profit."""
     if start_year < 2000 or start_year > 2100:
         raise ValueError("fiscal year start must be between 2000 and 2100")
     start, end = fiscal_year_date_range(start_year)
     sales = _range_bill_totals(db, start, end, BillType.sales, company_id)
     purchase = _range_bill_totals(db, start, end, BillType.purchase, company_id)
-    expense_total = _range_expense_total(db, start, end, company_id)
-    gross_profit = q_money(sales["bill_amount"] - purchase["bill_amount"] - expense_total)
+    expense_total, self_withdrawal_total = _range_expense_breakdown(db, start, end, company_id)
+    gross_profit, net_profit = _profit_from_parts(
+        sales["bill_amount"],
+        purchase["bill_amount"],
+        expense_total,
+        self_withdrawal_total,
+    )
 
     months: list[dict] = []
     for y, m in fiscal_year_months(start_year):
         m_sales = _month_bill_totals(db, y, m, BillType.sales, company_id)
         m_purchase = _month_bill_totals(db, y, m, BillType.purchase, company_id)
-        m_expense = _month_expense_total(db, y, m, company_id)
+        m_expense, m_sw = _month_expense_breakdown(db, y, m, company_id)
+        m_gross, m_net = _profit_from_parts(
+            m_sales["bill_amount"],
+            m_purchase["bill_amount"],
+            m_expense,
+            m_sw,
+        )
         months.append(
             {
                 "year": y,
@@ -232,9 +302,9 @@ def get_fiscal_year_summary(db: Session, start_year: int, company_id: int = 1) -
                 "sales_amount": m_sales["bill_amount"],
                 "purchase_amount": m_purchase["bill_amount"],
                 "expense_total": m_expense,
-                "gross_profit": q_money(
-                    m_sales["bill_amount"] - m_purchase["bill_amount"] - m_expense
-                ),
+                "self_withdrawal_total": m_sw,
+                "gross_profit": m_gross,
+                "net_profit": m_net,
             }
         )
 
@@ -247,7 +317,9 @@ def get_fiscal_year_summary(db: Session, start_year: int, company_id: int = 1) -
         "sales": sales,
         "purchase": purchase,
         "expense_total": expense_total,
+        "self_withdrawal_total": self_withdrawal_total,
         "gross_profit": gross_profit,
+        "net_profit": net_profit,
         "months": months,
     }
 def _business_compare_from_totals(

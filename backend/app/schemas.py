@@ -1339,9 +1339,14 @@ class BusinessSummaryOut(BaseModel):
     month: int
     sales: BusinessTypeSummaryOut
     purchase: BusinessTypeSummaryOut
+    # Cash-book expenses excluding category "Self Withdrawal".
     expense_total: Decimal = Decimal("0.00")
-    # Sales − purchase − cash-book expenses for the month.
+    # Cash-book expenses in category "Self Withdrawal" only.
+    self_withdrawal_total: Decimal = Decimal("0.00")
+    # Sales − purchase − expense_total (excl. Self Withdrawal).
     gross_profit: Decimal = Decimal("0.00")
+    # Sales − purchase − (expense_total + self_withdrawal_total).
+    net_profit: Decimal = Decimal("0.00")
 
 
 class FiscalYearMonthRowOut(BaseModel):
@@ -1350,7 +1355,9 @@ class FiscalYearMonthRowOut(BaseModel):
     sales_amount: Decimal
     purchase_amount: Decimal
     expense_total: Decimal
+    self_withdrawal_total: Decimal = Decimal("0.00")
     gross_profit: Decimal
+    net_profit: Decimal = Decimal("0.00")
 
 
 class FiscalYearSummaryOut(BaseModel):
@@ -1362,8 +1369,11 @@ class FiscalYearSummaryOut(BaseModel):
     sales: BusinessTypeSummaryOut
     purchase: BusinessTypeSummaryOut
     expense_total: Decimal
-    # Sales − purchase − cash-book expenses for the fiscal year (1 Apr–31 Mar).
+    self_withdrawal_total: Decimal = Decimal("0.00")
+    # Sales − purchase − expense_total (excl. Self Withdrawal) for 1 Apr–31 Mar.
     gross_profit: Decimal
+    # Sales − purchase − all cash-book expenses including Self Withdrawal.
+    net_profit: Decimal = Decimal("0.00")
     months: list[FiscalYearMonthRowOut] = []
 
 
