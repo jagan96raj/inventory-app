@@ -83,24 +83,70 @@ def main() -> None:
     mark.save(OUT_APP, "PNG")
     print("wrote", OUT_MARK.name, mark.size)
 
-    # Emblem-only square (right half after density gap) for collapsed UI / favicon
+    # Emblem-only square: right of tractor gap, largest blob (+ internal dots),
+    # centered with even pad. Prefer ``python scripts/generate_app_icons.py`` for
+    # cream OS icons + favicon.
     alpha = np.array(mark)[:, :, 3] > 20
-    col = alpha.sum(axis=0)
-    mid = len(col) // 3
-    gap = mid + int(np.argmin(col[mid : mid * 2]))
-    emblem = mark.crop((gap, 0, mark.width, mark.height))
+    col = alpha.sum(axis=0).astype(np.int32)
+    n = len(col)
+    lo, hi = n // 4, (3 * n) // 4
+    gap = int(lo + int(np.argmin(col[lo:hi])))
+    mask = alpha.copy()
+    mask[:, : gap + 1] = False
+
+    # Largest component + contained seed dots (see generate_app_icons)
+    h, w = mask.shape
+    labels = np.zeros((h, w), dtype=np.int32)
+    boxes: dict[int, tuple[int, int, int, int]] = {}
+    sizes: dict[int, int] = {}
+    next_label = 0
+    for y in range(h):
+        for x in range(w):
+            if not mask[y, x] or labels[y, x]:
+                continue
+            next_label += 1
+            stack = [(y, x)]
+            labels[y, x] = next_label
+            size = 0
+            minx = maxx = x
+            miny = maxy = y
+            while stack:
+                cy, cx = stack.pop()
+                size += 1
+                minx, maxx = min(minx, cx), max(maxx, cx)
+                miny, maxy = min(miny, cy), max(maxy, cy)
+                for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                    ny, nx = cy + dy, cx + dx
+                    if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and labels[ny, nx] == 0:
+                        labels[ny, nx] = next_label
+                        stack.append((ny, nx))
+            sizes[next_label] = size
+            boxes[next_label] = (minx, miny, maxx, maxy)
+    best = max(sizes, key=sizes.get)
+    bx0, by0, bx1, by1 = boxes[best]
+    keep = np.zeros_like(mask)
+    for lab, (x0, y0, x1, y1) in boxes.items():
+        if lab == best or (x0 >= bx0 and y0 >= by0 and x1 <= bx1 and y1 <= by1):
+            keep |= labels == lab
+
+    ys, xs = np.where(keep)
+    if len(xs) == 0:
+        raise SystemExit("No emblem pixels found to the right of tractor gap")
+    cropped = np.array(mark)[int(ys.min()) : int(ys.max()) + 1, int(xs.min()) : int(xs.max()) + 1].copy()
+    local = keep[int(ys.min()) : int(ys.max()) + 1, int(xs.min()) : int(xs.max()) + 1]
+    cropped[~local, :] = 0
+    emblem = Image.fromarray(cropped, "RGBA")
     ebb = emblem.getbbox()
     if ebb:
         emblem = emblem.crop(ebb)
-    eside = max(emblem.size) + 8
+    pad_frac = 0.10
+    content = max(emblem.size)
+    eside = max(1, int(round(content / (1.0 - 2.0 * pad_frac))))
     esq = Image.new("RGBA", (eside, eside), (0, 0, 0, 0))
     esq.paste(emblem, ((eside - emblem.width) // 2, (eside - emblem.height) // 2), emblem)
     esq.save(OUT_ICON, "PNG")
-    print("wrote", OUT_ICON.name, esq.size)
-
-    fav256 = esq.resize((256, 256), Image.Resampling.LANCZOS)
-    fav256.save(OUT_FAVICON, "PNG")
-    print("wrote", OUT_FAVICON.name, fav256.size)
+    print("wrote", OUT_ICON.name, esq.size, "bbox=", esq.getbbox())
+    print("note: run scripts/generate_app_icons.py to refresh cream desktop/Apple/favicon icons")
 
 
 if __name__ == "__main__":
