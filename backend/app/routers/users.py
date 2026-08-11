@@ -26,7 +26,6 @@ def _user_admin_out(user: User) -> UserAdminOut:
         company_name=user.company.name if user.company else None,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
-        password=user.password_plain,
         is_active=user.is_active,
     )
 

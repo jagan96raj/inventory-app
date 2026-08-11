@@ -22,7 +22,6 @@ import { cn } from "../lib/cn";
 type AdminUser = AuthUser & {
   created_at?: string | null;
   last_login_at?: string | null;
-  password?: string | null;
   is_active?: boolean;
 };
 
@@ -206,7 +205,6 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<AdminUser | null>(null);
   const [editName, setEditName] = useState("");
   const [editPassword, setEditPassword] = useState("");
-  const [editPasswordOriginal, setEditPasswordOriginal] = useState("");
   const [otpResult, setOtpResult] = useState<LoginOtpResponse | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminUser | null>(null);
   const [pendingDisable, setPendingDisable] = useState<AdminUser | null>(null);
@@ -239,9 +237,7 @@ export default function UsersPage() {
   const openEdit = (user: AdminUser) => {
     setEditUser(user);
     setEditName(user.name ?? "");
-    const currentPassword = user.password ?? "";
-    setEditPassword(currentPassword);
-    setEditPasswordOriginal(currentPassword);
+    setEditPassword("");
     setError("");
   };
 
@@ -249,7 +245,6 @@ export default function UsersPage() {
     setEditUser(null);
     setEditName("");
     setEditPassword("");
-    setEditPasswordOriginal("");
   };
 
   const onSaveEdit = async (e: FormEvent) => {
@@ -262,7 +257,7 @@ export default function UsersPage() {
       const body: { name: string | null; password?: string } = {
         name: editName.trim() || null,
       };
-      if (editPassword.trim() && editPassword !== editPasswordOriginal) {
+      if (editPassword.trim()) {
         const policyError = validatePasswordStrength(editPassword);
         if (policyError) {
           setError(policyError);
@@ -492,20 +487,16 @@ export default function UsersPage() {
             <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
           </FormField>
           <FormField
-            label="Password"
-            hint={
-              editPasswordOriginal
-                ? `Current password is shown below. Change it and save to update. ${PASSWORD_REQUIREMENTS_HINT}`
-                : `No saved password on file for this account. ${PASSWORD_REQUIREMENTS_HINT}`
-            }
+            label="New password"
+            hint={`Leave blank to keep the current password. ${PASSWORD_REQUIREMENTS_HINT}`}
           >
             <Input
-              type="text"
+              type="password"
               value={editPassword}
               onChange={(e) => setEditPassword(e.target.value)}
               minLength={8}
-              autoComplete="off"
-              placeholder={editPasswordOriginal ? undefined : "No password on file"}
+              autoComplete="new-password"
+              placeholder="Set a new password (optional)"
             />
           </FormField>
         </form>

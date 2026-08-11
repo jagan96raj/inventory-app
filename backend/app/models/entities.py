@@ -1277,6 +1277,7 @@ class User(Base):
     login_otp_hash: Mapped[str | None] = mapped_column(String(64))
     login_otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     login_otp_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Legacy column (v15.1); cleared and never written after Spec v17.3.6.
     password_plain: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
 

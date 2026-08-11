@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.5** (dashboard Self Withdrawal / net profit + 10‑min idle logout); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.6** (production security: no plaintext passwords, hide API docs, COOKIE_SECURE warning); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.6** — Production security hardening: stop storing/returning `users.password_plain` (migration `061` NULLs existing values); Users API/UI set-new-password only (never display passwords); `DISABLE_API_DOCS=true` hides `/docs`, `/redoc`, `/openapi.json`; startup **WARNING** when `COOKIE_SECURE` is false. See **Spec v17.3.6** below.
 - **v17.3.5** — Dashboard: cash-book **Expense** excludes category **Self Withdrawal** (case-insensitive trim); expose `self_withdrawal_total`; **gross_profit** = sales − purchase − expense (excl. SW); **net_profit** = sales − purchase − all expenses (incl. SW) on month + FY (+ monthly FY rows). UI Net profit cards + Self WD column. Auth: auto-logout after **10 minutes** idle (mousemove/keydown/click/touch/scroll); hidden/minimized time counts toward the same limit (wall clock); calls `POST /api/auth/logout` then `/login`. See **Spec v17.3.5** below.
 - **v17.3.4** — UX polish matching live lists: bills list `product_id` filter (`EXISTS` line); payments list newest-first + post-create `?created=` highlight (`paymentCreated`); cash-book / payments tables `stickyHeader={false}`; `formatCustomerName` collapses whitespace on Customers / balances / statement. See **Spec v17.3.4** below.
 - **v17.3.3** — Cash book list: filter card above table (incl. money **Account** filter); response totals `amount_total` / `expense_total` / `income_total` / `transfer_total` over full filtered set (not page only); KPI cards between filters and table; post-create “Just recorded” highlight. See **Spec v17.3.3** below.
@@ -103,7 +104,7 @@
 
 | Area | Spec | Implementation |
 |------|------|----------------|
-| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; `company_id` on user; **10‑min idle auto-logout** |
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; no plaintext passwords; idle logout; optional hide API docs |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5** | `dashboard-bundle` (+ FY, job work); expenses excl. Self Withdrawal; gross + net profit; qty-first UI |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1** | list aggregates; snapshot UI; void reopen + close empty |
@@ -176,7 +177,7 @@
 | 032 | v14.9 | `processing_waste_allocations.powder_kg` (owner split) |
 | 033 | v15.0 | `users.role` enum; seed `jaganraj@rajagro.com` → owner |
 | 034 | v15.1 | `users.login_otp_*` columns |
-| 035 | v15.1 | `users.password_plain` |
+| 035 | v15.1 | `users.password_plain` (cleared / unused after **v17.3.6**) |
 | 036 | v15.4 | `revoked_tokens` (logout JWT jti blocklist) |
 | 037 | v15.5.1 | `processing_batches.powder_*` line columns (brand, location, bag type, bag count, loose kg) |
 | 038 | v15.5 | `login_rate_limits` (per-email failed attempts + lockout) |
@@ -202,6 +203,7 @@
 | 058 | v17.2.0 | `bank_accounts.kind`; seed Cash per company |
 | 059 | v17.2.1 | `payments.account_id`; cash-book `source_account_id` / `dest_account_id` |
 | 060 | v17.2.4 | drop legacy cash-book mode/bank columns; drop `payments.bank_account_id` |
+| 061 | v17.3.6 | NULL out `users.password_plain` (stop retaining plaintext) |
 
 ## API surface (summary)
 
@@ -445,7 +447,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **DB:** `users` table — `email`, `password_hash`, optional `google_sub` (for future Google), `name`, `picture_url`, timestamps; migration `014_spec_v101_password_auth`.
 - **Google Sign-In:** backend `POST /api/auth/google` retained for later; not wired in UI yet.
 - **Optional allowlist:** `ALLOWED_EMAILS` applies to signup and login.
-- **Env:** `JWT_SECRET`, `JWT_EXPIRE_HOURS`, `COOKIE_SECURE`.
+- **Env:** `JWT_SECRET`, `JWT_EXPIRE_HOURS`, `COOKIE_SECURE` (startup warns if false — **v17.3.6**), `DISABLE_API_DOCS` (**v17.3.6**).
 
 ## UI — Aurora theme, layout & typography
 
@@ -2437,7 +2439,7 @@ Masters **GET** (dropdown data) allowed for all assigned roles via `masters_read
 
 - Migration `033_spec_v150_rbac`: `users.role` nullable enum; `jaganraj@rajagro.com` → `owner`; other users remain `NULL` until owner assigns.
 - `app/core/permissions.py` — `require_permission`, `require_void_user` (owner only), `require_assigned_role`.
-- `GET/POST/PATCH /api/users` — owner only; POST idempotent; passwords never returned.
+- `GET/POST/PATCH /api/users` — owner only; POST idempotent; passwords never returned (**v17.3.6**: no `password_plain` storage or API field).
 - All business routers guarded per matrix; void endpoints require **owner role** plus existing `X-Void-Authorization`.
 - `DELETE /inventory/{id}` — **disabled (v15.2):** always **403**; use stock disposal or other operations to clear stock.
 
@@ -3345,6 +3347,22 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.6 — Production security hardening
+
+**Problem:** `users.password_plain` retained and returned owner-visible passwords via Users API/UI. OpenAPI `/docs` exposed in all environments. Easy to deploy with `COOKIE_SECURE=false` without noticing.
+
+**Solution:**
+1. **No plaintext passwords:** `set_user_password` hashes only and sets `password_plain = NULL`. `UserAdminOut` has no `password` field. Users page edit dialog: optional **New password** only (blank keeps current). Never display existing passwords.
+2. **Migration `061_spec_v1736_null_password_plain`:** `UPDATE users SET password_plain = NULL` (column retained nullable for compatibility; irreversible).
+3. **`DISABLE_API_DOCS`:** when true, FastAPI `docs_url` / `redoc_url` / `openapi_url` are `None` (disables `/docs`, `/redoc`, `/openapi.json`). Documented in `.env.example`; set **true** in production.
+4. **Startup warning:** if `COOKIE_SECURE` is false, log a clear WARNING recommending `COOKIE_SECURE=true` on HTTPS production.
+
+**Unchanged:** `ALLOW_COMPANY_REGISTRATION` default false; idle logout (v17.3.5); password strength policy (v15.6); OTP login for reset.
+
+**Files:** `backend/app/services/users.py`, `routers/users.py`, `schemas.py`, `config.py`, `main.py`, `models/entities.py`, `alembic/versions/061_spec_v1736_null_password_plain.py`, `frontend/src/pages/UsersPage.tsx`, `.env.example`, `backend/tests/test_security_hardening_v1736.py` (+ updates to login OTP / password policy tests).
+
+**Tests:** `tests.test_security_hardening_v1736` — password_plain cleared; Users API omits password; docs URLs None ⇒ 404; COOKIE_SECURE warning logged.
 
 ## Spec v17.3.5 — Dashboard Self Withdrawal / net profit + idle logout
 

@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -113,6 +113,11 @@ class PasswordPolicyApiTests(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 201, res.text)
         self.assertEqual(res.json()["email"], "staff@test.com")
+        self.assertNotIn("password", res.json())
+        created = self.db.scalar(select(User).where(User.email == "staff@test.com"))
+        self.assertIsNotNone(created)
+        self.assertIsNone(created.password_plain)
+        self.assertTrue(created.password_hash)
 
     def test_login_allows_existing_weak_password(self):
         weak_hash = hash_password("password123")

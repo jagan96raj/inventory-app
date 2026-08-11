@@ -30,6 +30,13 @@ async def lifespan(_app: FastAPI):
         settings.db_pool_timeout,
         settings.db_pool_recycle,
     )
+    if not settings.cookie_secure:
+        logger.warning(
+            "COOKIE_SECURE is false — auth cookies may be sent over plain HTTP. "
+            "Set COOKIE_SECURE=true in production (HTTPS)."
+        )
+    if settings.disable_api_docs:
+        logger.info("API docs disabled (DISABLE_API_DOCS=true)")
     if check_database(engine):
         db = SessionLocal()
         try:
@@ -48,7 +55,16 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Inventory & Billing API", version="1.0.0", lifespan=lifespan)
+_docs_kwargs: dict = {}
+if settings.disable_api_docs:
+    _docs_kwargs = {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+app = FastAPI(
+    title="Inventory & Billing API",
+    version="1.0.0",
+    lifespan=lifespan,
+    **_docs_kwargs,
+)
 
 _PASSWORD_POLICY_FIELDS = frozenset({"password", "new_password"})
 

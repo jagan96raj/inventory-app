@@ -114,6 +114,7 @@ class LoginOtpApiTests(unittest.TestCase):
         staff = self.db.get(User, 2)
         self.assertIsNone(staff.login_otp_hash)
         self.assertTrue(staff.password_hash)
+        self.assertIsNone(staff.password_plain)
 
     def test_otp_login_invalid_code_returns_401(self):
         self.client.post("/api/users/2/login-otp")
@@ -130,10 +131,11 @@ class LoginOtpApiTests(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["name"], "Updated Name")
-        self.assertEqual(res.json()["password"], "Staff@99")
+        self.assertNotIn("password", res.json())
         staff = self.db.get(User, 2)
         self.assertEqual(staff.name, "Updated Name")
-        self.assertEqual(staff.password_plain, "Staff@99")
+        self.assertIsNone(staff.password_plain)
+        self.assertTrue(staff.password_hash)
 
     def test_delete_user_removes_account(self):
         res = self.client.delete("/api/users/2")

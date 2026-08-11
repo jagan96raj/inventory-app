@@ -9,8 +9,9 @@ from app.models.entities import IdempotencyRecord, User, UserRole
 
 
 def set_user_password(user: User, password: str) -> None:
+    """Hash and store password. Never persist plaintext (Spec v17.3.6)."""
     user.password_hash = hash_password(password)
-    user.password_plain = password
+    user.password_plain = None
 
 
 def list_users(db: Session, *, company_id: int) -> list[User]:

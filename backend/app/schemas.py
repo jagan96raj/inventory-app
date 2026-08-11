@@ -1132,7 +1132,7 @@ class CompanyRegisterIn(BaseModel):
 class UserAdminOut(UserOut):
     created_at: datetime | None = None
     last_login_at: datetime | None = None
-    password: str | None = None
+    # Never expose password hashes or plaintext (Spec v17.3.6).
     is_active: bool = True
 
 
