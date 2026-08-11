@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.11** (responsive UI Phase 5: masters + book settings); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.12** (responsive UI Phase 6: reports, users, profile, auth); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.12** — Responsive UI **Phase 6** (layout only): Customer balances + statement cards below `lg`; Users/Profile touch targets + stacked modal/save actions; AuthShell phone padding + wider register; Pending access stacked CTAs. Desktop tables unchanged. No Phase 7+. See **Spec v17.3.12** below.
 - **v17.3.11** — Responsive UI **Phase 5** (layout only): Masters lists (products/brands via `MasterCrud`; customers/locations via `PartyMasterCrud`; bag types) use cards below `lg` + Add FAB; book settings Save full-width on phone + `min-w-0` comboboxes; `AddCustomerDialog` footer stacks on xs. Desktop tables unchanged. No Phase 6+. See **Spec v17.3.11** below.
 - **v17.3.10** — Responsive UI **Phase 4** (layout only): Inventory stock line cards below `lg` + Add-stock FAB; Summary/Detail SegmentedControl; bag-change / transfer / disposal history mobile cards via shared `OperationHistoryPage`; OperationPageHeader shortens History CTA. Desktop tables unchanged. No Phase 5+. See **Spec v17.3.10** below.
 - **v17.3.9** — Responsive UI **Phase 3** (layout only): Fulfillment + JW fulfillment line cards below `lg`; processing open-job FAB + history log cards; job-work list FAB / detail line cards + header CTAs; SegmentedControl wrap on filters/allocation. Desktop tables unchanged. No Phase 4+. See **Spec v17.3.9** below.
@@ -291,9 +292,9 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 ### Per-page redesign — all routes preserved
 | Route | Page | UI work | QA hardening surfaced |
 |---|---|---|---|
-| `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. | — |
+| `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. **v17.3.12** phone padding / register wide. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
-| `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). | — |
+| `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). **v17.3.12** full-width Save on phone. | — |
 | `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
 | `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
@@ -463,7 +464,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
 - **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
 - **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
-- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops. **Phase 5 (v17.3.11):** Masters + book settings — see Specs v17.3.7–v17.3.11.
+- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops. **Phase 5 (v17.3.11):** Masters + book settings. **Phase 6 (v17.3.12):** Reports/balances/statement + users/profile/auth — see Specs v17.3.7–v17.3.12.
 - **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
 - **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
 
@@ -1541,8 +1542,8 @@ POST   /api/bills/{id}/void                              # idempotent + X-Void-A
 | `/accounts/cashbook` | `CashBookListPage` | Aligned table (Date, Entry, Amount, Payment, Bill, Status, icon actions); filter grid with Clear filters |
 | `/accounts/cashbook/new` | `CashBookEntryFormPage` | Segmented control Expense / Income / Transfer; bill picker; bank dropdown |
 | `/accounts/cashbook/:id/edit` | `CashBookEntryFormPage` (editing) | Pre-filled; sends `expected_version` |
-| `/accounts/customers` | `CustomerBalancesPage` | Paginated; net credit / debit / net; search name + phones; click → statement |
-| `/accounts/customers/:id` | `CustomerStatementPage` | Date-ranged chronological events with running balance |
+| `/accounts/customers` | `CustomerBalancesPage` | Paginated; net credit / debit / net; search name + phones; click → statement; **v17.3.12** cards below `lg` |
+| `/accounts/customers/:id` | `CustomerStatementPage` | Date-ranged chronological events with running balance; **v17.3.12** cards below `lg` |
 | `/accounts/bank-accounts` | `BankAccountsMasterPage` | CRUD + make-default; **Opening balance** + **Closing balance** columns (live `balance` from list API) |
 | `/accounts/expense-categories` | `ExpenseCategoriesMasterPage` | CRUD; system rows locked with lock icon |
 | `/accounts/setup` | `BookSettingsPage` | Cash opening balance + powder destination (company header on Profile — v17.0.5) |
@@ -3352,6 +3353,19 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.12 — Responsive UI Phase 6 (reports, users, profile, auth)
+
+**Problem:** Customer balances/statement relied on wide `Table` (`min-w-[40rem]`) on phones; Users/Profile action rows and auth register forms crowded ~375px.
+
+**Solution (Phase 6 only — layout/CSS; no business-logic changes):**
+- **Customer balances / statement:** Cards below `lg`; desktop tables from `lg`; filters/`min-w-0`; statement header Back shortens on xs.
+- **Users:** Create + list grid `minmax(0,…)`; full-width role select on phone; larger icon actions; stacked edit/OTP modal footers; empty-state copy adapts to stacked layout.
+- **Profile:** Header Save from `sm`; footer Save full-width on phone; `min-w-0` / break-words on long emails.
+- **Auth:** `AuthShell` phone padding + `min-h-svh`; optional `wide` column for company register; Pending access CTAs stack; register address grid `min-w-0`.
+- **Out of scope:** Phase 7 (final polish / audit & login histories unless leftover on these pages).
+
+**Unchanged:** Aurora design language; accounts statement/balance APIs; user admin and auth flows.
 
 ## Spec v17.3.11 — Responsive UI Phase 5 (masters and book settings)
 

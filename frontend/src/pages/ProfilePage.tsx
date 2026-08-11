@@ -127,7 +127,7 @@ export default function ProfilePage() {
   const readOnlyAddressLines = company ? formatCompanyAddressLines(company) : [];
 
   return (
-    <>
+    <div className="min-w-0">
       <PageHeader
         eyebrow="Account"
         title="Profile"
@@ -141,12 +141,12 @@ export default function ProfilePage() {
       )}
 
       <div className="space-y-5">
-        <Card className="max-w-2xl">
+        <Card className="max-w-2xl min-w-0">
           <CardHeader title="Account" subtitle="Signed-in person (view only)." />
           <CardBody className="space-y-3 text-sm">
             <div className="flex items-start gap-3">
               <UserIcon className="mt-0.5 h-4 w-4 shrink-0 text-ink-subtle" aria-hidden="true" />
-              <div className="min-w-0 space-y-1">
+              <div className="min-w-0 space-y-1 break-words">
                 <p>
                   <span className="text-ink-muted">Name: </span>
                   <span className="font-semibold text-ink">{user?.name?.trim() || "—"}</span>
@@ -164,7 +164,7 @@ export default function ProfilePage() {
           </CardBody>
         </Card>
 
-        <Card className="max-w-2xl">
+        <Card className="max-w-2xl min-w-0">
           <CardHeader
             title="Company"
             subtitle={
@@ -180,6 +180,7 @@ export default function ProfilePage() {
                   loading={busy}
                   disabled={busy}
                   leftIcon={<Save className="h-4 w-4" />}
+                  className="hidden min-h-10 sm:inline-flex"
                 >
                   Save company
                 </Button>
@@ -193,7 +194,7 @@ export default function ProfilePage() {
           ) : isOwner ? (
             <form id="company-profile-form" onSubmit={(e) => void submit(e)} noValidate>
               <CardBody className="space-y-4">
-                <FormField label="Company name" required>
+                <FormField label="Company name" required className="min-w-0">
                   {({ id }) => (
                     <Input
                       id={id}
@@ -203,10 +204,11 @@ export default function ProfilePage() {
                       leftIcon={<Building2 />}
                       maxLength={255}
                       required
+                      className="min-w-0"
                     />
                   )}
                 </FormField>
-                <FormField label="Phone">
+                <FormField label="Phone" className="min-w-0">
                   {({ id }) => (
                     <Input
                       id={id}
@@ -214,12 +216,17 @@ export default function ProfilePage() {
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="Contact number"
                       maxLength={50}
+                      className="min-w-0"
                     />
                   )}
                 </FormField>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-4 sm:grid-cols-2">
                   {companyAddressFormFields.map((f) => (
-                    <FormField key={f.key} label={f.label} className={f.wide ? "sm:col-span-2" : undefined}>
+                    <FormField
+                      key={f.key}
+                      label={f.label}
+                      className={"wide" in f && f.wide ? "min-w-0 sm:col-span-2" : "min-w-0"}
+                    >
                       {({ id }) => (
                         <Input
                           id={id}
@@ -227,20 +234,27 @@ export default function ProfilePage() {
                           onChange={(e) => setAddr(f.key, e.target.value)}
                           placeholder={f.placeholder}
                           maxLength={f.key === "gstin" ? 20 : f.key === "pin_code" ? 12 : 500}
+                          className="min-w-0"
                         />
                       )}
                     </FormField>
                   ))}
                 </div>
               </CardBody>
-              <CardFooter>
-                <Button type="submit" loading={busy} disabled={busy} leftIcon={<Save className="h-4 w-4" />}>
+              <CardFooter className="flex-col-reverse sm:flex-row">
+                <Button
+                  type="submit"
+                  loading={busy}
+                  disabled={busy}
+                  leftIcon={<Save className="h-4 w-4" />}
+                  className="min-h-11 w-full sm:w-auto"
+                >
                   Save company
                 </Button>
               </CardFooter>
             </form>
           ) : (
-            <CardBody className="space-y-3 text-sm">
+            <CardBody className="space-y-3 break-words text-sm">
               <p>
                 <span className="text-ink-muted">Name: </span>
                 <span className="font-semibold text-ink">{company?.name || "—"}</span>
@@ -272,6 +286,6 @@ export default function ProfilePage() {
           )}
         </Card>
       </div>
-    </>
+    </div>
   );
 }

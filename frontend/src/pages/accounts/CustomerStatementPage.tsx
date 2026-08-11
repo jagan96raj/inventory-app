@@ -120,12 +120,12 @@ export default function CustomerStatementPage() {
   );
 
   return (
-    <>
+    <div className="min-w-0">
       <PageHeader
         eyebrow="Accounts"
         title={
           page?.customer_name ? (
-            <span className="block truncate" title={formatCustomerName(page.customer_name)}>
+            <span className="block max-w-full truncate" title={formatCustomerName(page.customer_name)}>
               {formatCustomerName(page.customer_name)}
             </span>
           ) : (
@@ -135,8 +135,9 @@ export default function CustomerStatementPage() {
         subtitle="Chronological list of bills, payments, and set-offs with running balance."
         actions={
           <Link to="/accounts/customers">
-            <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />}>
-              Back
+            <Button variant="ghost" leftIcon={<ArrowLeft className="h-4 w-4" />} className="min-h-10">
+              <span className="sm:hidden">Back</span>
+              <span className="hidden sm:inline">Back to balances</span>
             </Button>
           </Link>
         }
@@ -150,20 +151,20 @@ export default function CustomerStatementPage() {
 
       {page && (
         <div className="mb-4 grid gap-3 sm:grid-cols-3">
-          <Card>
-            <CardBody>
+          <Card className="min-w-0">
+            <CardBody className="p-4 sm:p-5">
               <p className="text-xs uppercase text-ink-subtle">Net balance</p>
               <p className="v2-mono mt-1 text-xl font-bold text-ink">{formatInr(page.current_net_balance)}</p>
             </CardBody>
           </Card>
-          <Card>
-            <CardBody>
+          <Card className="min-w-0">
+            <CardBody className="p-4 sm:p-5">
               <p className="text-xs uppercase text-ink-subtle">Customer owes me</p>
               <p className="v2-mono mt-1 text-xl font-semibold text-emerald-700">{formatInr(page.current_debit_balance)}</p>
             </CardBody>
           </Card>
-          <Card>
-            <CardBody>
+          <Card className="min-w-0">
+            <CardBody className="p-4 sm:p-5">
               <p className="text-xs uppercase text-ink-subtle">I owe customer</p>
               <p className="v2-mono mt-1 text-xl font-semibold text-amber-700">{formatInr(page.current_credit_balance)}</p>
             </CardBody>
@@ -171,25 +172,82 @@ export default function CustomerStatementPage() {
         </div>
       )}
 
-      <Card className="mb-4">
-        <CardBody className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
+      <Card className="mb-4 min-w-0">
+        <CardBody className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="min-w-0 space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Date from</label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="min-w-0" />
           </div>
-          <div className="space-y-1">
+          <div className="min-w-0 space-y-1">
             <label className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Date to</label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="min-w-0" />
           </div>
         </CardBody>
       </Card>
 
       {page && (
         <>
-          <Table columns={columns} rows={page.items} rowKey={(r, i) => `${r.event_at}-${i}`} caption="Customer statement" />
+          <div className="space-y-3 lg:hidden">
+            {page.items.map((r, i) => {
+              const meta = KIND_LABELS[r.kind];
+              return (
+                <Card key={`${r.event_at}-${i}`} className="overflow-hidden">
+                  <CardBody className="space-y-3 p-4">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="v2-mono text-sm text-ink-muted">{formatDate(r.event_date)}</p>
+                        <p className="mt-1 text-sm text-ink">{r.description}</p>
+                        {r.bill_id && r.bill_number && (
+                          <Link
+                            to={`/sales-bills/${r.bill_id}`}
+                            className="v2-mono mt-1 inline-block text-xs text-primary-600 hover:underline"
+                          >
+                            {r.bill_number}
+                          </Link>
+                        )}
+                      </div>
+                      {meta ? (
+                        <Badge size="sm" tone={meta.tone}>
+                          {meta.label}
+                        </Badge>
+                      ) : (
+                        <Badge size="sm">{r.kind}</Badge>
+                      )}
+                    </div>
+                    <dl className="grid grid-cols-3 gap-2 border-t border-line/60 pt-3 text-sm">
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">Debit</dt>
+                        <dd className="v2-mono text-rose-700">
+                          {Number(r.debit_amount) > 0 ? formatInr(r.debit_amount) : "—"}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">Credit</dt>
+                        <dd className="v2-mono text-emerald-700">
+                          {Number(r.credit_amount) > 0 ? formatInr(r.credit_amount) : "—"}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-ink-subtle">Running</dt>
+                        <dd className="v2-mono font-semibold text-ink">{formatInr(r.running_balance)}</dd>
+                      </div>
+                    </dl>
+                  </CardBody>
+                </Card>
+              );
+            })}
+          </div>
+          <div className="hidden lg:block">
+            <Table
+              columns={columns}
+              rows={page.items}
+              rowKey={(r, i) => `${r.event_at}-${i}`}
+              caption="Customer statement"
+            />
+          </div>
           <PaginationBar total={page.total} limit={limit} offset={offset} onPageChange={setOffset} className="mt-2" />
         </>
       )}
-    </>
+    </div>
   );
 }
