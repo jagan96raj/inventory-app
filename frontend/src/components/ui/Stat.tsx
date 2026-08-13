@@ -91,8 +91,8 @@ export default function Stat({
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium uppercase tracking-wider text-ink-subtle">{label}</p>
-          <p className="mt-2 flex flex-nowrap items-baseline gap-1.5 text-xl font-semibold tracking-tight text-ink sm:text-2xl">
-            <span className="v2-mono whitespace-nowrap tabular-nums">
+          <p className="mt-2 flex min-w-0 flex-wrap items-baseline gap-1.5 text-xl font-semibold tracking-tight text-ink sm:text-2xl">
+            <span className="v2-mono min-w-0 break-words tabular-nums">
               {numeric
                 ? display.toLocaleString("en-IN", { maximumFractionDigits: 0 })
                 : value}

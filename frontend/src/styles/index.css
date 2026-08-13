@@ -265,9 +265,9 @@
     animation: shimmer 1.4s linear infinite;
   }
 
-  /* Shared fixed-layout tables — headers and cells stay column-aligned */
+  /* Auto layout so qty/name columns can grow; parent overflow-x-auto scrolls when the sidebar is open */
   body.app-shell-v2 .v2-data-table {
-    table-layout: fixed;
+    table-layout: auto;
     width: 100%;
     border-collapse: collapse;
     font-size: 1.0625rem;
@@ -278,6 +278,7 @@
   body.app-shell-v2 .v2-data-table td {
     vertical-align: middle;
     overflow-wrap: anywhere;
+    word-break: break-word;
     padding: 1rem 1.25rem;
   }
 

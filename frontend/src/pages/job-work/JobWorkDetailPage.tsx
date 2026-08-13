@@ -275,7 +275,13 @@ export default function JobWorkDetailPage() {
         <CardHeader title="Lines" subtitle={isActive ? REMAINING_HELP : undefined} />
         <CardBody>
           <div className="hidden lg:block">
-            <Table columns={lineColumns} rows={order.lines} rowKey={(ln) => ln.id} caption="Job work lines" />
+            <Table
+              columns={lineColumns}
+              rows={order.lines}
+              rowKey={(ln) => ln.id}
+              caption="Job work lines"
+              stickyHeader={false}
+            />
           </div>
           <div className="space-y-3 lg:hidden">
             {order.lines.map((ln) => {

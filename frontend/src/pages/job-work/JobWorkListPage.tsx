@@ -261,7 +261,7 @@ export default function JobWorkListPage() {
                     <section key={date} className="space-y-3" aria-labelledby={`jw-date-${date}`}>
                       <header
                         id={`jw-date-${date}`}
-                        className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface-subtle px-4 py-3"
                       >
                         <div className="flex items-center gap-2.5">
                           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
@@ -278,6 +278,7 @@ export default function JobWorkListPage() {
                         rows={dayOrders}
                         rowKey={(r) => r.id}
                         caption={`Job work orders · ${label}`}
+                        stickyHeader={false}
                       />
                     </section>
                   );
@@ -290,7 +291,7 @@ export default function JobWorkListPage() {
                     <section key={date} className="space-y-3" aria-labelledby={`jw-date-m-${date}`}>
                       <header
                         id={`jw-date-m-${date}`}
-                        className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line/80 bg-surface-subtle px-4 py-3"
                       >
                         <div className="flex items-center gap-2.5">
                           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">

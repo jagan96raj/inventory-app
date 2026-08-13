@@ -135,7 +135,7 @@ function ProductGroupedTable({ products, onEdit, className }: ProductTableProps)
   return (
     <>
       <div className={cn("hidden overflow-x-auto lg:block", className)}>
-        <table className="v2-data-table inventory-stock-table w-full min-w-[44rem] table-fixed text-sm">
+        <table className="v2-data-table inventory-stock-table w-full min-w-[44rem] text-sm">
           <colgroup>
             <col className="w-[20%]" />
             <col className="w-[14%]" />
@@ -303,7 +303,7 @@ function OwnerProductGroupedTable({ owners, onEdit }: OwnerProductTableProps) {
   return (
     <>
       <div className="hidden overflow-x-auto lg:block">
-        <table className="v2-data-table inventory-stock-table w-full min-w-[52rem] table-fixed text-sm">
+        <table className="v2-data-table inventory-stock-table w-full min-w-[52rem] text-sm">
           <colgroup>
             <col className="w-[18%]" />
             <col className="w-[14%]" />

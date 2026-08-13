@@ -58,7 +58,7 @@ export default function AppShell() {
       />
       <div
         className={cn(
-          "relative z-[1] flex min-h-screen flex-col transition-[padding] duration-200",
+          "relative z-[1] flex min-h-screen min-w-0 flex-col transition-[padding] duration-200",
           collapsed ? "lg:pl-[72px]" : "lg:pl-52"
         )}
       >
@@ -66,7 +66,7 @@ export default function AppShell() {
           onOpenSidebar={() => setMobileOpen(true)}
           onOpenPalette={() => setPaletteOpen(true)}
         />
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <AnimatePresence mode="wait">
             <motion.div
               key={pathname}

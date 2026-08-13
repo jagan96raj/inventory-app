@@ -447,7 +447,7 @@ function FulfillmentDateSection({
     <section className="space-y-4" aria-labelledby={`fulfillment-date-${date}`}>
       <header
         id={`fulfillment-date-${date}`}
-        className="sticky top-0 z-[1] flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface/95 px-4 py-3 shadow-soft backdrop-blur-sm sm:px-5"
+        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line/80 bg-surface-subtle px-4 py-3 sm:px-5"
       >
         <div className="flex items-center gap-2.5">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">

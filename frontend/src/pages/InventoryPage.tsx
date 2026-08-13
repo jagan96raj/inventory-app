@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Link2, Lock, PackagePlus, Pencil, Plus } from "lucide-react";
+import { Boxes, Link2, Lock, PackagePlus, Plus } from "lucide-react";
 import {
   api,
   DEFAULT_PAGE_LIMIT,
@@ -498,18 +498,6 @@ export default function InventoryPage() {
     }
   };
 
-  const editSummary = useMemo(() => {
-    if (!editingRow) return "";
-    return [
-      editingRow.location_name,
-      editingRow.product_name,
-      editingRow.brand_name,
-      editingRow.bag_type_name,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }, [editingRow]);
-
   const activeUsageLinks = useMemo(
     () => (editUsage?.links ?? []).filter((link) => link.count > 0),
     [editUsage]
@@ -749,15 +737,15 @@ export default function InventoryPage() {
         title="Add opening stock"
         description="One-time stock entry. Later changes go through bills, fulfillment, or operations."
         footer={
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
+          <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1">
               {addStockSummary ? (
-                <p className="truncate text-sm text-ink-muted">{addStockSummary}</p>
+                <p className="break-words text-sm text-ink-muted">{addStockSummary}</p>
               ) : (
                 <p className="text-sm text-ink-subtle">Start with location and product</p>
               )}
               <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                <p className="v2-mono text-2xl font-bold tabular-nums text-ink">
+                <p className="v2-mono text-xl font-bold tabular-nums text-ink sm:text-2xl">
                   {formatQtyKg(totalPreviewKg)}
                 </p>
                 {selectedBagType &&
@@ -770,8 +758,8 @@ export default function InventoryPage() {
                   )}
               </div>
             </div>
-            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
-              <Button variant="ghost" onClick={closeAddStock} disabled={saving}>
+            <div className="flex w-full shrink-0 flex-col-reverse gap-2 sm:w-auto sm:flex-row">
+              <Button variant="ghost" onClick={closeAddStock} disabled={saving} className="w-full sm:w-auto">
                 Cancel
               </Button>
               <Button
@@ -779,6 +767,7 @@ export default function InventoryPage() {
                 form="add-stock-form"
                 loading={saving}
                 disabled={!canSubmit}
+                className="w-full sm:w-auto"
                 leftIcon={<PackagePlus className="h-4 w-4" />}
               >
                 Add stock
@@ -795,35 +784,43 @@ export default function InventoryPage() {
         onClose={closeEdit}
         size="lg"
         title="Edit stock quantity"
-        description="Manual correction only — use bills, fulfillment, or operations for normal stock movement."
+        description="Manual correction only. Normal stock movement goes through bills, fulfillment, or operations."
         footer={
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              {editSummary ? <p className="truncate text-sm text-ink-muted">{editSummary}</p> : null}
-              <p className="v2-mono text-2xl font-bold tabular-nums text-ink">{formatQtyKg(editPreviewKg)}</p>
-            </div>
-            <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row">
-              <Button variant="ghost" onClick={closeEdit} disabled={saving}>
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                form="edit-stock-form"
-                loading={saving}
-                disabled={!canEditSubmit}
-                leftIcon={<Pencil className="h-4 w-4" />}
-              >
-                Save changes
-              </Button>
-            </div>
+          <div className="flex w-full min-w-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={closeEdit} disabled={saving} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form="edit-stock-form"
+              loading={saving}
+              disabled={!canEditSubmit}
+              className="w-full sm:w-auto"
+            >
+              Save changes
+            </Button>
           </div>
         }
       >
         <form id="edit-stock-form" onSubmit={submitEdit} className="space-y-5">
           {editError && <Banner tone="danger">{editError}</Banner>}
 
+          <div className="rounded-2xl border border-line bg-surface-subtle p-4">
+            <p className="break-words text-sm font-semibold text-ink">
+              {editingRow?.product_name ?? "Product"}
+            </p>
+            <p className="mt-1 break-words text-sm text-ink-muted">
+              {[editingRow?.location_name, editingRow?.brand_name, editingRow?.bag_type_name]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            <p className="mt-2 v2-mono text-xl font-bold tabular-nums text-ink">
+              {formatQtyKg(editPreviewKg)}
+            </p>
+          </div>
+
           <Banner tone="warning">
-            <div className="space-y-2">
+            <div className="space-y-2 break-words">
               <p className="font-semibold text-ink">
                 This stock row is linked across the app. Changing quantity here does not update those records.
               </p>
@@ -893,7 +890,7 @@ export default function InventoryPage() {
 
           <FormField
             label="Authorization password"
-            hint="Enter the admin void password or your account login password."
+            hint="Admin void password or your login password."
             error={editAuthError}
             required
           >

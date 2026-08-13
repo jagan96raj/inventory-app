@@ -66,7 +66,7 @@ export default function Modal({
             >
               <Dialog.Panel
                 className={cn(
-                  "v2-card relative flex w-full flex-col overflow-hidden shadow-lg",
+                  "v2-card relative flex w-full min-w-0 flex-col overflow-hidden shadow-lg",
                   "max-h-[min(100dvh-2rem,52rem)]",
                   sizeClass[size]
                 )}
@@ -96,12 +96,12 @@ export default function Modal({
                       )}
                       <div className="min-w-0 pt-0.5">
                         {title && (
-                          <Dialog.Title className="text-lg font-semibold tracking-tight text-ink">
+                          <Dialog.Title className="break-words text-lg font-semibold tracking-tight text-ink">
                             {title}
                           </Dialog.Title>
                         )}
                         {description && (
-                          <Dialog.Description className="mt-1 text-base leading-relaxed text-ink-muted">
+                          <Dialog.Description className="mt-1 break-words text-sm leading-relaxed text-ink-muted sm:text-base">
                             {description}
                           </Dialog.Description>
                         )}
@@ -123,7 +123,7 @@ export default function Modal({
                 </div>
 
                 {footer && (
-                  <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-line bg-surface-subtle px-4 py-3 sm:flex-row sm:justify-end sm:px-5 [&_button]:w-full sm:[&_button]:w-auto">
+                  <div className="flex w-full min-w-0 shrink-0 flex-col-reverse gap-2 border-t border-line bg-surface-subtle px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:px-5 [&_button]:w-full sm:[&_button]:w-auto">
                     {footer}
                   </div>
                 )}

@@ -40,7 +40,7 @@ export default function Table<T>({
   rowClassName,
   zebra,
   compact,
-  stickyHeader = true,
+  stickyHeader = false,
   onRowClick,
   className,
   headerClassName,
