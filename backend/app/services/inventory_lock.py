@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.entities import Inventory, InventoryOwnerType
 
 InventoryKey = tuple[int, int, int, int, str, int | None]
+InventorySkuKey = tuple[int, int, int, str, int | None]
 
 
 def _normalize_owner(
@@ -130,6 +131,73 @@ def get_or_create_inventory_row_for_update(
     if not inv:
         raise ValueError("Could not lock or create inventory row")
     return inv
+
+
+def inventory_sku_key(
+    product_id: int,
+    brand_id: int,
+    location_id: int,
+    owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
+    customer_id: int | None = None,
+) -> InventorySkuKey:
+    ot, cid = _normalize_owner(owner_type, customer_id)
+    return (product_id, brand_id, location_id, ot, cid)
+
+
+def lock_inventory_product_brand_owner_rows(
+    db: Session,
+    company_id: int,
+    product_id: int,
+    brand_id: int,
+    owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
+    customer_id: int | None = None,
+) -> list[Inventory]:
+    """Lock every location/bag-type row for product+brand+owner (void kg fallback)."""
+    ot, cid = _normalize_owner(owner_type, customer_id)
+    ot_enum = InventoryOwnerType(ot)
+    q = (
+        select(Inventory)
+        .where(
+            Inventory.company_id == company_id,
+            Inventory.product_id == product_id,
+            Inventory.brand_id == brand_id,
+            Inventory.owner_type == ot_enum,
+        )
+        .order_by(Inventory.id)
+        .with_for_update()
+    )
+    if cid is None:
+        q = q.where(Inventory.customer_id.is_(None))
+    else:
+        q = q.where(Inventory.customer_id == cid)
+    return list(db.scalars(q).all())
+
+
+def lock_inventory_sku_rows(
+    db: Session, company_id: int, sku_keys: list[InventorySkuKey]
+) -> list[Inventory]:
+    """Lock every bag-type row for product+brand+location+owner (void kg fallback)."""
+    locked: list[Inventory] = []
+    for product_id, brand_id, location_id, owner_type, customer_id in sorted(set(sku_keys)):
+        ot_enum = InventoryOwnerType(owner_type)
+        q = (
+            select(Inventory)
+            .where(
+                Inventory.company_id == company_id,
+                Inventory.product_id == product_id,
+                Inventory.brand_id == brand_id,
+                Inventory.location_id == location_id,
+                Inventory.owner_type == ot_enum,
+            )
+            .order_by(Inventory.id)
+            .with_for_update()
+        )
+        if customer_id is None:
+            q = q.where(Inventory.customer_id.is_(None))
+        else:
+            q = q.where(Inventory.customer_id == customer_id)
+        locked.extend(list(db.scalars(q).all()))
+    return locked
 
 
 def lock_inventory_rows(

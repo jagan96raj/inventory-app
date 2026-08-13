@@ -1,8 +1,8 @@
 """Processing service — batch."""
 from decimal import Decimal
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.tenant import assert_entity_company
 from app.models.entities import (
@@ -12,6 +12,7 @@ from app.models.entities import (
     Customer,
     CustomerPartyType,
     InventoryOwnerType,
+    Location,
     ProcessingBalanceReturnLine,
     ProcessingBatch,
     ProcessingInputLine,
@@ -24,8 +25,14 @@ from app.models.entities import (
     Product,
     User,
 )
-from app.services.fulfillment import get_inventory_row
-from app.services.inventory_lock import inventory_row_key, lock_inventory_rows
+from app.services.operations import OPERATION_VOID_INSUFFICIENT_STOCK_MSG, _void_line_quantity_kg
+from app.services.inventory_lock import (
+    inventory_row_key,
+    inventory_sku_key,
+    lock_inventory_product_brand_owner_rows,
+    lock_inventory_rows,
+    lock_inventory_sku_rows,
+)
 import app.services.processing as _processing
 from app.services.owner_allocation import (
     OwnerKey,
@@ -62,6 +69,7 @@ from app.services.processing.batch_helpers import (
 from app.services.processing.constants import (
     BALANCE_REPROCESS_NO_STOCK_MSG,
     JOB_WORK_OUTPUT_MISSING_MSG,
+    LATER_REPROCESS_VOID_MSG,
     NO_INPUT_FOR_OUTPUT_MSG,
     OUTPUT_ALLOCATION_MODE_REQUIRED_MSG,
 )
@@ -542,6 +550,154 @@ def _close_empty_open_job(db: Session, job: ProcessingJob) -> None:
     job.status = ProcessingJobStatus.completed
     job.completed_at = utc_now()
 
+
+def _stock_tuple_label(
+    db: Session, product_id: int, brand_id: int, location_id: int, bag_type_id: int
+) -> str:
+    product = db.get(Product, product_id)
+    brand = db.get(Brand, brand_id)
+    location = db.get(Location, location_id)
+    bag_type = db.get(BagType, bag_type_id)
+    return (
+        f"{product.product_name if product else product_id} / "
+        f"{brand.name if brand else brand_id} / "
+        f"{location.name if location else location_id} / "
+        f"{bag_type.name if bag_type else bag_type_id}"
+    )
+
+
+def _available_kg_at_sku(
+    db: Session,
+    *,
+    company_id: int,
+    product_id: int,
+    brand_id: int,
+    location_id: int,
+    owner_type,
+    customer_id,
+) -> Decimal:
+    rows = lock_inventory_sku_rows(
+        db,
+        company_id,
+        [
+            inventory_sku_key(
+                product_id,
+                brand_id,
+                location_id,
+                owner_type,
+                customer_id,
+            )
+        ],
+    )
+    return sum((Decimal(r.total_quantity_kg or 0) for r in rows), Decimal("0"))
+
+
+def _unique_lines(lines) -> list:
+    seen: set[int] = set()
+    unique: list = []
+    for line in lines or []:
+        if line.id in seen:
+            continue
+        seen.add(line.id)
+        unique.append(line)
+    return unique
+
+
+def _line_bags_loose_for_void(line, bt: BagType) -> tuple[int, Decimal]:
+    """Prefer posted quantity_kg for loose lines (UI kg), then stored bags/loose."""
+    bag_count = int(line.bag_count or 0)
+    loose_kg = Decimal(line.loose_kg or 0)
+    posted = Decimal(line.quantity_kg or 0)
+    if bt.is_loose:
+        kg = posted if posted > loose_kg else loose_kg
+        return 0, kg
+    return bag_count, loose_kg
+
+
+def _subtract_void_with_label(
+    db: Session,
+    *,
+    role: str,
+    product_id: int,
+    brand_id: int,
+    location_id: int,
+    bag_type_id: int,
+    bag_count: int,
+    loose_kg: Decimal,
+    owner_type,
+    customer_id,
+    company_id: int,
+) -> None:
+    try:
+        _processing._subtract_for_void(
+            db,
+            product_id,
+            brand_id,
+            location_id,
+            bag_type_id,
+            bag_count,
+            loose_kg,
+            owner_type=owner_type,
+            customer_id=customer_id,
+            company_id=company_id,
+            allow_other_locations=True,
+        )
+    except ValueError as exc:
+        if str(exc) != OPERATION_VOID_INSUFFICIENT_STOCK_MSG:
+            raise
+        bt = _processing._get_bag_type(db, bag_type_id)
+        need = _void_line_quantity_kg(bt, bag_count, loose_kg)
+        have_here = _available_kg_at_sku(
+            db,
+            company_id=company_id,
+            product_id=product_id,
+            brand_id=brand_id,
+            location_id=location_id,
+            owner_type=owner_type,
+            customer_id=customer_id,
+        )
+        have_all = sum(
+            (
+                Decimal(r.total_quantity_kg or 0)
+                for r in lock_inventory_product_brand_owner_rows(
+                    db,
+                    company_id,
+                    product_id,
+                    brand_id,
+                    owner_type,
+                    customer_id,
+                )
+            ),
+            Decimal("0"),
+        )
+        label = _stock_tuple_label(db, product_id, brand_id, location_id, bag_type_id)
+        raise ValueError(
+            f"{OPERATION_VOID_INSUFFICIENT_STOCK_MSG} "
+            f"({role}: {label}; need {need} kg, have {have_here} kg here / {have_all} kg all locations)"
+        ) from exc
+
+
+def _job_has_later_balance_reprocess(db: Session, job: ProcessingJob, batch: ProcessingBatch) -> bool:
+    later_ids = select(ProcessingBatch.id).where(
+        ProcessingBatch.job_id == job.id,
+        ProcessingBatch.voided_at.is_(None),
+        ProcessingBatch.id != batch.id,
+        or_(
+            ProcessingBatch.operation_at > batch.operation_at,
+            and_(
+                ProcessingBatch.operation_at == batch.operation_at,
+                ProcessingBatch.id > batch.id,
+            ),
+        ),
+    )
+    found = db.scalar(
+        select(ProcessingInputLine.id).where(
+            ProcessingInputLine.batch_id.in_(later_ids),
+            ProcessingInputLine.input_source == ProcessingInputSource.balance_reprocess,
+        ).limit(1)
+    )
+    return found is not None
+
 def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch, *, company_id: int) -> None:
     if batch.powder_kg <= 0:
         return
@@ -554,23 +710,45 @@ def _void_powder_inventory_for_batch(db: Session, batch: ProcessingBatch, *, com
     ]
     if not powder_splits:
         powder_splits = [(InventoryOwnerType.owned, None, batch.powder_kg)]
+    use_stored_line = (
+        len(powder_splits) == 1
+        and batch.powder_bag_type_id is not None
+        and batch.powder_bag_count is not None
+    )
     for owner_type, customer_id, alloc_kg in powder_splits:
         if alloc_kg <= 0:
             continue
-        if bt.is_loose:
+        if use_stored_line:
+            if bt.is_loose:
+                bag_count = 0
+                loose_kg = (
+                    Decimal(batch.powder_loose_kg)
+                    if batch.powder_loose_kg is not None
+                    else alloc_kg
+                )
+            else:
+                bag_count = int(batch.powder_bag_count or 0)
+                loose_kg = Decimal(batch.powder_loose_kg or 0)
+                if bag_count <= 0 or loose_kg != 0:
+                    bag_count, loose_kg = _kg_to_bags_loose(bt, alloc_kg)
+        elif bt.is_loose:
             bag_count = 0
             loose_kg = alloc_kg
         else:
             bag_count, loose_kg = _kg_to_bags_loose(bt, alloc_kg)
-        validate_bags_loose(bt, bag_count, loose_kg)
-        _processing._subtract_for_void(
+        if bt.is_loose:
+            validate_bags_loose(bt, bag_count, loose_kg)
+        elif bag_count > 0 and loose_kg == 0:
+            validate_bags_loose(bt, bag_count, loose_kg)
+        _subtract_void_with_label(
             db,
-            product_id,
-            brand_id,
-            location_id,
-            bag_type_id,
-            bag_count,
-            loose_kg,
+            role="powder",
+            product_id=product_id,
+            brand_id=brand_id,
+            location_id=location_id,
+            bag_type_id=bag_type_id,
+            bag_count=bag_count,
+            loose_kg=loose_kg,
             owner_type=owner_type,
             customer_id=customer_id,
             company_id=company_id,
@@ -613,17 +791,17 @@ def void_processing_batch(
     actor: User | None = None,
     company_id: int | None = None,
 ) -> ProcessingJob:
-    batch = db.scalar(
+    batch = db.execute(
         select(ProcessingBatch)
         .where(ProcessingBatch.id == batch_id)
         .options(
-            joinedload(ProcessingBatch.input_lines),
-            joinedload(ProcessingBatch.output_lines),
-            joinedload(ProcessingBatch.balance_return_lines),
-            joinedload(ProcessingBatch.waste_allocations),
+            selectinload(ProcessingBatch.input_lines),
+            selectinload(ProcessingBatch.output_lines),
+            selectinload(ProcessingBatch.balance_return_lines),
+            selectinload(ProcessingBatch.waste_allocations),
         )
         .with_for_update(of=ProcessingBatch)
-    )
+    ).unique().scalar_one_or_none()
     if not batch:
         raise ValueError("Processing batch not found")
     if batch.voided_at is not None:
@@ -639,8 +817,15 @@ def void_processing_batch(
     if company_id is not None and int(job.company_id) != int(company_id):
         raise ValueError("Processing batch not found")
 
+    input_lines = _unique_lines(batch.input_lines)
+    output_lines = _unique_lines(batch.output_lines)
+    balance_return_lines = _unique_lines(batch.balance_return_lines)
+
+    if balance_return_lines and _job_has_later_balance_reprocess(db, job, batch):
+        raise ValueError(LATER_REPROCESS_VOID_MSG)
+
     lock_keys: list[tuple] = []
-    for line in batch.input_lines:
+    for line in input_lines:
         ot, cid = _owner_inventory_args(_owner_key_from_stored_input(line))
         lock_keys.append(
             inventory_row_key(
@@ -652,7 +837,7 @@ def void_processing_batch(
                 cid,
             )
         )
-    for line in batch.output_lines:
+    for line in output_lines:
         ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
         lock_keys.append(
             inventory_row_key(
@@ -664,7 +849,7 @@ def void_processing_batch(
                 cid,
             )
         )
-    for line in batch.balance_return_lines:
+    for line in balance_return_lines:
         ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
         lock_keys.append(
             inventory_row_key(
@@ -709,49 +894,64 @@ def void_processing_batch(
                 )
 
     lock_inventory_rows(db, job.company_id, lock_keys)
+    sku_keys = [
+        inventory_sku_key(product_id, brand_id, location_id, ot, cid)
+        for product_id, brand_id, location_id, _bag_type_id, ot, cid in lock_keys
+    ]
+    lock_inventory_sku_rows(db, job.company_id, sku_keys)
 
     _void_powder_inventory_for_batch(db, batch, company_id=job.company_id)
 
-    for line in batch.output_lines:
+    for line in output_lines:
         ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
-        _processing._subtract_for_void(
+        bt = _processing._get_bag_type(db, line.bag_type_id)
+        bags, loose = _line_bags_loose_for_void(line, bt)
+        brand = db.get(Brand, line.brand_id)
+        role = f"output {brand.name}" if brand else "output"
+        _subtract_void_with_label(
             db,
-            job.input_product_id,
-            line.brand_id,
-            line.location_id,
-            line.bag_type_id,
-            line.bag_count,
-            line.loose_kg,
+            role=role,
+            product_id=job.input_product_id,
+            brand_id=line.brand_id,
+            location_id=line.location_id,
+            bag_type_id=line.bag_type_id,
+            bag_count=bags,
+            loose_kg=loose,
             owner_type=ot,
             customer_id=cid,
             company_id=job.company_id,
         )
 
-    for line in batch.balance_return_lines:
+    for line in balance_return_lines:
         ot, cid = _owner_inventory_args(_owner_key_from_stored_owner_line(line))
-        _processing._subtract_for_void(
+        bt = _processing._get_bag_type(db, line.bag_type_id)
+        bags, loose = _line_bags_loose_for_void(line, bt)
+        _subtract_void_with_label(
             db,
-            job.input_product_id,
-            job.input_brand_id,
-            line.location_id,
-            line.bag_type_id,
-            line.bag_count,
-            line.loose_kg,
+            role="balance return",
+            product_id=job.input_product_id,
+            brand_id=job.input_brand_id,
+            location_id=line.location_id,
+            bag_type_id=line.bag_type_id,
+            bag_count=bags,
+            loose_kg=loose,
             owner_type=ot,
             customer_id=cid,
             company_id=job.company_id,
         )
 
-    for line in batch.input_lines:
+    for line in input_lines:
         ot, cid = _owner_inventory_args(_owner_key_from_stored_input(line))
+        bt = _processing._get_bag_type(db, line.bag_type_id)
+        bags, loose = _line_bags_loose_for_void(line, bt)
         _processing.add_inventory(
             db,
             job.input_product_id,
             job.input_brand_id,
             line.location_id,
             line.bag_type_id,
-            line.bag_count,
-            line.loose_kg,
+            bags,
+            loose,
             owner_type=ot,
             customer_id=cid,
             company_id=job.company_id,

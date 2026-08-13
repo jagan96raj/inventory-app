@@ -11,6 +11,11 @@ BALANCE_REPROCESS_NO_STOCK_MSG = (
     "No unclean stock at this location (balance may have been sold)"
 )
 
+LATER_REPROCESS_VOID_MSG = (
+    "Cannot void this batch because a later batch reprocessed its returned balance. "
+    "Void later batches first (newest first), then void this one."
+)
+
 MIXED_EXTERNAL_OWNER_MSG = "Mixed-owner processing is not allowed for external customers"
 
 NO_INPUT_FOR_OUTPUT_MSG = "Cannot allocate output: no input recorded on this job yet"

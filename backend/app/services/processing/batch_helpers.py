@@ -73,12 +73,13 @@ def _batch_has_outflow(
     )
 
 def _kg_to_bags_loose(bt: BagType, kg: Decimal) -> tuple[int, Decimal]:
-    if bt.is_loose:
+    kg = Decimal(kg)
+    if bt.is_loose or bt.weight_per_bag_kg <= 0:
         return 0, kg
-    if bt.weight_per_bag_kg <= 0:
-        return 0, kg
-    bags = int((kg / bt.weight_per_bag_kg).to_integral_value())
+    bags = int(kg // bt.weight_per_bag_kg)
     loose = kg - bt.weight_per_bag_kg * bags
+    if loose < 0:
+        loose = Decimal("0")
     return bags, loose
 
 def _is_loose_processing_line(bt: BagType, line: dict) -> bool:

@@ -46,7 +46,13 @@ from app.services.inventory_lock import (
 
     inventory_row_key,
 
+    inventory_sku_key,
+
+    lock_inventory_product_brand_owner_rows,
+
     lock_inventory_rows,
+
+    lock_inventory_sku_rows,
 
 )
 
@@ -160,7 +166,9 @@ def subtract_inventory(
 
         if bt.is_loose:
 
-            if inv.loose_kg < loose_kg:
+            have = Decimal(inv.loose_kg).quantize(Decimal("0.001"))
+            need = Decimal(loose_kg).quantize(Decimal("0.001"))
+            if have < need:
 
                 raise ValueError("Insufficient stock")
 
@@ -254,6 +262,117 @@ def add_inventory(
 
 
 
+VOID_KG_TOLERANCE = Decimal("0.001")
+
+
+def _void_line_quantity_kg(bt: BagType, bag_count: int, loose_kg: Decimal) -> Decimal:
+    """Kg to reverse: bagged leftover (legacy / rebagged) counts, unlike calc_quantity_kg."""
+    if bt.is_loose:
+        return Decimal(loose_kg)
+    return Decimal(bag_count) * Decimal(bt.weight_per_bag_kg or 0) + Decimal(loose_kg or 0)
+
+
+def _take_kg_from_inventory_row(db: Session, inv: Inventory, kg: Decimal) -> Decimal:
+    """Remove up to ``kg`` from one inventory row (whole bags or loose)."""
+    if kg <= 0:
+        return Decimal("0")
+    bt = _get_bag_type(db, inv.bag_type_id)
+    taken = Decimal("0")
+    if bt.is_loose:
+        on_hand = Decimal(inv.loose_kg or 0)
+        total = Decimal(inv.total_quantity_kg or 0)
+        if total > on_hand:
+            on_hand = total
+            inv.loose_kg = on_hand
+        take = min(on_hand, kg)
+        if take <= 0:
+            return Decimal("0")
+        inv.loose_kg = on_hand - take
+        taken = take
+    else:
+        weight = Decimal(bt.weight_per_bag_kg)
+        if weight <= 0 or inv.bag_count <= 0:
+            return Decimal("0")
+        take_bags = min(int(inv.bag_count), int(kg // weight))
+        if take_bags <= 0:
+            return Decimal("0")
+        inv.bag_count -= take_bags
+        taken = Decimal(take_bags) * weight
+    recalc_inventory_row(inv, bt)
+    db.flush()
+    prune_zero_inventory(db, inv)
+    return taken
+
+
+def _subtract_equivalent_kg_for_void(
+    db: Session,
+    product_id: int,
+    brand_id: int,
+    location_id: int,
+    bag_type_id: int,
+    bag_count: int,
+    loose_kg: Decimal,
+    *,
+    owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
+    customer_id: int | None = None,
+    company_id: int = 1,
+    allow_other_locations: bool = False,
+) -> Decimal:
+    """Reverse void qty by kg at the same SKU when the original bag type was rebagged."""
+    bt = _get_bag_type(db, bag_type_id)
+    needed = _void_line_quantity_kg(bt, bag_count, loose_kg)
+    if needed <= 0:
+        return Decimal("0")
+
+    rows = lock_inventory_sku_rows(
+        db,
+        company_id,
+        [
+            inventory_sku_key(
+                product_id,
+                brand_id,
+                location_id,
+                owner_type,
+                customer_id,
+            )
+        ],
+    )
+    available = sum((Decimal(r.total_quantity_kg or 0) for r in rows), Decimal("0"))
+    if available + VOID_KG_TOLERANCE < needed and allow_other_locations:
+        rows = lock_inventory_product_brand_owner_rows(
+            db,
+            company_id,
+            product_id,
+            brand_id,
+            owner_type,
+            customer_id,
+        )
+        available = sum((Decimal(r.total_quantity_kg or 0) for r in rows), Decimal("0"))
+    if available + VOID_KG_TOLERANCE < needed:
+        raise ValueError(OPERATION_VOID_INSUFFICIENT_STOCK_MSG)
+
+    def _row_sort_key(row: Inventory) -> tuple[int, int, int, int]:
+        other_bt = _get_bag_type(db, row.bag_type_id)
+        return (
+            0 if row.location_id == location_id else 1,
+            0 if row.bag_type_id == bag_type_id else 1,
+            0 if other_bt.is_loose else 1,
+            row.id,
+        )
+
+    ordered = sorted(rows, key=_row_sort_key)
+
+    remaining = needed
+    for inv in ordered:
+        if remaining <= VOID_KG_TOLERANCE:
+            break
+        remaining -= _take_kg_from_inventory_row(db, inv, remaining)
+
+    if remaining > VOID_KG_TOLERANCE:
+        raise ValueError(OPERATION_VOID_INSUFFICIENT_STOCK_MSG)
+    return needed
+
+
 def _subtract_for_void(
     db: Session,
     product_id: int,
@@ -266,9 +385,33 @@ def _subtract_for_void(
     owner_type: InventoryOwnerType | str = InventoryOwnerType.owned,
     customer_id: int | None = None,
     company_id: int = 1,
+    allow_other_locations: bool = False,
 ) -> Decimal:
+    bt = _get_bag_type(db, bag_type_id)
     try:
-        return subtract_inventory(
+        validate_bags_loose(bt, bag_count, loose_kg)
+        line_ok = True
+    except ValueError:
+        line_ok = False
+    if line_ok:
+        try:
+            return subtract_inventory(
+                db,
+                product_id,
+                brand_id,
+                location_id,
+                bag_type_id,
+                bag_count,
+                loose_kg,
+                owner_type=owner_type,
+                customer_id=customer_id,
+                company_id=company_id,
+            )
+        except ValueError as e:
+            if str(e) != "Insufficient stock":
+                raise
+    try:
+        return _subtract_equivalent_kg_for_void(
             db,
             product_id,
             brand_id,
@@ -279,10 +422,11 @@ def _subtract_for_void(
             owner_type=owner_type,
             customer_id=customer_id,
             company_id=company_id,
+            allow_other_locations=allow_other_locations,
         )
-    except ValueError as e:
-        if str(e) == "Insufficient stock":
-            raise ValueError(OPERATION_VOID_INSUFFICIENT_STOCK_MSG) from e
+    except ValueError as fallback_exc:
+        if str(fallback_exc) == OPERATION_VOID_INSUFFICIENT_STOCK_MSG:
+            raise ValueError(OPERATION_VOID_INSUFFICIENT_STOCK_MSG) from fallback_exc
         raise
 
 

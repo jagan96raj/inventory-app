@@ -23,7 +23,7 @@ from app.models.entities import (
     Product,
 )
 from app.services.idempotency import IDEMPOTENCY_KEY_HEADER
-from app.services.operations import OPERATION_ALREADY_VOIDED_MSG, add_inventory
+from app.services.operations import OPERATION_ALREADY_VOIDED_MSG, add_inventory, create_bag_change
 from app.services.processing import (
     complete_job,
     compute_processing_summary,
@@ -32,6 +32,7 @@ from app.services.processing import (
     submit_batch,
     void_processing_batch,
 )
+from app.services.processing.constants import LATER_REPROCESS_VOID_MSG
 from tests.idempotency_helpers import TEST_USER, TEST_VOID_AUTH_PASSWORD, ensure_test_user, idem_void_headers
 
 
@@ -183,8 +184,265 @@ class ProcessingVoidV148Tests(unittest.TestCase):
         )
         self.db.commit()
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ValueError) as ctx:
             void_processing_batch(self.db, batch.id)
+        self.assertIn("output", str(ctx.exception).lower())
+        self.assertIn("Raj Agro", str(ctx.exception))
+
+    def test_void_blocked_when_later_batch_reprocessed_balance(self):
+        """Balance-return kg consumed by a later reprocess must not look like missing polish stock."""
+        job = self._create_job()
+        payload = _zero_batch()
+        payload["input_lines"] = [_input_line(self.m, 10)]
+        payload["balance_return_lines"] = [
+            {
+                "location_id": self.m["location"].id,
+                "bag_type_id": self.m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("50"),
+            }
+        ]
+        submit_batch(self.db, job.id, **payload)
+        batch1 = self.db.scalars(select(ProcessingBatch).where(ProcessingBatch.job_id == job.id)).one()
+
+        reprocess = _zero_batch()
+        reprocess["input_lines"] = [
+            {
+                "location_id": self.m["location"].id,
+                "bag_type_id": self.m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("50"),
+                "owner_type": "owned",
+                "input_source": "balance_reprocess",
+            }
+        ]
+        submit_batch(self.db, job.id, **reprocess)
+
+        with self.assertRaises(ValueError) as ctx:
+            void_processing_batch(self.db, batch1.id)
+        self.assertEqual(str(ctx.exception), LATER_REPROCESS_VOID_MSG)
+
+    def test_void_grader_rejection_loose_plus_balance_return_loose(self):
+        """Batch 15: grader rejection 155 + Unclean balance return 111; both outputs come off stock."""
+        m = self.m
+        grader = Brand(name="Grader rejection")
+        self.db.add(grader)
+        self.db.flush()
+        add_inventory(
+            self.db,
+            m["product"].id,
+            m["brand"].id,
+            m["location"].id,
+            m["bag_loose"].id,
+            0,
+            Decimal("300"),
+        )
+        self.db.commit()
+        job = self._create_job()
+        fresh = _zero_batch()
+        fresh["input_lines"] = [
+            {
+                "location_id": m["location"].id,
+                "bag_type_id": m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("300"),
+                "owner_type": "owned",
+            }
+        ]
+        submit_batch(self.db, job.id, **fresh)
+
+        later = _zero_batch()
+        later["output_lines"] = [
+            {
+                "brand_id": grader.id,
+                "location_id": m["location"].id,
+                "bag_type_id": m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("155"),
+            }
+        ]
+        later["balance_return_lines"] = [
+            {
+                "location_id": m["location"].id,
+                "bag_type_id": m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("111"),
+            }
+        ]
+        submit_batch(self.db, job.id, **later)
+        batch = self.db.scalars(
+            select(ProcessingBatch)
+            .where(ProcessingBatch.job_id == job.id)
+            .order_by(ProcessingBatch.id.desc())
+        ).first()
+        assert batch is not None
+        complete_job(self.db, job.id, **_zero_batch())
+
+        grader_inv = self.db.scalar(
+            select(Inventory).where(
+                Inventory.brand_id == grader.id,
+                Inventory.bag_type_id == m["bag_loose"].id,
+            )
+        )
+        unclean_inv = self.db.scalar(
+            select(Inventory).where(
+                Inventory.brand_id == m["brand"].id,
+                Inventory.bag_type_id == m["bag_loose"].id,
+            )
+        )
+        assert grader_inv is not None
+        assert unclean_inv is not None
+        self.assertEqual(grader_inv.loose_kg, Decimal("155"))
+        self.assertEqual(unclean_inv.loose_kg, Decimal("111"))
+
+        void_processing_batch(self.db, batch.id)
+
+        grader_after = self.db.scalar(
+            select(Inventory).where(
+                Inventory.brand_id == grader.id,
+                Inventory.bag_type_id == m["bag_loose"].id,
+            )
+        )
+        unclean_after = self.db.scalar(
+            select(Inventory).where(
+                Inventory.brand_id == m["brand"].id,
+                Inventory.bag_type_id == m["bag_loose"].id,
+            )
+        )
+        self.assertTrue(grader_after is None or grader_after.loose_kg == Decimal("0"))
+        self.assertTrue(unclean_after is None or unclean_after.loose_kg == Decimal("0"))
+        job = load_processing_job(self.db, job.id)
+        self.assertEqual(job.status, ProcessingJobStatus.open)
+
+    def test_void_grader_loose_when_pile_moved_to_other_location(self):
+        """Grader 155 still on hand at another godown must reverse (processing-only fallback)."""
+        m = self.m
+        grader = Brand(name="Grader rejection")
+        other = Location(name="Godown")
+        self.db.add_all([grader, other])
+        self.db.flush()
+        add_inventory(
+            self.db,
+            m["product"].id,
+            m["brand"].id,
+            m["location"].id,
+            m["bag_loose"].id,
+            0,
+            Decimal("300"),
+        )
+        self.db.commit()
+        job = self._create_job()
+        fresh = _zero_batch()
+        fresh["input_lines"] = [
+            {
+                "location_id": m["location"].id,
+                "bag_type_id": m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("300"),
+                "owner_type": "owned",
+            }
+        ]
+        submit_batch(self.db, job.id, **fresh)
+        later = _zero_batch()
+        later["output_lines"] = [
+            {
+                "brand_id": grader.id,
+                "location_id": m["location"].id,
+                "bag_type_id": m["bag_loose"].id,
+                "bag_count": 0,
+                "loose_kg": Decimal("155"),
+            }
+        ]
+        submit_batch(self.db, job.id, **later)
+        batch = self.db.scalars(
+            select(ProcessingBatch)
+            .where(ProcessingBatch.job_id == job.id)
+            .order_by(ProcessingBatch.id.desc())
+        ).first()
+        assert batch is not None
+        grader_inv = self.db.scalar(
+            select(Inventory).where(
+                Inventory.brand_id == grader.id,
+                Inventory.location_id == m["location"].id,
+            )
+        )
+        assert grader_inv is not None
+        grader_inv.location_id = other.id
+        self.db.commit()
+        complete_job(self.db, job.id, **_zero_batch())
+
+        void_processing_batch(self.db, batch.id)
+
+        grader_after = self.db.scalar(
+            select(Inventory).where(Inventory.brand_id == grader.id)
+        )
+        self.assertTrue(grader_after is None or grader_after.loose_kg == Decimal("0"))
+
+    def test_void_output_after_rebag_to_loose_on_completed_job(self):
+        """Output kg still on hand as a different bag type must reverse (not false insufficient)."""
+        job = self._create_job()
+        payload = _zero_batch()
+        payload["input_lines"] = [_input_line(self.m, 10)]
+        submit_batch(self.db, job.id, **payload)
+        out_payload = _zero_batch()
+        out_payload["output_lines"] = [_output_line(self.m, 8)]
+        submit_batch(self.db, job.id, **out_payload)
+        batch = self.db.scalars(
+            select(ProcessingBatch).where(ProcessingBatch.job_id == job.id).order_by(ProcessingBatch.id.desc())
+        ).first()
+        assert batch is not None
+
+        create_bag_change(
+            self.db,
+            location_id=self.m["location"].id,
+            product_id=self.m["product"].id,
+            brand_id=self.m["out_brand"].id,
+            from_bag_type_id=self.m["bag_50"].id,
+            from_bag_count=8,
+            from_loose_kg=Decimal("0"),
+            quantity_loss_kg=Decimal("0"),
+            to_lines=[
+                {
+                    "to_bag_type_id": self.m["bag_loose"].id,
+                    "bag_count": 0,
+                    "loose_kg": Decimal("400"),
+                }
+            ],
+            notes=None,
+        )
+        complete_job(self.db, job.id, **_zero_batch())
+
+        void_processing_batch(self.db, batch.id)
+
+        out_bags = self.db.scalar(
+            select(Inventory).where(
+                Inventory.product_id == self.m["product"].id,
+                Inventory.brand_id == self.m["out_brand"].id,
+                Inventory.bag_type_id == self.m["bag_50"].id,
+            )
+        )
+        out_loose = self.db.scalar(
+            select(Inventory).where(
+                Inventory.product_id == self.m["product"].id,
+                Inventory.brand_id == self.m["out_brand"].id,
+                Inventory.bag_type_id == self.m["bag_loose"].id,
+            )
+        )
+        self.assertTrue(out_bags is None or out_bags.bag_count == 0)
+        self.assertTrue(out_loose is None or out_loose.loose_kg == Decimal("0"))
+
+        inp = self.db.scalar(
+            select(Inventory).where(
+                Inventory.product_id == self.m["product"].id,
+                Inventory.brand_id == self.m["brand"].id,
+                Inventory.bag_type_id == self.m["bag_50"].id,
+            )
+        )
+        assert inp is not None
+        self.assertEqual(inp.bag_count, 10)
+
+        job = load_processing_job(self.db, job.id)
+        self.assertEqual(job.status, ProcessingJobStatus.open)
 
     def test_void_on_completed_job_reopens(self):
         job = self._create_job()

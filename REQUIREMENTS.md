@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.17** (cream app icons); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.18** (processing void kg reverse); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.18** — Processing batch void: reverse by equivalent kg when the original bag type is empty but the same product/brand/owner still has the kg (same location first, then other locations). Names the failing line. Transfer/bag-change/disposal voids stay location-strict. See **Spec v17.3.18** below.
 - **v17.3.17** — App icons (clip + invert): rebuild centered emblem-only `logo-icon.png` (four-grain mark, no tractor scraps); OS icons on visiting-card cream `#E7E8E3` with dark olive `#586038` ink and ~24% pad so rounded masks don’t clip tips. See **Spec v17.3.17** below.
 - **v17.3.16** — App icons: regenerate Windows `desktop-shell/icon.png` + `icon.ico` and add `apple-touch-icon.png` from emblem-only `logo-icon.png` — square canvas, letterboxed (~15% pad) on solid `#586038` (no stretch / no full-transparency). Favicon padded the same way. Script: `scripts/generate_app_icons.py`. See **Spec v17.3.16** below.
 - **v17.3.15** — Brand theme: replace indigo/violet/blue-lavender with Raj Agro logo olive/sage greens (Tailwind `primary`, CSS tokens, AuthShell/PageHeader/FAB gradients, legacy Aurora CSS aliases, `theme-color`). Light canvas warm-green tinted; dark olive-readable. No business logic. See **Spec v17.3.15** below.
@@ -3358,6 +3359,18 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.18 — Processing void: reverse equivalent kg + name the missing line
+
+**Problem:** Voiding a processing batch raised “Cannot void — stock no longer available to reverse” even when the piles the operator was looking at were still there (e.g. grader rejection loose 155 and Unclean balance-return loose 111 — both outputs, both come off stock). Common causes: (1) original bag type empty after a bag-change; (2) same kg at another location; (3) void actually failing on **powder / another output brand**; (4) a **later batch reprocessed** this batch’s returned unclean.
+
+**Solution:**
+- Reverse by equivalent kg at the same product + brand + owner (prefer original location and bag type, then other bag types, then other locations). Transfer / bag-change / disposal voids do **not** take kg from other locations.
+- Error names the failing line (`powder` / `output <brand>` / `balance return`) with need vs have kg (here / all locations).
+- If a later batch reprocessed this batch’s balance return: tell the operator to void later batches first (newest first).
+- Load batch collections with `selectinload` (not `joinedload` + `scalar`).
+
+**Unchanged:** Completed-job reopen rules (v17.3.1); APIs; transfer/bag-change/disposal void rules.
 
 ## Spec v17.3.16 — Square app icons (Windows + Apple touch)
 
