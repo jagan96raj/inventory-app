@@ -68,9 +68,9 @@ export default function Tabs({
               type="button"
               onClick={() => setActive(tab.props.id)}
               className={cn(
-                "inline-flex items-center gap-2 font-semibold transition-all",
+                "inline-flex items-center gap-2 whitespace-nowrap font-semibold transition-all",
                 "outline-none focus-visible:ring-2 focus-visible:ring-primary-500/35 focus-visible:ring-offset-1 focus-visible:ring-offset-surface",
-                size === "xl" ? "text-xl" : size === "lg" ? "text-lg" : "text-base",
+                size === "xl" ? "text-lg" : size === "lg" ? "text-base" : "text-sm",
                 variant === "underline"
                   ? cn(
                       size === "xl"

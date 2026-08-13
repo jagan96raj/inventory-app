@@ -18,7 +18,7 @@ import { cn } from "../../lib/cn";
 
 const CELL = "px-4 py-2.5 align-middle text-sm";
 const NUM = cn(CELL, "text-right");
-const HEAD = "px-4 py-2.5 align-middle whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-ink-muted";
+const HEAD = "whitespace-nowrap px-3 py-2 align-middle text-xs font-semibold uppercase tracking-wide text-ink-muted";
 const HEAD_LEFT = cn(HEAD, "text-left");
 const HEAD_NUM = cn(HEAD, "text-right");
 const HEAD_CENTER = cn(HEAD, "text-center");

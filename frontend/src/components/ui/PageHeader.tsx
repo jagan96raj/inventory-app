@@ -62,7 +62,7 @@ export default function PageHeader({
               {eyebrow}
             </p>
           )}
-          <h1 className="truncate bg-gradient-to-r from-primary-900 via-primary-700 to-primary-600 bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl dark:from-primary-100 dark:via-primary-200 dark:to-primary-100">
+          <h1 className="truncate whitespace-nowrap bg-gradient-to-r from-primary-900 via-primary-700 to-primary-600 bg-clip-text text-lg font-bold tracking-tight text-transparent sm:text-xl dark:from-primary-100 dark:via-primary-200 dark:to-primary-100">
             {title}
           </h1>
           {subtitle && (

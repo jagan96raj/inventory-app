@@ -38,7 +38,7 @@ export function OperationSection({
           </span>
         )}
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-ink">{title}</h3>
+          <h3 className="truncate whitespace-nowrap text-base font-semibold text-ink">{title}</h3>
           {subtitle && <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>}
         </div>
       </div>

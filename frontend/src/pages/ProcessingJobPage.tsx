@@ -107,9 +107,9 @@ import {
 
 type TabId = "input" | "output" | "waste" | "summary" | "batches";
 
-const PROCESSING_LAYOUT_GUTTER_FR = 3;
-const PROCESSING_LAYOUT_CONTENT_FR = 71;
-const PROCESSING_LAYOUT_SNAPSHOT_FR = 25;
+const PROCESSING_LAYOUT_GUTTER_FR = 2;
+const PROCESSING_LAYOUT_CONTENT_FR = 80;
+const PROCESSING_LAYOUT_SNAPSHOT_FR = 16;
 const PROCESSING_LAYOUT_TOTAL_FR =
   PROCESSING_LAYOUT_GUTTER_FR * 2 + PROCESSING_LAYOUT_CONTENT_FR + PROCESSING_LAYOUT_SNAPSHOT_FR;
 
@@ -224,7 +224,7 @@ function ProcessingSection({
   return (
     <div className={cn("space-y-4 rounded-2xl border border-line/80 bg-surface-subtle/25 p-5", className)}>
       <div>
-        <h4 className="text-lg font-semibold text-ink">{title}</h4>
+        <h4 className="truncate whitespace-nowrap text-base font-semibold text-ink">{title}</h4>
         {subtitle && <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>}
       </div>
       {children}
@@ -1268,7 +1268,7 @@ export default function ProcessingJobPage() {
             </Link>
           }
         />
-        <div className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[3fr_71fr_3fr_25fr]">
+        <div className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[2fr_80fr_2fr_16fr]">
           <div className="hidden lg:col-start-2 lg:block">
             <div className="space-y-4">
               <Skeleton className="h-12 w-full rounded-xl" />
@@ -1334,10 +1334,10 @@ export default function ProcessingJobPage() {
       <div className="min-w-0">
         <div
           ref={layoutGridRef}
-          className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[3fr_71fr_3fr_25fr]"
+          className="grid min-w-0 grid-cols-1 items-start lg:grid-cols-[2fr_80fr_2fr_16fr]"
         >
           <div className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1">
-            <div className="sticky top-16 z-20 -mx-1 mb-1 rounded-2xl border border-line/60 bg-[rgb(var(--canvas)/0.94)] px-3 py-3 shadow-sm backdrop-blur-md sm:px-4">
+            <div className="sticky top-16 z-10 -mx-1 mb-1 rounded-2xl border border-line/60 bg-[rgb(var(--canvas)/0.94)] px-3 py-3 shadow-sm backdrop-blur-md sm:px-4">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1 pt-0.5">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-300">
@@ -1400,7 +1400,7 @@ export default function ProcessingJobPage() {
               value={activeTab}
               onChange={(id) => setActiveTab(id as TabId)}
               variant="pill"
-              size="lg"
+              size="md"
               className="min-w-0"
             >
         <Tab id="input" label="Input batch" badge={activeBatchCount > 0 ? activeBatchCount : undefined}>
@@ -2430,7 +2430,7 @@ export default function ProcessingJobPage() {
 
         {summary && fixedSnapshotBox ? (
           <div
-            className="pointer-events-none fixed z-30 hidden lg:block"
+            className="pointer-events-none fixed z-20 hidden lg:block"
             style={{
               top: "5rem",
               bottom: "1.5rem",
@@ -2686,8 +2686,10 @@ function SummaryMetricRow({
 
   return (
     <div className={cn("flex flex-col gap-1 rounded-xl border px-3 py-2.5", toneClass)}>
-      <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{label}</span>
-      <span className="v2-mono break-words text-base font-bold leading-snug text-ink">
+      <span className="truncate whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        {label}
+      </span>
+      <span className="v2-mono break-words text-sm font-bold leading-snug text-ink">
         {value}
         {entryCount != null && entryCount > 0 ? (
           <span className="ml-1.5 text-sm font-semibold text-ink-muted">({entryCount})</span>
@@ -2998,14 +3000,14 @@ function SummarySidebar({
   );
 
   const header = (
-    <div className="flex items-start justify-between gap-2 border-b border-line/50 px-4 py-3">
+    <div className="flex items-start justify-between gap-2 border-b border-line/50 px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md">
-          <Layers className="h-4 w-4" aria-hidden="true" />
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md">
+          <Layers className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="text-base font-semibold text-ink">Job snapshot</p>
-          <p className="text-sm text-ink-muted">Active batches only — voided excluded</p>
+          <p className="truncate whitespace-nowrap text-sm font-semibold text-ink">Job snapshot</p>
+          <p className="truncate text-xs text-ink-muted">Active batches only</p>
         </div>
       </div>
       {warn ? (
@@ -3029,10 +3031,10 @@ function SummarySidebar({
         <summary className="cursor-pointer list-none px-4 py-3 marker:content-none [&::-webkit-details-marker]:hidden">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md">
-                <Layers className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <span className="text-base font-semibold text-ink">Job snapshot</span>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-md">
+          <Layers className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+              <span className="truncate whitespace-nowrap text-sm font-semibold text-ink">Job snapshot</span>
             </div>
             <span className="text-sm text-ink-muted group-open:hidden">Tap to expand</span>
             <span className="hidden text-sm text-ink-muted group-open:inline">Tap to collapse</span>
@@ -3046,7 +3048,7 @@ function SummarySidebar({
       <aside className={layout === "both" ? "hidden lg:block" : undefined}>
         <div className={shellClass}>
           {header}
-          <div className="px-4 py-4">{body}</div>
+          <div className="px-3 py-3">{body}</div>
         </div>
       </aside>
       )}

@@ -77,13 +77,13 @@
 }
 
 @layer base {
-  /* Default ~15px root — slightly tighter than browser 16px */
+  /* Default ~14px root — keeps headings and table labels on one line */
   html:has(body.app-shell-v2) {
-    font-size: 93.75%;
+    font-size: 87.5%;
   }
 
   html:has(body.app-shell-v2)[data-density="compact"] {
-    font-size: 87.5%;
+    font-size: 81.25%;
   }
 
   html {
@@ -270,8 +270,8 @@
     table-layout: auto;
     width: 100%;
     border-collapse: collapse;
-    font-size: 1.0625rem;
-    line-height: 1.5;
+    font-size: 0.9375rem;
+    line-height: 1.45;
   }
 
   body.app-shell-v2 .v2-data-table th,
@@ -279,7 +279,7 @@
     vertical-align: middle;
     overflow-wrap: anywhere;
     word-break: break-word;
-    padding: 1rem 1.25rem;
+    padding: 0.75rem 1rem;
   }
 
   body.app-shell-v2 .v2-data-table th.whitespace-nowrap,
@@ -289,12 +289,15 @@
   }
 
   body.app-shell-v2 .v2-data-table thead th {
-    font-size: 1rem;
+    font-size: 0.8125rem;
     font-weight: 600;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
     text-transform: uppercase;
-    padding-top: 0.9rem;
-    padding-bottom: 0.9rem;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
   }
 
   body.app-shell-v2 .v2-data-table .v2-mono {
@@ -397,14 +400,15 @@
   body.app-shell-v2 .v2-table-frame thead th {
     background: rgb(var(--surface-subtle));
     color: rgb(var(--ink-subtle));
-    font-size: 1rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
     border-bottom: 1px solid rgb(var(--line));
     box-shadow: none;
-    padding-top: 0.9rem;
-    padding-bottom: 0.9rem;
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
   }
 
   body.app-shell-v2 .v2-table-frame tbody tr:hover td {

@@ -185,7 +185,7 @@ function UserMenu() {
         leaveFrom="opacity-100 scale-100"
         leaveTo="opacity-0 scale-95"
       >
-        <Menu.Items className="absolute right-0 z-50 mt-2 w-64 origin-top-right overflow-hidden rounded-xl border border-line bg-surface shadow-lg focus:outline-none">
+        <Menu.Items className="absolute right-0 z-[60] mt-2 w-64 origin-top-right overflow-hidden rounded-xl border border-line bg-surface shadow-lg focus:outline-none">
           <div className="border-b border-line px-3 py-3">
             <p className="truncate text-sm font-semibold text-ink">{user?.name || "Signed in"}</p>
             <p className="truncate text-xs text-ink-muted">{user?.email}</p>
@@ -292,7 +292,7 @@ export default function Topbar({ onOpenSidebar, onOpenPalette }: Props) {
   return (
     <header
       className={cn(
-        "sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-line v2-glass px-4 sm:px-6"
+        "sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-line v2-glass px-4 sm:px-6"
       )}
     >
       <IconButton label="Open menu" size="sm" onClick={onOpenSidebar} className="lg:hidden">

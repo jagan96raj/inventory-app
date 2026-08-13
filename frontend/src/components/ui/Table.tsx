@@ -70,9 +70,8 @@ export default function Table<T>({
                 key={c.key}
                 scope="col"
                 className={cn(
-                  "border-b border-line px-5 py-3.5 align-middle",
+                  "whitespace-nowrap border-b border-line px-4 py-3 align-middle",
                   alignClass(c.align ?? (c.numeric ? "right" : "left")),
-                  c.numeric && "whitespace-nowrap",
                   c.className
                 )}
               >

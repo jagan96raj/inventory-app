@@ -58,7 +58,7 @@ export default function SegmentedControl<T extends string>({
                 : "font-medium text-ink-muted hover:bg-surface/60 hover:text-ink"
             )}
           >
-            <span>{o.label}</span>
+            <span className="whitespace-nowrap">{o.label}</span>
             {o.hint && size === "lg" && (
               <span className={cn("text-xs uppercase tracking-wider", active ? "text-ink-subtle" : "text-ink-subtle/80")}>
                 {o.hint}

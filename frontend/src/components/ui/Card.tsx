@@ -46,7 +46,11 @@ export function CardHeader({
   return (
     <div className={cn("flex flex-col gap-3 px-4 pt-4 sm:flex-row sm:items-start sm:justify-between sm:gap-3 sm:px-5 sm:pt-5", className)}>
       <div className="min-w-0">
-        {title && <h3 className="text-lg font-semibold tracking-tight text-primary-900 dark:text-primary-100">{title}</h3>}
+        {title && (
+          <h3 className="truncate whitespace-nowrap text-base font-semibold tracking-tight text-primary-900 dark:text-primary-100">
+            {title}
+          </h3>
+        )}
         {subtitle && <p className="mt-1 text-sm text-primary-800/80 sm:text-base dark:text-primary-200/80">{subtitle}</p>}
       </div>
       {actions && (
