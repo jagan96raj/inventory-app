@@ -1,8 +1,16 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 15 Aug 2026 — covers Spec v5.4 through **v17.3.19**; backend v12.21 + v12.22  
+**Last updated:** 15 Aug 2026 — covers Spec v5.4 through **v17.3.20**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.20 — Customer list credit/debit totals
+
+1. **Customers** — `/customers` shows two KPI cards above the table: Total credit (I owe) and Total debit (they owe), `formatInr`. Values match the sum of all matching rows, not just the current page.
+2. **Search** — Filter by name; totals drop to that subset only.
+3. **Accounts** — Customer balances page shows the same totals for the current search / has-balance filter.
+4. **Unchanged** — Per-row balances; opening balance on create only; no Alembic.
+5. **Automated** — `python -m unittest tests.test_customer_list_totals_v17320`.
 
 ## v17.3.19 — In-app backup download
 

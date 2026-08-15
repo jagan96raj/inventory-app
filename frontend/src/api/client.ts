@@ -284,6 +284,10 @@ export type Customer = {
   credit_balance: string;
   debit_balance: string;
 };
+export type CustomerPage = PageOut<Customer> & {
+  credit_total: string;
+  debit_total: string;
+};
 export type InventoryOwnerType = "owned" | "job_work";
 
 export type InventoryRow = {
@@ -1088,6 +1092,11 @@ export type CustomerBalanceRow = {
   last_activity_at: string | null;
 };
 
+export type CustomerBalancePage = PageOut<CustomerBalanceRow> & {
+  credit_total: string;
+  debit_total: string;
+};
+
 export type CustomerStatementRow = {
   event_at: string;
   event_date: string;
@@ -1262,7 +1271,7 @@ export const accountsApi = {
   summary: () =>
     api.get<AccountsSummary>(`/api/accounts/summary${qs({ _: Date.now() })}`),
   customers: (p: ListParams & { has_balance?: "any" | "positive" | "zero" } = {}) =>
-    api.get<PageOut<CustomerBalanceRow>>(
+    api.get<CustomerBalancePage>(
       `/api/accounts/customers${qs({
         limit: p.limit ?? DEFAULT_PAGE_LIMIT,
         offset: p.offset ?? 0,

@@ -12,7 +12,7 @@ from app.core.tenant import company_id_for_user, require_for_company, scope_quer
 from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
 from app.database import get_db
 from app.models.entities import BagType, Brand, Customer, Location, Product, User
-from app.services.customer_search import apply_customer_search
+from app.services.customer_search import apply_customer_search, sum_customer_balances
 from app.schemas import (
     BagTypeCreate,
     BagTypeOut,
@@ -517,6 +517,10 @@ def list_customers(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    company_id = company_id_for_user(user)
+    credit_total, debit_total = sum_customer_balances(
+        db, company_id=company_id, search=search
+    )
     return CustomerPageOut(
         **_paginated_master_list(
             db,
@@ -527,7 +531,9 @@ def list_customers(
             offset=offset,
             search=search,
             apply_search=apply_customer_search,
-        )
+        ),
+        credit_total=credit_total,
+        debit_total=debit_total,
     )
 
 

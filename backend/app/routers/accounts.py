@@ -22,6 +22,7 @@ from app.services.accounts import (
     get_customer_statement,
     list_customer_balances_query,
 )
+from app.services.customer_search import sum_customer_balances
 
 router = APIRouter(
     prefix="/accounts",
@@ -60,7 +61,14 @@ def customer_balances_endpoint(
     items = [
         CustomerBalanceRowOut(**customer_to_row(db, c, company_id=company_id)) for c in rows
     ]
-    return CustomerBalancePageOut(**page_dict(items, total, limit, offset))
+    credit_total, debit_total = sum_customer_balances(
+        db, company_id=company_id, search=search, has_balance=has_balance
+    )
+    return CustomerBalancePageOut(
+        **page_dict(items, total, limit, offset),
+        credit_total=credit_total,
+        debit_total=debit_total,
+    )
 
 
 @router.get("/customers/{customer_id}/statement", response_model=CustomerStatementPageOut)

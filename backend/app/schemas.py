@@ -1482,7 +1482,8 @@ class BagTypePageOut(PageOut[BagTypeOut]):
 
 
 class CustomerPageOut(PageOut[CustomerOut]):
-    pass
+    credit_total: Decimal
+    debit_total: Decimal
 
 
 class InventoryPageOut(PageOut[InventoryOut]):
@@ -1812,7 +1813,8 @@ class CustomerBalanceRowOut(BaseModel):
 
 
 class CustomerBalancePageOut(PageOut[CustomerBalanceRowOut]):
-    pass
+    credit_total: Decimal
+    debit_total: Decimal
 
 
 class CustomerStatementEventOut(BaseModel):

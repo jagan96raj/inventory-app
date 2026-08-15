@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { MapPin, Pencil, Plus, Trash2, User } from "lucide-react";
+import { HandCoins, MapPin, Pencil, Plus, Trash2, User, Users } from "lucide-react";
 import { DEFAULT_PAGE_LIMIT, newIdempotencyKey } from "../api/client";
 import { formatInr } from "../lib/format";
 import {
@@ -22,6 +22,7 @@ import VoidConfirmDialog from "./ui/VoidConfirmDialog";
 import Modal from "./ui/Modal";
 import Badge from "./ui/Badge";
 import PaginationBar from "./ui/PaginationBar";
+import Stat from "./ui/Stat";
 import { toast } from "./ui/Toaster";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
 
@@ -116,6 +117,8 @@ export default function PartyMasterCrud<T extends { id: number }>({
   const { guardedSubmit, submitDisabled } = useSubmitGuard();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [creditTotal, setCreditTotal] = useState<string | null>(null);
+  const [debitTotal, setDebitTotal] = useState<string | null>(null);
   const limit = DEFAULT_PAGE_LIMIT;
 
   useEffect(() => {
@@ -137,9 +140,12 @@ export default function PartyMasterCrud<T extends { id: number }>({
       .then((page) => {
         setRows(page.items);
         setTotal(page.total);
+        const extra = page as typeof page & { credit_total?: string; debit_total?: string };
+        setCreditTotal(kind === "customer" ? extra.credit_total ?? "0" : null);
+        setDebitTotal(kind === "customer" ? extra.debit_total ?? "0" : null);
       })
       .catch((e) => setError(e.message));
-  }, [path, limit, offset, searchable, debouncedSearch]);
+  }, [path, limit, offset, searchable, debouncedSearch, kind]);
 
   useEffect(() => {
     load();
@@ -309,6 +315,24 @@ export default function PartyMasterCrud<T extends { id: number }>({
             </Badge>
           </div>
         </div>
+        {kind === "customer" && creditTotal != null && debitTotal != null && (
+          <div className="grid grid-cols-1 gap-3 border-b border-line px-4 py-3 sm:grid-cols-2 sm:px-5">
+            <Stat
+              label="Total credit (I owe)"
+              value={formatInr(creditTotal)}
+              icon={<Users />}
+              tone="warning"
+              footer="Sum of credit balances in this list (not just this page)"
+            />
+            <Stat
+              label="Total debit (they owe)"
+              value={formatInr(debitTotal)}
+              icon={<HandCoins />}
+              tone="success"
+              footer="Sum of debit balances in this list (not just this page)"
+            />
+          </div>
+        )}
         {rows.length === 0 && total === 0 ? (
           <CardBody>
             <EmptyState

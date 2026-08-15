@@ -26,7 +26,7 @@ from app.models.entities import (
     PaymentMode,
     Product,
 )
-from app.services.customer_search import apply_customer_search
+from app.services.customer_search import apply_customer_search, sum_customer_balances
 
 
 # ---------------------------------------------------------------------------
@@ -416,21 +416,13 @@ def get_total_bank_balance(db: Session, *, company_id: int = 1) -> Decimal:
 
 
 def total_customer_credit(db: Session, *, company_id: int = 1) -> Decimal:
-    val = db.scalar(
-        select(func.coalesce(func.sum(Customer.credit_balance), 0)).where(
-            Customer.company_id == company_id
-        )
-    ) or 0
-    return Decimal(str(val)).quantize(Decimal("0.01"))
+    credit, _ = sum_customer_balances(db, company_id=company_id)
+    return credit
 
 
 def total_customer_debit(db: Session, *, company_id: int = 1) -> Decimal:
-    val = db.scalar(
-        select(func.coalesce(func.sum(Customer.debit_balance), 0)).where(
-            Customer.company_id == company_id
-        )
-    ) or 0
-    return Decimal(str(val)).quantize(Decimal("0.01"))
+    _, debit = sum_customer_balances(db, company_id=company_id)
+    return debit
 
 
 def get_accounts_summary(db: Session, *, company_id: int = 1, recent_limit: int = 10) -> dict:

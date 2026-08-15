@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FileSearch, Users } from "lucide-react";
+import { FileSearch, HandCoins, Users } from "lucide-react";
 import {
   accountsApi,
   DEFAULT_PAGE_LIMIT,
@@ -16,6 +16,7 @@ import { Card, CardBody } from "../../components/ui/Card";
 import PaginationBar from "../../components/ui/PaginationBar";
 import Select from "../../components/ui/Select";
 import Input from "../../components/ui/Input";
+import Stat from "../../components/ui/Stat";
 import Table, { type Column } from "../../components/ui/Table";
 
 type Filter = "any" | "positive" | "zero";
@@ -24,6 +25,8 @@ export default function CustomerBalancesPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<CustomerBalanceRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [creditTotal, setCreditTotal] = useState("0");
+  const [debitTotal, setDebitTotal] = useState("0");
   const [offset, setOffset] = useState(0);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("any");
@@ -46,6 +49,8 @@ export default function CustomerBalancesPage() {
       .then((page) => {
         setRows(page.items);
         setTotal(page.total);
+        setCreditTotal(page.credit_total);
+        setDebitTotal(page.debit_total);
       })
       .catch((e) => setError(e.message));
   }, [filter, debounced, limit, offset]);
@@ -161,6 +166,23 @@ export default function CustomerBalancesPage() {
           </div>
         </CardBody>
       </Card>
+
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Stat
+          label="Total credit (I owe)"
+          value={formatInr(creditTotal)}
+          icon={<Users />}
+          tone="warning"
+          footer="Same meaning as Accounts dashboard — filtered set, not this page only"
+        />
+        <Stat
+          label="Total debit (they owe)"
+          value={formatInr(debitTotal)}
+          icon={<HandCoins />}
+          tone="success"
+          footer="Same meaning as Accounts dashboard — filtered set, not this page only"
+        />
+      </div>
 
       {rows.length === 0 && total === 0 ? (
         <Card>

@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 15 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.19** (in-app backup download); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.20** (customer list credit/debit totals); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.20** — `/customers` KPI cards: **Total credit (I owe)** = `SUM(credit_balance)`, **Total debit (they owe)** = `SUM(debit_balance)` over the full filtered set (search), not the current page. Same meaning as Accounts dashboard. `GET /api/customers` returns `credit_total` / `debit_total` on `CustomerPageOut`. Same totals on Customer balances (`GET /api/accounts/customers`). No migration. See **Spec v17.3.20** below.
 - **v17.3.19** — In-app **Download backup** (owner / `users_manage` only) on Profile: `GET /api/admin/backup` dumps via `pg_dump -Fc` to a file in the Postgres container, then `docker compose cp` to the API host (same pattern as `scripts/backup_db.ps1`). `pg_dump -Fc -f -` is empty on Lightsail. Saves `graintrack-YYYY-MM-DD_HHmm.dump` on the device. No restore API. See **Spec v17.3.19** below.
 - **v17.3.18** — Processing batch void: reverse by equivalent kg when the original bag type is empty but the same product/brand/owner still has the kg (same location first, then other locations). Names the failing line. Transfer/bag-change/disposal voids stay location-strict. See **Spec v17.3.18** below.
 - **v17.3.17** — App icons (clip + invert): rebuild centered emblem-only `logo-icon.png` (four-grain mark, no tractor scraps); OS icons on visiting-card cream `#E7E8E3` with dark olive `#586038` ink and ~24% pad so rounded masks don’t clip tips. See **Spec v17.3.17** below.
@@ -311,7 +312,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/inventory` | `InventoryPage` | Location-grouped tables with product `rowspan` column; low-stock amber highlight; add opening stock via `Modal` only. **v13.1:** larger product names; canvas background. | **#3 v12.1** opening qty only; PUT rejected; **#12 v12.3** row locking. |
 | `/operations/processing`, `/operations/processing/:id` | `ProcessingListPage`, `ProcessingJobPage` | Open job in `Modal`; job detail with compact summary strip, **At a glance** In/Out/Balance panel, collapsible batch log. | **#8 v9.4** reprocess guard hidden when no balance returned; **v9.3** mass-balance enforced. |
 | `/operations/bag-change`, `/operations/product-transfer`, `/operations/stock-disposal` and their `/histories/*` | `BagChangePage`, `ProductTransferPage`, `StockDisposalPage` + history pages | Sectioned forms via `OperationFormBlocks` (`OperationSection`, balance/flow hints, sticky footers). | — |
-| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page; **v17.3.11** cards below `lg` + FAB. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
+| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page; **v17.3.11** cards below `lg` + FAB. **v17.3.20** `/customers` credit/debit total Stat cards. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
 
 ### Accessibility commitments
 - Focus rings via `:focus-visible` with 2-px primary halo on the new `body.app-shell-v2`.
@@ -1549,7 +1550,7 @@ POST   /api/bills/{id}/void                              # idempotent + X-Void-A
 | `/accounts/cashbook` | `CashBookListPage` | Aligned table (Date, Entry, Amount, Payment, Bill, Status, icon actions); filter grid with Clear filters |
 | `/accounts/cashbook/new` | `CashBookEntryFormPage` | Segmented control Expense / Income / Transfer; bill picker; bank dropdown |
 | `/accounts/cashbook/:id/edit` | `CashBookEntryFormPage` (editing) | Pre-filled; sends `expected_version` |
-| `/accounts/customers` | `CustomerBalancesPage` | Paginated; net credit / debit / net; search name + phones; click → statement; **v17.3.12** cards below `lg` |
+| `/accounts/customers` | `CustomerBalancesPage` | Paginated; net credit / debit / net; search name + phones; click → statement; **v17.3.12** cards below `lg`; **v17.3.20** filtered credit/debit totals |
 | `/accounts/customers/:id` | `CustomerStatementPage` | Date-ranged chronological events with running balance; **v17.3.12** cards below `lg` |
 | `/accounts/bank-accounts` | `BankAccountsMasterPage` | CRUD + make-default; **Opening balance** + **Closing balance** columns (live `balance` from list API) |
 | `/accounts/expense-categories` | `ExpenseCategoriesMasterPage` | CRUD; system rows locked with lock icon |
@@ -3377,6 +3378,19 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.20 — Customer list total credit and debit
+
+**Problem:** `/customers` shows per-row credit (I owe) and debit (they owe) but no company-wide totals. Paging hid the true sums.
+
+**Solution:**
+- `CustomerPageOut` adds `credit_total` and `debit_total`.
+- `GET /api/customers` `SUM()`s `credit_balance` and `debit_balance` for the company, applying the same name/phone `search` as the list. Totals are for the **full filtered set**, not the current page.
+- `/customers`: two `Stat` cards (`formatInr`) between search and the table/mobile cards — **Total credit (I owe)** and **Total debit (they owe)**. Same meaning as Accounts dashboard.
+- `GET /api/accounts/customers` returns the same totals (also respects `has_balance` + search) and Customer balances shows matching cards.
+- Per-row balances unchanged. Opening balance on create only. **No migration.**
+
+**Unchanged:** Customer create/update rules; dashboard summary math.
 
 ## Spec v17.3.18 — Processing void: reverse equivalent kg + name the missing line
 
