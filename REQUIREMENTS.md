@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 15 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.20** (customer list credit/debit totals); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.21** (dashboard Money now snapshot; v17.3.20 customer list credit/debit totals); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.21** — Dashboard **Money now** snapshot cards (not month P&L / not an FY column): Amount in hand = M (cash + all bank + cash accounts = accounts `total_money`); After credit = M − C; After debit = M + D; After settlement = M − C + D. C/D are customer credit/debit sums. Do not use M − D for in hand; card 4 is not profit. `money_now` on `GET /api/reports/dashboard-bundle` via `get_accounts_summary`. See **Spec v17.3.21** below.
 - **v17.3.20** — `/customers` KPI cards: **Total credit (I owe)** = `SUM(credit_balance)`, **Total debit (they owe)** = `SUM(debit_balance)` over the full filtered set (search), not the current page. Same meaning as Accounts dashboard. `GET /api/customers` returns `credit_total` / `debit_total` on `CustomerPageOut`. Same totals on Customer balances (`GET /api/accounts/customers`). No migration. See **Spec v17.3.20** below.
 - **v17.3.19** — In-app **Download backup** (owner / `users_manage` only) on Profile: `GET /api/admin/backup` dumps via `pg_dump -Fc` to a file in the Postgres container, then `docker compose cp` to the API host (same pattern as `scripts/backup_db.ps1`). `pg_dump -Fc -f -` is empty on Lightsail. Saves `graintrack-YYYY-MM-DD_HHmm.dump` on the device. No restore API. See **Spec v17.3.19** below.
 - **v17.3.18** — Processing batch void: reverse by equivalent kg when the original bag type is empty but the same product/brand/owner still has the kg (same location first, then other locations). Names the failing line. Transfer/bag-change/disposal voids stay location-strict. See **Spec v17.3.18** below.
@@ -120,7 +121,7 @@
 |------|------|----------------|
 | Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; no plaintext passwords; idle logout; optional hide API docs |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
-| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7** | `dashboard-bundle` (+ FY, job work); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
+| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
 | Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4**, **v17.3.8** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight; Phase 2 responsive |
 | Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive |
@@ -303,7 +304,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. **v17.3.12** phone padding / register wide. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
 | `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). Owner **Download backup** (v17.3.19). **v17.3.12** full-width Save on phone. | — |
-| `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
+| `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; **v17.3.21** Money now snapshot row (independent of year/month); FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
 | `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
 | `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
@@ -3378,6 +3379,23 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.21 — Dashboard Money now snapshot
+
+**Problem:** Month P&L on `/dashboard` does not show what is in the till right now, or what cash would look like after paying/collecting customer balances. Mixing that into the FY table would confuse profit with a cash snapshot.
+
+**Solution:**
+- New **Money now** row under month KPI cards (not an FY column; independent of year/month filters).
+- Let **M** = cash + all bank + cash accounts (`get_accounts_summary` `total_money`). **D** = `SUM(customer.debit_balance)`, **C** = `SUM(customer.credit_balance)`.
+- Cards (`formatInrCompact`):
+  1. **Amount in hand** = M — footer: Cash + all accounts (they owe me is not in the till)
+  2. **After credit** = M − C — footer: If I paid what I owe customers
+  3. **After debit** = M + D — footer: If they paid what they owe me
+  4. **After settlement** = M − C + D — footer: If both sides settled today — not profit
+- Do **not** use M − D for amount in hand (that double-counts uncollected sales). Card 4 is **not** gross/net profit.
+- `GET /api/reports/dashboard-bundle` includes `money_now` from `get_accounts_summary` (current snapshot). No extra FY math. **No migration.**
+
+**Unchanged:** Month/FY P&L cards and table; Accounts dashboard.
 
 ## Spec v17.3.20 — Customer list total credit and debit
 

@@ -1,8 +1,15 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 15 Aug 2026 — covers Spec v5.4 through **v17.3.20**; backend v12.21 + v12.22  
+**Last updated:** 15 Aug 2026 — covers Spec v5.4 through **v17.3.21**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.21 — Dashboard Money now
+
+1. **Dashboard** — Under month KPIs, a **Money now** row with four cards: Amount in hand, After credit, After debit, After settlement. Changing year/month does **not** change these (current snapshot).
+2. **Not P&L** — Values are not month gross/net profit and are not an FY table column. After settlement footer says not profit.
+3. **In hand** — Equals Accounts total money (cash + all accounts), not M minus customer debit.
+4. **Automated** — `python -m unittest tests.test_money_now_v17321 tests.test_dashboard_bundle_v1602`.
 
 ## v17.3.20 — Customer list credit/debit totals
 

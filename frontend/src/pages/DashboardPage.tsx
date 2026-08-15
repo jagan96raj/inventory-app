@@ -5,12 +5,15 @@ import {
   CalendarDays,
   Download,
   Hammer,
+  HandCoins,
   IndianRupee,
   PackagePlus,
   Plus,
   Receipt,
+  Scale,
   TrendingDown,
   TrendingUp,
+  Users,
   Wallet,
 } from "lucide-react";
 import {
@@ -19,6 +22,7 @@ import {
   type BusinessSummary,
   type FiscalYearSummary,
   type JobWorkByProduct,
+  type MoneyNow,
   type SalesByCustomer,
   type SalesByLocation,
   type SalesByProduct,
@@ -96,6 +100,7 @@ export default function DashboardPage() {
   const [byCustomer, setByCustomer] = useState<SalesByCustomer | null>(null);
   const [byLocation, setByLocation] = useState<SalesByLocation | null>(null);
   const [jobWork, setJobWork] = useState<JobWorkByProduct | null>(null);
+  const [moneyNow, setMoneyNow] = useState<MoneyNow | null>(null);
 
   const params = useMemo(() => ({ year, month }), [year, month]);
 
@@ -115,6 +120,7 @@ export default function DashboardPage() {
       setByCustomer(bundle.by_customer);
       setByLocation(bundle.by_location);
       setJobWork(bundle.job_work);
+      setMoneyNow(bundle.money_now);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load dashboard");
     } finally {
@@ -362,6 +368,44 @@ export default function DashboardPage() {
               footer={<span>Sales − purchase − all expenses (incl. SW)</span>}
             />
           </div>
+
+          {moneyNow && (
+            <div className="mb-6">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-subtle">
+                Money now
+              </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <Stat
+                  tone="primary"
+                  label="Amount in hand"
+                  value={formatInrCompact(moneyNow.amount_in_hand)}
+                  icon={<Wallet />}
+                  footer={<span>Cash + all accounts (they owe me is not in the till)</span>}
+                />
+                <Stat
+                  tone="warning"
+                  label="After credit"
+                  value={formatInrCompact(moneyNow.after_credit)}
+                  icon={<Users />}
+                  footer={<span>If I paid what I owe customers</span>}
+                />
+                <Stat
+                  tone="success"
+                  label="After debit"
+                  value={formatInrCompact(moneyNow.after_debit)}
+                  icon={<HandCoins />}
+                  footer={<span>If they paid what they owe me</span>}
+                />
+                <Stat
+                  tone="info"
+                  label="After settlement"
+                  value={formatInrCompact(moneyNow.after_settlement)}
+                  icon={<Scale />}
+                  footer={<span>If both sides settled today — not profit</span>}
+                />
+              </div>
+            </div>
+          )}
 
           {fiscalYear && (
             <Card className="mb-6">

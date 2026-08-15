@@ -26,6 +26,7 @@ from app.models.entities import (
     PaymentStatus,
     Product,
 )
+from app.services.accounts import money_now_snapshot
 MONEY_Q = Decimal("0.01")
 KG_Q = Decimal("0.001")
 def q_money(value: Decimal | float | int | str | None) -> Decimal:
@@ -400,6 +401,7 @@ def get_dashboard_bundle(
         "job_work": get_job_work_by_product(
             db, year, month, group_by, company_id, customer_id=customer_id
         ),
+        "money_now": money_now_snapshot(db, company_id=company_id),
     }
 def get_sales_summary(db: Session, year: int, month: int, company_id: int = 1) -> dict:
     current = _month_sales_legacy_totals(db, year, month, company_id)

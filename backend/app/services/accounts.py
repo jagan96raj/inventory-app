@@ -474,6 +474,37 @@ def get_accounts_summary(db: Session, *, company_id: int = 1, recent_limit: int 
     }
 
 
+def money_now_from_totals(
+    *,
+    total_money: Decimal,
+    total_customer_credit: Decimal,
+    total_customer_debit: Decimal,
+) -> dict:
+    """Current till snapshot. M = accounts total_money; C = credit (I owe); D = debit (they owe).
+
+    Amount in hand is M, not M − D (uncollected sales are not in the till).
+    After settlement is not profit.
+    """
+    m = Decimal(str(total_money)).quantize(Decimal("0.01"))
+    c = Decimal(str(total_customer_credit)).quantize(Decimal("0.01"))
+    d = Decimal(str(total_customer_debit)).quantize(Decimal("0.01"))
+    return {
+        "amount_in_hand": m,
+        "after_credit": (m - c).quantize(Decimal("0.01")),
+        "after_debit": (m + d).quantize(Decimal("0.01")),
+        "after_settlement": (m - c + d).quantize(Decimal("0.01")),
+    }
+
+
+def money_now_snapshot(db: Session, *, company_id: int = 1) -> dict:
+    summary = get_accounts_summary(db, company_id=company_id, recent_limit=0)
+    return money_now_from_totals(
+        total_money=summary["total_money"],
+        total_customer_credit=summary["total_customer_credit"],
+        total_customer_debit=summary["total_customer_debit"],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Customers list + statement
 # ---------------------------------------------------------------------------
