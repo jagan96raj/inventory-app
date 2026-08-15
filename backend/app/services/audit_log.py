@@ -31,6 +31,7 @@ class AuditAction:
     USER_DISABLED = "user_disabled"
     USER_ENABLED = "user_enabled"
     COMPANY_REGISTERED = "company_registered"
+    BACKUP_DOWNLOADED = "backup_downloaded"
 
 
 class AuditEntityType:
@@ -52,6 +53,7 @@ class AuditEntityType:
     JOB_WORK_RECEIPT = "job_work_receipt"
     USER = "user"
     COMPANY = "company"
+    DATABASE = "database"
 
 
 def _sanitize_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:

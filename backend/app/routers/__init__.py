@@ -4,6 +4,7 @@ from app.core.auth import get_current_user
 from app.core.permissions import require_assigned_role
 from app.routers import (
     accounts,
+    admin,
     audit,
     auth,
     bank_accounts,
@@ -46,4 +47,5 @@ protected_router.include_router(accounts.router)
 protected_router.include_router(book_settings.router)
 protected_router.include_router(audit.router)
 protected_router.include_router(login_history.router)
+protected_router.include_router(admin.router)
 api_router.include_router(protected_router)

@@ -177,6 +177,79 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
   return res.json();
 }
 
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      return star[1].trim();
+    }
+  }
+  const quoted = /filename="([^"]+)"/i.exec(header);
+  if (quoted?.[1]) return quoted[1];
+  const plain = /filename=([^;]+)/i.exec(header);
+  return plain?.[1]?.trim() || fallback;
+}
+
+async function downloadBlob(path: string, fallbackName: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      credentials: "include",
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-store",
+        Pragma: "no-cache",
+      },
+    });
+  } catch {
+    throw new Error(
+      "Cannot reach API. Start backend: uvicorn app.main:app --reload --port 8000."
+    );
+  }
+  if (res.status === 401) {
+    const detail = await readErrorDetail(res, "Not authenticated");
+    redirectToLogin();
+    throw new Error(detail);
+  }
+  if (res.status === 403) {
+    let detail = "You do not have permission for this action.";
+    try {
+      const body = await res.json();
+      detail = body.detail ?? detail;
+    } catch {
+      /* ignore */
+    }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("app:forbidden", { detail: String(detail) }));
+    }
+    throw new Error(String(detail));
+  }
+  if (!res.ok) {
+    const detail = await readErrorDetail(res, res.statusText || "Backup failed");
+    throw new Error(String(detail));
+  }
+  const blob = await res.blob();
+  const filename = filenameFromContentDisposition(
+    res.headers.get("Content-Disposition"),
+    fallbackName
+  );
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export const api = {
   get: <T>(path: string, options?: RequestOptions) => request<T>(path, options),
   post: <T>(path: string, body: unknown, options?: RequestOptions) =>
@@ -1243,6 +1316,10 @@ export const companiesApi = {
   getMe: () => api.get<Company>("/api/companies/me"),
   updateMe: (body: CompanyUpdate) => api.patch<Company>("/api/companies/me", body),
   registrationStatus: () => api.get<{ allowed: boolean }>("/api/companies/registration-status", { skipAuthRedirect: true }),
+};
+
+export const adminApi = {
+  downloadBackup: () => downloadBlob("/api/admin/backup", "graintrack-backup.dump"),
 };
 
 // ---------------------------------------------------------------------------

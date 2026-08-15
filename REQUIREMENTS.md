@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.18** (processing void kg reverse); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 15 Aug 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.19** (in-app backup download); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.19** — In-app **Download backup** (owner / `users_manage` only) on Profile: `GET /api/admin/backup` streams `pg_dump -Fc` via `docker compose exec` on the Postgres container. Saves `graintrack-YYYY-MM-DD_HHmm.dump` on the device. No restore API. See **Spec v17.3.19** below.
 - **v17.3.18** — Processing batch void: reverse by equivalent kg when the original bag type is empty but the same product/brand/owner still has the kg (same location first, then other locations). Names the failing line. Transfer/bag-change/disposal voids stay location-strict. See **Spec v17.3.18** below.
 - **v17.3.17** — App icons (clip + invert): rebuild centered emblem-only `logo-icon.png` (four-grain mark, no tractor scraps); OS icons on visiting-card cream `#E7E8E3` with dark olive `#586038` ink and ~24% pad so rounded masks don’t clip tips. See **Spec v17.3.17** below.
 - **v17.3.16** — App icons: regenerate Windows `desktop-shell/icon.png` + `icon.ico` and add `apple-touch-icon.png` from emblem-only `logo-icon.png` — square canvas, letterboxed (~15% pad) on solid `#586038` (no stretch / no full-transparency). Favicon padded the same way. Script: `scripts/generate_app_icons.py`. See **Spec v17.3.16** below.
@@ -300,7 +301,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 |---|---|---|---|
 | `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. **v17.3.12** phone padding / register wide. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
-| `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). **v17.3.12** full-width Save on phone. | — |
+| `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). Owner **Download backup** (v17.3.19). **v17.3.12** full-width Save on phone. | — |
 | `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
 | `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
@@ -3074,6 +3075,7 @@ Table `audit_events`: `user_id` (FK, SET NULL), denormalized `user_email`, `acti
 - `Permission.AUDIT_VIEW` — owner role only.
 - Wired after successful: void payment/fulfillment/bill; bill edit; inventory qty edit; master delete; void bag change/transfer/disposal/processing batch/cash book/job work order/receipt; user create/update.
 - `GET /api/audit/events` — paginated; filters: `user_id`, `action`, `entity_type`, `date_from`, `date_to`, `search` (entity_label ILIKE).
+- `GET /api/admin/backup` — owner-only dump download (v17.3.19).
 
 ### C. Frontend
 
@@ -3192,7 +3194,7 @@ Reads repo-root `.env` for `POSTGRES_USER`, `POSTGRES_DB` (defaults `inventory`)
 
 ### C. Out of scope
 
-In-app Backup button; cloud upload (S3/OneDrive) — user may point `BACKUP_DIR` to a synced folder; Linux cron (Windows-only scripts; README footnote with `pg_dump` one-liner).
+In-app Backup button **delivered in v17.3.19**; cloud upload (S3/OneDrive) — user may point `BACKUP_DIR` to a synced folder; Linux cron (Windows-only scripts; README footnote with `pg_dump` one-liner).
 
 ### D. Deploy
 
@@ -3359,6 +3361,22 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.19 — In-app database backup download
+
+**Problem:** Scheduled Windows `pg_dump` scripts (v16.0.8) write to a server folder. The owner needs a copy **on the device they are using** (browser Downloads, desktop app, iPad Files). Production data is Lightsail Postgres — not a local SQLite file.
+
+**Solution:**
+- Owner-only `GET /api/admin/backup` (also requires `users_manage`). Authenticated session cookie.
+- Backend runs `docker compose exec -T db pg_dump -U <user> -Fc -f - <db>` from the repo root (same Compose service as production Postgres). Timeout `BACKUP_TIMEOUT_SECONDS` (default 300). **503** if dump fails, times out, or Docker/`pg_dump` is missing.
+- Response: `application/octet-stream` with `Content-Disposition: attachment; filename="graintrack-YYYY-MM-DD_HHmm.dump"` (business timezone).
+- Profile page (owner): **Download backup** + note that it saves all company data as a file on this device. Busy state; browser saves the blob.
+- Audit `backup_downloaded` (filename only). Existing hashed user passwords in the dump are unchanged; no new password format.
+- **No restore endpoint.** Restore remains ops (`scripts/restore_db.ps1` / `pg_restore`).
+
+**Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` against that project. No Alembic migration.
+
+**Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
 
 ## Spec v17.3.18 — Processing void: reverse equivalent kg + name the missing line
 

@@ -1,8 +1,16 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 10 Jul 2026 — covers Spec v5.4 through **v17.0.5**; backend v12.21 + v12.22  
+**Last updated:** 15 Aug 2026 — covers Spec v5.4 through **v17.3.19**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.19 — In-app backup download
+
+1. **Owner** — Profile → **Download backup** → file `graintrack-YYYY-MM-DD_HHmm.dump` in browser/desktop Downloads or iPad Files. Button shows busy while dumping.
+2. **Non-owner** — Backup card hidden; `GET /api/admin/backup` → **403**.
+3. **Dump failure** — Docker/Postgres down → **503** with a clear message; no empty file.
+4. **Ops** — Lightsail: `docker compose exec db pg_dump` works as the API user. No Alembic.
+5. **Automated** — `python -m unittest tests.test_admin_backup_v17319`.
 
 ## v17.0.5 — Profile & company header ownership
 

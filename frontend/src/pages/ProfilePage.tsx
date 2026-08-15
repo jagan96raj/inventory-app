@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Building2, Save, User as UserIcon } from "lucide-react";
-import { companiesApi, type Company } from "../api/client";
+import { Building2, Download, Save, User as UserIcon } from "lucide-react";
+import { adminApi, companiesApi, type Company } from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { ROLE_LABELS } from "../lib/permissions";
+import { ROLE_LABELS, usePermissions } from "../lib/permissions";
 import {
   companyAddressFormFields,
   formatCompanyAddressLines,
@@ -40,7 +40,8 @@ function addressFromCompany(c: Company): AddressForm {
 
 export default function ProfilePage() {
   const { user, refreshMe } = useAuth();
-  const isOwner = user?.role === "owner";
+  const { isOwner, canManageUsers } = usePermissions();
+  const canDownloadBackup = isOwner && canManageUsers;
 
   const [company, setCompany] = useState<Company | null>(null);
   const [name, setName] = useState("");
@@ -48,6 +49,7 @@ export default function ProfilePage() {
   const [address, setAddress] = useState<AddressForm>(emptyAddress);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const setAddr = (key: CompanyAddressFieldKey, value: string) =>
@@ -120,6 +122,21 @@ export default function ProfilePage() {
       toast.error(msg);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const downloadBackup = async () => {
+    setBackupBusy(true);
+    setError("");
+    try {
+      await adminApi.downloadBackup();
+      toast.success("Backup downloaded to this device");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not download backup";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setBackupBusy(false);
     }
   };
 
@@ -285,6 +302,33 @@ export default function ProfilePage() {
             </CardBody>
           )}
         </Card>
+
+        {canDownloadBackup ? (
+          <Card className="max-w-2xl min-w-0">
+            <CardHeader
+              title="Backup"
+              subtitle="Saves all company data as a file on this device."
+            />
+            <CardBody className="space-y-3">
+              <p className="text-sm text-ink-muted">
+                Downloads a full Postgres dump (custom format). Use it from this browser, desktop
+                Downloads folder, or iPad Files. Restore is an ops step — there is no in-app restore.
+              </p>
+            </CardBody>
+            <CardFooter>
+              <Button
+                type="button"
+                loading={backupBusy}
+                disabled={backupBusy}
+                leftIcon={<Download className="h-4 w-4" />}
+                className="min-h-11 w-full sm:w-auto"
+                onClick={() => void downloadBackup()}
+              >
+                Download backup
+              </Button>
+            </CardFooter>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

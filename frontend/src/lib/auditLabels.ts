@@ -16,6 +16,8 @@ const ACTION_LABELS: Record<string, string> = {
   user_updated: "User updated",
   user_disabled: "User disabled",
   user_enabled: "User enabled",
+  company_registered: "Company registered",
+  backup_downloaded: "Backup downloaded",
 };
 
 const ENTITY_TYPE_LABELS: Record<string, string> = {
@@ -36,6 +38,8 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   job_work_order: "Job work order",
   job_work_receipt: "Job work receipt",
   user: "User",
+  company: "Company",
+  database: "Database",
 };
 
 export function auditActionLabel(action: string): string {

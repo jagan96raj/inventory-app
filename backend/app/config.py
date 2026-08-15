@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # Idempotency guard table retention (Spec v16.0.3).
     idempotency_retention_days: int = 90
     idempotency_stale_in_progress_hours: int = 24
+    # In-app backup (Spec v17.3.19) — docker compose exec pg_dump.
+    postgres_user: str = "inventory"
+    postgres_db: str = "inventory"
+    postgres_compose_service: str = "db"
+    backup_timeout_seconds: int = 300
 
 
 settings = Settings()
