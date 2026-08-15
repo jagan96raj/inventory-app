@@ -236,7 +236,7 @@ DESTRUCTIVE_SCRIPT_CONFIRM=I_UNDERSTAND_DELETE_DATA
 
 All business data lives in Docker Postgres.
 
-**In-app (v17.3.19):** Owner → **Profile** → **Download backup** saves `graintrack-YYYY-MM-DD_HHmm.dump` on that device (`GET /api/admin/backup`). Lightsail needs `docker compose exec` to the Postgres service (`db` by default) so `pg_dump -Fc` can run. There is **no** in-app restore.
+**In-app (v17.3.19):** Owner → **Profile** → **Download backup** saves `graintrack-YYYY-MM-DD_HHmm.dump` on that device (`GET /api/admin/backup`). Lightsail: dump to `/tmp` inside the Postgres container (`pg_dump -Fc -f`), then `docker compose cp` (stdout `-f -` is empty). There is **no** in-app restore.
 
 **Scheduled scripts (v16.0.8):** Use the repo scripts for automated daily dumps on Windows — still useful as a server-side copy.
 

@@ -1,4 +1,5 @@
 """Spec v17.3.19 — owner-only in-app Postgres backup download."""
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +15,14 @@ from app.database import Base, get_db
 from app.main import app
 from app.models.entities import User, UserRole
 from app.routers.admin import OWNER_ONLY_BACKUP_MSG
-from app.services.backup import BACKUP_DUMP_FAILED_MSG, backup_filename
+from app.services import backup as backup_mod
+from app.services.backup import (
+    BACKUP_DUMP_FAILED_MSG,
+    BACKUP_EMPTY_MSG,
+    BACKUP_TIMEOUT_MSG,
+    backup_filename,
+    run_pg_dump,
+)
 from tests.idempotency_helpers import ensure_test_user
 
 
@@ -102,3 +110,63 @@ class AdminBackupV17319Tests(unittest.TestCase):
             r = self.client.get("/api/admin/backup")
         self.assertEqual(r.status_code, 503)
         self.assertEqual(r.json()["detail"], BACKUP_DUMP_FAILED_MSG)
+
+
+class RunPgDumpPathTests(unittest.TestCase):
+    def test_writes_container_tmp_then_compose_cp(self):
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, *, timeout):
+            calls.append(list(cmd))
+            if "pg_dump" in cmd:
+                dest = cmd[cmd.index("-f") + 1]
+                self.assertTrue(str(dest).startswith("/tmp/graintrack-"))
+                self.assertNotEqual(dest, "-")
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+            if len(cmd) >= 3 and cmd[2] == "cp":
+                Path(cmd[-1]).write_bytes(b"PGDMP-FAKE")
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+            if "rm" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+            self.fail(f"unexpected cmd: {cmd}")
+
+        with patch.object(backup_mod, "_run", side_effect=fake_run):
+            path, _name = run_pg_dump()
+        try:
+            self.assertEqual(path.read_bytes(), b"PGDMP-FAKE")
+            self.assertTrue(any("pg_dump" in c for c in calls))
+            self.assertTrue(any(len(c) >= 3 and c[2] == "cp" for c in calls))
+            self.assertTrue(any("rm" in c for c in calls))
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_empty_after_cp_raises(self):
+        def fake_run(cmd, *, timeout):
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+        with patch.object(backup_mod, "_run", side_effect=fake_run):
+            with self.assertRaises(ValueError) as ctx:
+                run_pg_dump()
+        self.assertEqual(str(ctx.exception), BACKUP_EMPTY_MSG)
+
+    def test_dump_nonzero_raises_failed(self):
+        def fake_run(cmd, *, timeout):
+            if "pg_dump" in cmd:
+                return subprocess.CompletedProcess(cmd, 1, b"", b"boom")
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+        with patch.object(backup_mod, "_run", side_effect=fake_run):
+            with self.assertRaises(ValueError) as ctx:
+                run_pg_dump()
+        self.assertEqual(str(ctx.exception), BACKUP_DUMP_FAILED_MSG)
+
+    def test_timeout_raises_timeout_msg(self):
+        def fake_run(cmd, *, timeout):
+            if "pg_dump" in cmd:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+        with patch.object(backup_mod, "_run", side_effect=fake_run):
+            with self.assertRaises(ValueError) as ctx:
+                run_pg_dump()
+        self.assertEqual(str(ctx.exception), BACKUP_TIMEOUT_MSG)

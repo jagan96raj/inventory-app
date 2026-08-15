@@ -9,7 +9,7 @@
 1. **Owner** — Profile → **Download backup** → file `graintrack-YYYY-MM-DD_HHmm.dump` in browser/desktop Downloads or iPad Files. Button shows busy while dumping.
 2. **Non-owner** — Backup card hidden; `GET /api/admin/backup` → **403**.
 3. **Dump failure** — Docker/Postgres down → **503** with a clear message; no empty file.
-4. **Ops** — Lightsail: `docker compose exec db pg_dump` works as the API user. No Alembic.
+4. **Ops** — Lightsail: dump to `/tmp` in `db` then `docker compose cp` (not `pg_dump -f -`). File size > 0. No Alembic.
 5. **Automated** — `python -m unittest tests.test_admin_backup_v17319`.
 
 ## v17.0.5 — Profile & company header ownership

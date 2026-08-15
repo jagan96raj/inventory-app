@@ -1,10 +1,11 @@
-"""Spec v17.3.19 — in-app PostgreSQL dump via docker compose exec."""
+"""Spec v17.3.19 — in-app PostgreSQL dump via docker compose exec + cp."""
 
 from __future__ import annotations
 
 import logging
 import subprocess
 import tempfile
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -31,56 +32,102 @@ def backup_filename(when: datetime | None = None) -> str:
     return f"graintrack-{stamp}.dump"
 
 
-def run_pg_dump() -> tuple[Path, str]:
-    """Run ``pg_dump -Fc`` inside the Compose Postgres container.
+def _compose_cmd(*args: str) -> list[str]:
+    return ["docker", "compose", *args]
 
-    Returns ``(temp_dump_path, download_filename)``. Caller must delete the temp file.
+
+def _run(cmd: list[str], *, timeout: int) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        cmd,
+        cwd=str(repo_root()),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _rm_container_dump(service: str, container_tmp: str, timeout: int) -> None:
+    try:
+        _run(
+            _compose_cmd("exec", "-T", service, "rm", "-f", container_tmp),
+            timeout=min(30, max(5, timeout)),
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        logger.warning("failed to remove container dump %s", container_tmp)
+
+
+def run_pg_dump() -> tuple[Path, str]:
+    """Dump with ``pg_dump -Fc -f /tmp/...`` then ``docker compose cp`` to the host.
+
+    ``pg_dump -Fc -f -`` writes 0 bytes on Lightsail; writing a container file
+    matches ``scripts/backup_db.ps1``. Caller must delete the host temp file.
     """
     filename = backup_filename()
-    tmp = tempfile.NamedTemporaryFile(prefix="graintrack-backup-", suffix=".dump", delete=False)
-    tmp_path = Path(tmp.name)
-    tmp.close()
+    service = settings.postgres_compose_service
+    timeout = settings.backup_timeout_seconds
+    container_tmp = f"/tmp/graintrack-{uuid.uuid4().hex}.dump"
 
-    cmd = [
-        "docker",
-        "compose",
+    host_tmp = tempfile.NamedTemporaryFile(prefix="graintrack-backup-", suffix=".dump", delete=False)
+    host_path = Path(host_tmp.name)
+    host_tmp.close()
+
+    dump_cmd = _compose_cmd(
         "exec",
         "-T",
-        settings.postgres_compose_service,
+        service,
         "pg_dump",
         "-U",
         settings.postgres_user,
         "-Fc",
         "-f",
-        "-",
+        container_tmp,
         settings.postgres_db,
-    ]
+    )
+    cp_cmd = _compose_cmd("cp", f"{service}:{container_tmp}", str(host_path))
+
+    def fail_host() -> None:
+        host_path.unlink(missing_ok=True)
+
     try:
-        with tmp_path.open("wb") as out:
-            result = subprocess.run(
-                cmd,
-                cwd=str(repo_root()),
-                stdout=out,
-                stderr=subprocess.PIPE,
-                timeout=settings.backup_timeout_seconds,
-                check=False,
-            )
+        result = _run(dump_cmd, timeout=timeout)
     except FileNotFoundError as exc:
-        tmp_path.unlink(missing_ok=True)
+        fail_host()
         raise ValueError(BACKUP_DUMP_FAILED_MSG) from exc
     except subprocess.TimeoutExpired as exc:
-        tmp_path.unlink(missing_ok=True)
+        _rm_container_dump(service, container_tmp, timeout)
+        fail_host()
         raise ValueError(BACKUP_TIMEOUT_MSG) from exc
     except OSError as exc:
-        tmp_path.unlink(missing_ok=True)
+        fail_host()
         raise ValueError(BACKUP_DUMP_FAILED_MSG) from exc
 
-    stderr = (result.stderr or b"").decode("utf-8", errors="replace").strip()
     if result.returncode != 0:
-        tmp_path.unlink(missing_ok=True)
+        stderr = (result.stderr or b"").decode("utf-8", errors="replace").strip()
         logger.warning("pg_dump failed rc=%s stderr=%s", result.returncode, stderr[:500])
+        _rm_container_dump(service, container_tmp, timeout)
+        fail_host()
         raise ValueError(BACKUP_DUMP_FAILED_MSG)
-    if not tmp_path.exists() or tmp_path.stat().st_size <= 0:
-        tmp_path.unlink(missing_ok=True)
+
+    try:
+        cp_result = _run(cp_cmd, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        _rm_container_dump(service, container_tmp, timeout)
+        fail_host()
+        raise ValueError(BACKUP_TIMEOUT_MSG) from exc
+    except (FileNotFoundError, OSError) as exc:
+        _rm_container_dump(service, container_tmp, timeout)
+        fail_host()
+        raise ValueError(BACKUP_DUMP_FAILED_MSG) from exc
+    else:
+        _rm_container_dump(service, container_tmp, timeout)
+
+    if cp_result.returncode != 0:
+        stderr = (cp_result.stderr or b"").decode("utf-8", errors="replace").strip()
+        logger.warning("docker compose cp failed rc=%s stderr=%s", cp_result.returncode, stderr[:500])
+        fail_host()
+        raise ValueError(BACKUP_DUMP_FAILED_MSG)
+    if not host_path.exists() or host_path.stat().st_size <= 0:
+        fail_host()
         raise ValueError(BACKUP_EMPTY_MSG)
-    return tmp_path, filename
+    return host_path, filename
