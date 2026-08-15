@@ -1418,6 +1418,13 @@ class DailyBillAmountsOut(BaseModel):
     rows: list[DailyBillAmountRowOut]
 
 
+class MoneyNowOut(BaseModel):
+    amount_in_hand: Decimal
+    after_credit: Decimal
+    after_debit: Decimal
+    after_settlement: Decimal
+
+
 class DashboardBundleOut(BaseModel):
     summary: BusinessSummaryOut
     compare: BusinessCompareOut
@@ -1427,6 +1434,7 @@ class DashboardBundleOut(BaseModel):
     by_customer: SalesByCustomerOut
     by_location: SalesByLocationOut
     job_work: JobWorkByProductOut
+    money_now: MoneyNowOut
 
 
 class AuditEventOut(BaseModel):

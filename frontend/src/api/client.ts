@@ -809,6 +809,14 @@ export type DashboardBundle = {
   by_customer: SalesByCustomer;
   by_location: SalesByLocation;
   job_work: JobWorkByProduct;
+  money_now: MoneyNow;
+};
+
+export type MoneyNow = {
+  amount_in_hand: string;
+  after_credit: string;
+  after_debit: string;
+  after_settlement: string;
 };
 
 export type SalesDailyRow = {

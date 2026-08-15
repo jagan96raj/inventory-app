@@ -165,6 +165,15 @@ class DashboardBundleV1602Tests(unittest.TestCase):
             bundle["by_location"],
             reports.get_bills_by_location(self.db, 2025, 5, BillType.sales),
         )
+        from app.services.accounts import money_now_snapshot
+
+        self.assertEqual(bundle["money_now"], money_now_snapshot(self.db, company_id=1))
+
+    def test_money_now_independent_of_year_month(self):
+        may = reports.get_dashboard_bundle(self.db, 2025, 5, BillType.sales, "product_brand")
+        june = reports.get_dashboard_bundle(self.db, 2025, 6, BillType.purchase, "product")
+        self.assertEqual(may["money_now"], june["money_now"])
+        self.assertNotEqual(may["summary"], june["summary"])
 
     def test_dashboard_bundle_http_matches_individual_endpoints(self):
         qs = "year=2025&month=5&bill_type=sales&group_by=product_brand"
