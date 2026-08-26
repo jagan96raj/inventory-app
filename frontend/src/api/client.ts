@@ -1298,6 +1298,44 @@ export const accountsApi = {
     ),
 };
 
+export type NoteShareRole = "writer" | "stock_manager" | "factory_manager";
+
+export type CompanyNote = {
+  id: number;
+  company_id: number;
+  title: string | null;
+  body: string;
+  note_date: string;
+  viewer_roles: NoteShareRole[];
+  created_by_user_id: number | null;
+  created_by_name: string | null;
+  updated_by_user_id: number | null;
+  updated_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CompanyNoteIn = {
+  title?: string | null;
+  body: string;
+  note_date?: string;
+  viewer_roles?: NoteShareRole[];
+};
+
+export type CompanyNotePatch = {
+  title?: string | null;
+  body?: string;
+  note_date?: string;
+  viewer_roles?: NoteShareRole[];
+};
+
+export const notesApi = {
+  list: () => api.get<CompanyNote[]>("/api/notes"),
+  create: (body: CompanyNoteIn) => api.post<CompanyNote>("/api/notes", body),
+  update: (id: number, body: CompanyNotePatch) => api.patch<CompanyNote>(`/api/notes/${id}`, body),
+  remove: (id: number) => api.delete(`/api/notes/${id}`),
+};
+
 export const bookSettingsApi = {
   get: () => api.get<BookSettings>("/api/book-settings"),
   update: (body: BookSettingsIn, key: string) =>

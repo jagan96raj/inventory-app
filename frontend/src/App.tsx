@@ -51,6 +51,7 @@ import PendingAccessPage from "./pages/PendingAccessPage";
 import UsersPage from "./pages/UsersPage";
 import CompanyRegisterPage from "./pages/CompanyRegisterPage";
 import ProfilePage from "./pages/ProfilePage";
+import NotesPage from "./pages/NotesPage";
 
 /** Remount when landing with ?created= so a fresh list always mounts. */
 function CashBookListRoute() {
@@ -89,6 +90,9 @@ export default function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route element={<RequireRole permission="dashboard_view" />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+          </Route>
+          <Route element={<RequireRole permission="notes_view" />}>
+            <Route path="/notes" element={<NotesPage />} />
           </Route>
           <Route path="/home" element={<HomePage />} />
           <Route path="/profile" element={<ProfilePage />} />

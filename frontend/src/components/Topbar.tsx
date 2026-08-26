@@ -30,6 +30,7 @@ type Props = {
 const TITLE_MAP: Record<string, string> = {
   "/": "Dashboard",
   "/dashboard": "Dashboard",
+  "/notes": "Notes",
   "/home": "Welcome",
   "/profile": "Profile",
   "/products": "Products",

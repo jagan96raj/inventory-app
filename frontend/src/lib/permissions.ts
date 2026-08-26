@@ -33,7 +33,8 @@ export type Permission =
   | "processing_view"
   | "void"
   | "users_manage"
-  | "audit_view";
+  | "audit_view"
+  | "notes_view";
 
 const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
   owner: new Set<Permission>([
@@ -67,6 +68,7 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     "void",
     "users_manage",
     "audit_view",
+    "notes_view",
   ]),
   writer: new Set([
     "dashboard_view",
@@ -78,6 +80,7 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     "job_work_fulfillment_write",
     "product_transfer_write",
     "product_transfer_view",
+    "notes_view",
   ]),
   stock_manager: new Set([
     "dashboard_view",
@@ -88,6 +91,7 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     "bag_change_view",
     "stock_disposal_write",
     "stock_disposal_view",
+    "notes_view",
   ]),
   factory_manager: new Set([
     "dashboard_view",
@@ -97,6 +101,7 @@ const ROLE_PERMISSIONS: Record<UserRole, ReadonlySet<Permission>> = {
     "book_settings_view",
     "processing_manage",
     "processing_view",
+    "notes_view",
   ]),
 };
 

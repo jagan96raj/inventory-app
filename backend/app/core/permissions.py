@@ -45,6 +45,7 @@ class Permission(str, Enum):
     VOID = "void"
     USERS_MANAGE = "users_manage"
     AUDIT_VIEW = "audit_view"
+    NOTES_VIEW = "notes_view"
 
 
 ROLE_PERMISSIONS: dict[UserRole, frozenset[Permission]] = {
@@ -60,6 +61,7 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[Permission]] = {
             Permission.JOB_WORK_FULFILLMENT_WRITE,
             Permission.PRODUCT_TRANSFER_WRITE,
             Permission.PRODUCT_TRANSFER_VIEW,
+            Permission.NOTES_VIEW,
         }
     ),
     UserRole.stock_manager: frozenset(
@@ -72,6 +74,7 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[Permission]] = {
             Permission.BAG_CHANGE_VIEW,
             Permission.STOCK_DISPOSAL_WRITE,
             Permission.STOCK_DISPOSAL_VIEW,
+            Permission.NOTES_VIEW,
         }
     ),
     UserRole.factory_manager: frozenset(
@@ -83,6 +86,7 @@ ROLE_PERMISSIONS: dict[UserRole, frozenset[Permission]] = {
             Permission.BOOK_SETTINGS_VIEW,
             Permission.PROCESSING_MANAGE,
             Permission.PROCESSING_VIEW,
+            Permission.NOTES_VIEW,
         }
     ),
 }

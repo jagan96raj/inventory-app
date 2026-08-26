@@ -18,6 +18,7 @@ from app.routers import (
     job_work,
     login_history,
     masters,
+    notes,
     operations,
     payments,
     reports,
@@ -48,4 +49,5 @@ protected_router.include_router(book_settings.router)
 protected_router.include_router(audit.router)
 protected_router.include_router(login_history.router)
 protected_router.include_router(admin.router)
+protected_router.include_router(notes.router)
 api_router.include_router(protected_router)

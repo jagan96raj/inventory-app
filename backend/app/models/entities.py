@@ -1248,6 +1248,60 @@ class BookSettings(Base):
     )
 
 
+class CompanyNote(Base):
+    """Spec v17.3.22 — company-scoped notes; empty role_access = owner-only."""
+
+    __tablename__ = "company_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    note_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    role_access: Mapped[list["CompanyNoteRoleAccess"]] = relationship(
+        back_populates="note",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    created_by: Mapped["User | None"] = relationship(
+        foreign_keys=[created_by_user_id], lazy="joined"
+    )
+    updated_by: Mapped["User | None"] = relationship(
+        foreign_keys=[updated_by_user_id], lazy="joined"
+    )
+
+    __table_args__ = (Index("ix_company_notes_company_date", "company_id", "note_date"),)
+
+
+class CompanyNoteRoleAccess(Base):
+    """Which non-owner roles may VIEW a note. Empty set ⇒ owner-only."""
+
+    __tablename__ = "company_note_role_access"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    note_id: Mapped[int] = mapped_column(
+        ForeignKey("company_notes.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    note: Mapped["CompanyNote"] = relationship(back_populates="role_access")
+
+    __table_args__ = (
+        UniqueConstraint("note_id", "role", name="uq_company_note_role_access_note_role"),
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 

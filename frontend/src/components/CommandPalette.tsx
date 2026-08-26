@@ -18,6 +18,7 @@ import {
   ReceiptText,
   Search,
   ShoppingCart,
+  StickyNote,
   Tag,
   Truck,
   Users,
@@ -44,6 +45,7 @@ type Item = {
 
 const NAV_ITEMS: Item[] = [
   { id: "nav:dashboard", label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, section: "Navigate" },
+  { id: "nav:notes", label: "Notes", to: "/notes", icon: StickyNote, section: "Navigate" },
   { id: "nav:sales", label: "Sales bills", to: "/sales-bills", icon: ShoppingCart, section: "Navigate" },
   { id: "nav:purchase", label: "Purchase bills", to: "/purchase-bills", icon: PackagePlus, section: "Navigate" },
   { id: "nav:payments", label: "Payments", to: "/payments", icon: IndianRupee, section: "Navigate" },

@@ -810,6 +810,43 @@ body.app-shell-v2 .bill-form-line .form-grid select {
   font-size: 1.0625rem;
 }
 
+/* Spec v17.3.22 — Notes board soft paper cards */
+.notes-paper-float {
+  animation: notes-paper-float 5.5s ease-in-out infinite;
+}
+
+.notes-paper {
+  background:
+    linear-gradient(145deg, rgba(255, 252, 245, 0.95), rgba(243, 240, 228, 0.98)),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      rgba(88, 96, 56, 0.04) 28px
+    );
+  border: 1px solid rgba(88, 96, 56, 0.18);
+  border-radius: 0.35rem 1.1rem 0.9rem 0.45rem;
+  box-shadow:
+    0 10px 24px -14px rgba(58, 64, 42, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+@keyframes notes-paper-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notes-paper-float {
+    animation: none;
+  }
+}
+
 /* Reduced motion: disable non-essential animations */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -25,6 +25,7 @@ import {
   Repeat,
   Settings,
   ShoppingCart,
+  StickyNote,
   Tag,
   Truck,
   Users,
@@ -56,7 +57,10 @@ const NAV: NavGroup[] = [
   {
     label: "Overview",
     icon: LayoutDashboard,
-    items: [{ to: "/dashboard", label: "Dashboard", icon: BarChart3, permission: "dashboard_view" }],
+    items: [
+      { to: "/dashboard", label: "Dashboard", icon: BarChart3, permission: "dashboard_view" },
+      { to: "/notes", label: "Notes", icon: StickyNote, permission: "notes_view" },
+    ],
   },
   {
     label: "Bills",

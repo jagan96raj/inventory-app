@@ -1,8 +1,18 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 15 Aug 2026 — covers Spec v5.4 through **v17.3.21**; backend v12.21 + v12.22  
+**Last updated:** 26 Aug 2026 — covers Spec v5.4 through **v17.3.22**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.22 — Notes board
+
+1. **Owner** — Overview → Notes → add a note → appears as paper card; badge **Owner only**; FAB on phone.
+2. **Share** — Who can see… → check Writer only → Save; badge shows Shared with Writer.
+3. **Writer** — Sees shared note (read-only); no Add / Edit / Delete / visibility.
+4. **Stock manager** — Does not see Writer-only note; empty board if nothing shared with stock.
+5. **Mutate** — Writer `POST/PATCH/DELETE` → **403**; hidden note id → **404**.
+6. **Automated** — `python -m unittest tests.test_company_notes_v17322`.
+7. **Ops** — `alembic upgrade head` (migration `062`).
 
 ## v17.3.21 — Dashboard Money now
 
