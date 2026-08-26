@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 26 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.22** (role-gated Notes board; v17.3.21 Money now; v17.3.20 customer list totals); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.23** (bill bags/kg counters + bill-number dialog; v17.3.22 Notes board; v17.3.21 Money now; v17.3.20 customer list totals); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.23** — Bill **Total bags / Total kg** live on form next to Products billed; same counters on detail (+ print header). `BillListItemOut` adds computed `total_ordered_bags` / `total_ordered_kg` (sum of lines; no migration). List: hover bill number → “X bags · Y kg”; click → `BillDetailDialog` (Modal xl, maximize ≈ fullscreen) with Open full page / Edit / Pay / Print; refresh list after close. See **Spec v17.3.23** below.
 - **v17.3.22** — **Notes** board (`/notes`, Overview sidebar): company-scoped soft-paper cards. Default **owner-only**; owner sets per-note `viewer_roles` (writer / stock_manager / factory_manager) via `company_note_role_access`. Owner CRUD; other roles read-only when shared. Migration `062`. See **Spec v17.3.22** below.
 - **v17.3.21** — Dashboard **Money now** snapshot cards (not month P&L / not an FY column): Amount in hand = M (cash + all bank + cash accounts = accounts `total_money`); After credit = M − C; After debit = M + D; After settlement = M − C + D. C/D are customer credit/debit sums. Do not use M − D for in hand; card 4 is not profit. `money_now` on `GET /api/reports/dashboard-bundle` via `get_accounts_summary`. See **Spec v17.3.21** below.
 - **v17.3.20** — `/customers` KPI cards: **Total credit (I owe)** = `SUM(credit_balance)`, **Total debit (they owe)** = `SUM(debit_balance)` over the full filtered set (search), not the current page. Same meaning as Accounts dashboard. `GET /api/customers` returns `credit_total` / `debit_total` on `CustomerPageOut`. Same totals on Customer balances (`GET /api/accounts/customers`). No migration. See **Spec v17.3.20** below.
@@ -307,9 +308,9 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). Owner **Download backup** (v17.3.19). **v17.3.12** full-width Save on phone. | — |
 | `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; **v17.3.21** Money now snapshot row (independent of year/month); FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
 | `/notes` | `NotesPage` | Soft paper Notes board; owner CRUD + per-note role visibility; others read-only when shared (**v17.3.22**). | — |
-| `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
-| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
-| `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
+| `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. **v17.3.23:** bill number hover bags·kg; click opens `BillDetailDialog` (not navigate). | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
+| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. **v17.3.23:** live Total bags + Total kg beside Products billed. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
+| `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. **v17.3.23:** header Total bags + Total kg; print header Ordered bags·kg. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
 | `/payments`, `/payments/new`, `/…/:id/payment` | `PaymentsPage`, `PaymentPage` | New listing with `Table` + per-row Void; record form with bill snapshot, set-off allocation preview, balance-mode autofill, validation banners. **v13.1:** full-row sales/purchase tint via `BILL_TYPE_THEME`. | **#4 v5.4** void from list; **v5.2** set-off allocations. |
 | `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. | **#12 v12.3** row-locked stock mutations (server-side). |
 | `/inventory` | `InventoryPage` | Location-grouped tables with product `rowspan` column; low-stock amber highlight; add opening stock via `Modal` only. **v13.1:** larger product names; canvas background. | **#3 v12.1** opening qty only; PUT rejected; **#12 v12.3** row locking. |
@@ -3381,6 +3382,19 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.23 — Bill bags/kg counters + bill-number dialog
+
+**Problem:** Operators need ordered quantity at a glance on create/edit/detail/list without opening every bill, and want a quick preview dialog from the list without leaving the page.
+
+**Solution:**
+- **Form (`BillFormPage`):** Next to **Products billed**, live **Total bags** and **Total kg** from current lines (same bag/loose math as line preview).
+- **Detail (`BillDetailPage`):** Header summary shows **Total bags** + **Total kg** (sum of `ordered_bags` / `ordered_quantity_kg`). Print document header shows **Ordered** as `X bags · Y kg`.
+- **List API:** `BillListItemOut` adds computed `total_ordered_bags` (int) and `total_ordered_kg` (Decimal) from loaded lines; `GET /api/bills` selectinloads lines for the sum only (lines still omitted from the slim list payload). **No Alembic.**
+- **List UI:** Hover bill number → tooltip `X bags · Y kg` (`BillBagsKgHover`, desktop table + mobile cards; notes hover unchanged). Click bill number → `BillDetailDialog` (Modal **xl**; Maximize → near-fullscreen `full`, Restore → xl) with money/qty summary, lines table, actions **Open full page** / **Edit** / **Pay** (if due) / **Print**. Does not navigate on number click. Closing the dialog refreshes the list (covers return from edit/void).
+- **Unchanged:** Bill money math, fulfillment rules, olive brand, no desktop-shell.
+
+**Files:** `backend/app/schemas.py`, `backend/app/routers/bills.py`, `backend/tests/test_bill_list_totals_v17323.py`, `frontend/src/api/client.ts`, `frontend/src/lib/billQty.ts`, `frontend/src/components/bills/BillBagsKgHover.tsx`, `BillDetailDialog.tsx`, `BillPrintDocument.tsx`, `frontend/src/components/ui/Modal.tsx` (`full` size + `headerActions`), `BillsListPage.tsx`, `BillFormPage.tsx`, `BillDetailPage.tsx`.
 
 ## Spec v17.3.22 — Role-gated company Notes board
 

@@ -43,6 +43,8 @@ import SegmentedControl from "../components/ui/SegmentedControl";
 import AsyncSearchCombobox from "../components/ui/AsyncSearchCombobox";
 import AddCustomerDialog from "../components/AddCustomerDialog";
 import BillNotesHover from "../components/bills/BillNotesHover";
+import BillBagsKgHover from "../components/bills/BillBagsKgHover";
+import BillDetailDialog from "../components/bills/BillDetailDialog";
 import PaginationBar from "../components/ui/PaginationBar";
 import { cn } from "../lib/cn";
 
@@ -149,6 +151,7 @@ function BillMobileCard({
   onView,
   onEdit,
   onPay,
+  onOpenBill,
 }: {
   bill: BillListItem;
   base: string;
@@ -157,6 +160,7 @@ function BillMobileCard({
   onView: () => void;
   onEdit: () => void;
   onPay: () => void;
+  onOpenBill: () => void;
 }) {
   const due = billDueAmount(bill);
   const final = bill.final_payable ?? bill.grand_total;
@@ -166,14 +170,20 @@ function BillMobileCard({
       <CardBody className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <BillNotesHover notes={bill.notes}>
-              <Link
-                to={`${base}/${bill.id}`}
-                className={cn("text-lg font-bold v2-mono hover:underline", theme.billLink)}
-              >
-                {bill.bill_number}
-              </Link>
-            </BillNotesHover>
+            <BillBagsKgHover bags={bill.total_ordered_bags ?? 0} kg={bill.total_ordered_kg ?? 0}>
+              <BillNotesHover notes={bill.notes}>
+                <button
+                  type="button"
+                  onClick={onOpenBill}
+                  className={cn(
+                    "max-w-full truncate text-left text-lg font-bold v2-mono hover:underline",
+                    theme.billLink
+                  )}
+                >
+                  {bill.bill_number}
+                </button>
+              </BillNotesHover>
+            </BillBagsKgHover>
           </div>
           <div className="text-right">
             <p className="text-lg font-bold v2-mono text-ink">{formatInr(final)}</p>
@@ -224,11 +234,16 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
+  const [detailBillId, setDetailBillId] = useState<number | null>(null);
   const limit = DEFAULT_PAGE_LIMIT;
   const base = billType === "sales" ? "/sales-bills" : "/purchase-bills";
   const isSales = billType === "sales";
   const theme = PAGE_THEME[billType];
   const EmptyIcon = theme.emptyIcon;
+  const detailListItem = useMemo(
+    () => (detailBillId == null ? null : rows.find((r) => r.id === detailBillId) ?? null),
+    [detailBillId, rows]
+  );
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -303,14 +318,20 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       header: "Bill",
       width: "11rem",
       cell: (b) => (
-        <BillNotesHover notes={b.notes}>
-          <Link
-            to={`${base}/${b.id}`}
-            className={cn("font-semibold v2-mono hover:underline", theme.billLink)}
-          >
-            {b.bill_number}
-          </Link>
-        </BillNotesHover>
+        <BillBagsKgHover bags={b.total_ordered_bags ?? 0} kg={b.total_ordered_kg ?? 0}>
+          <BillNotesHover notes={b.notes}>
+            <button
+              type="button"
+              onClick={() => setDetailBillId(b.id)}
+              className={cn(
+                "max-w-full truncate text-left font-semibold v2-mono hover:underline",
+                theme.billLink
+              )}
+            >
+              {b.bill_number}
+            </button>
+          </BillNotesHover>
+        </BillBagsKgHover>
       ),
     },
     {
@@ -643,6 +664,7 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
                             onView={() => navigate(`${base}/${b.id}`)}
                             onEdit={() => navigate(`${base}/${b.id}/edit`)}
                             onPay={() => navigate(`${base}/${b.id}/payment`)}
+                            onOpenBill={() => setDetailBillId(b.id)}
                           />
                         ))}
                       </section>
@@ -758,6 +780,15 @@ export default function BillsListPage({ billType }: { billType: "sales" | "purch
       )}
 
       <AddCustomerDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onCreated={() => undefined} />
+
+      <BillDetailDialog
+        open={detailBillId != null}
+        billId={detailBillId}
+        billType={billType}
+        listItem={detailListItem}
+        onClose={() => setDetailBillId(null)}
+        onChanged={load}
+      />
 
       <Link
         to={`${base}/new`}

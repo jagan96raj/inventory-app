@@ -11,11 +11,13 @@ type Props = {
   description?: ReactNode;
   headerIcon?: ReactNode;
   headerTone?: "default" | "accent";
-  size?: "sm" | "md" | "lg" | "xl";
+  size?: "sm" | "md" | "lg" | "xl" | "full";
   children: ReactNode;
   footer?: ReactNode;
   closeOnOverlay?: boolean;
   bodyClassName?: string;
+  /** Extra controls before the close button (e.g. Maximize). */
+  headerActions?: ReactNode;
 };
 
 const sizeClass: Record<NonNullable<Props["size"]>, string> = {
@@ -23,6 +25,7 @@ const sizeClass: Record<NonNullable<Props["size"]>, string> = {
   md: "max-w-md",
   lg: "max-w-2xl",
   xl: "max-w-4xl",
+  full: "max-w-[min(96rem,calc(100vw-1.5rem))]",
 };
 
 export default function Modal({
@@ -37,6 +40,7 @@ export default function Modal({
   footer,
   closeOnOverlay = true,
   bodyClassName,
+  headerActions,
 }: Props) {
   return (
     <Transition show={open} as={Fragment}>
@@ -67,11 +71,11 @@ export default function Modal({
               <Dialog.Panel
                 className={cn(
                   "v2-card relative flex w-full min-w-0 flex-col overflow-hidden shadow-lg",
-                  "max-h-[min(100dvh-2rem,52rem)]",
+                  size === "full" ? "max-h-[calc(100dvh-1rem)]" : "max-h-[min(100dvh-2rem,52rem)]",
                   sizeClass[size]
                 )}
               >
-                {(title || description) && (
+                {(title || description || headerActions) && (
                   <div
                     className={cn(
                       "relative flex shrink-0 items-start justify-between gap-3 border-b border-line",
@@ -107,9 +111,12 @@ export default function Modal({
                         )}
                       </div>
                     </div>
-                    <IconButton label="Close dialog" size="sm" onClick={onClose} className="shrink-0">
-                      <X />
-                    </IconButton>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {headerActions}
+                      <IconButton label="Close dialog" size="sm" onClick={onClose}>
+                        <X />
+                      </IconButton>
+                    </div>
                   </div>
                 )}
 

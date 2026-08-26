@@ -8,6 +8,7 @@ import {
   type BillPrintDocumentProps,
 } from "../../lib/billPrint";
 import { formatInr, formatDate } from "../../lib/format";
+import { formatBagsKgLabel, sumOrderedBagsKg } from "../../lib/billQty";
 import { cn } from "../../lib/cn";
 
 const BillPrintDocument = forwardRef<HTMLDivElement, BillPrintDocumentProps>(function BillPrintDocument(
@@ -18,6 +19,7 @@ const BillPrintDocument = forwardRef<HTMLDivElement, BillPrintDocumentProps>(fun
   const customerAddress = formatCustomerAddress(bill);
   const totals = billTotalsRows(bill);
   const companyAddressLines = bookSettingsCompanyAddressLines(bookSettings);
+  const ordered = sumOrderedBagsKg(bill.lines);
 
   return (
     <div
@@ -66,6 +68,10 @@ const BillPrintDocument = forwardRef<HTMLDivElement, BillPrintDocumentProps>(fun
           <p className="mt-2 text-sm">
             <span className="text-ink-muted">Bill no.</span>{" "}
             <span className="font-mono font-semibold">{bill.bill_number}</span>
+          </p>
+          <p className="text-sm">
+            <span className="text-ink-muted">Ordered</span>{" "}
+            <span className="font-medium">{formatBagsKgLabel(ordered.bags, ordered.kg)}</span>
           </p>
           <p className="text-sm">
             <span className="text-ink-muted">Date</span>{" "}

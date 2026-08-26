@@ -337,6 +337,8 @@ class BillListItemOut(BaseModel):
     order_delivery_status: str
     version: int
     notes: str | None = None
+    total_ordered_bags: int = 0
+    total_ordered_kg: Decimal = Decimal("0")
 
 
 class BillsListSummaryOut(BaseModel):

@@ -34,6 +34,7 @@ import {
   readRememberedPaymentCreated,
 } from "../lib/paymentCreated";
 import { formatInr, formatDateTime, formatQtyKg } from "../lib/format";
+import { sumOrderedBagsKg } from "../lib/billQty";
 import { fulfillmentEntryLabel, fulfillmentQtyLabel } from "../lib/fulfillmentLabels";
 import { paymentModeLabel } from "../lib/statusLabels";
 import PageHeader from "../components/ui/PageHeader";
@@ -328,6 +329,10 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
 
   const due = useMemo(() => (bill ? billDueAmount(bill) : 0), [bill]);
   const finalPayable = bill?.final_payable ?? bill?.grand_total ?? "0";
+  const orderedBagsKg = useMemo(
+    () => (bill ? sumOrderedBagsKg(bill.lines) : { bags: 0, kg: 0 }),
+    [bill]
+  );
 
   /** Newest first so a just-recorded payment is at the top, like cash book. */
   const paymentsNewestFirst = useMemo(() => {
@@ -1089,6 +1094,14 @@ export default function BillDetailPage({ billType }: { billType: "sales" | "purc
             )}
           </div>
           <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 lg:justify-end">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Total bags</p>
+              <p className="v2-mono text-xl font-bold text-ink">{orderedBagsKg.bags}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Total kg</p>
+              <p className="v2-mono text-xl font-bold text-ink">{formatQtyKg(orderedBagsKg.kg)}</p>
+            </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Final payable</p>
               <p className="v2-mono text-xl font-bold text-ink">{formatInr(finalPayable)}</p>

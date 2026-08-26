@@ -34,6 +34,8 @@ export type BillListItem = {
   order_delivery_status: string;
   version: number;
   notes?: string | null;
+  total_ordered_bags?: number;
+  total_ordered_kg?: string;
 };
 
 export type BillsPage = PageOut<BillListItem> & {

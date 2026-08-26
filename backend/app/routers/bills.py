@@ -4,7 +4,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import case, delete, exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.auth import get_current_user
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
@@ -127,8 +127,19 @@ def _unique_bill_lines(bill: Bill) -> list[BillLine]:
     return out
 
 
+def bill_ordered_totals(bill: Bill) -> tuple[int, Decimal]:
+    """Sum ordered bags / kg from bill lines (computed; not stored on Bill)."""
+    bags = 0
+    kg = Decimal("0")
+    for ln in bill.lines or []:
+        bags += int(ln.ordered_bags or 0)
+        kg += Decimal(str(ln.ordered_quantity_kg or 0))
+    return bags, kg
+
+
 def bill_list_item_to_out(bill: Bill) -> BillListItemOut:
     due = bill.grand_total - bill.amount_paid
+    total_bags, total_kg = bill_ordered_totals(bill)
     return BillListItemOut(
         id=bill.id,
         bill_number=bill.bill_number,
@@ -147,6 +158,8 @@ def bill_list_item_to_out(bill: Bill) -> BillListItemOut:
         order_delivery_status=bill.order_delivery_status.value,
         version=bill.version,
         notes=bill.notes,
+        total_ordered_bags=total_bags,
+        total_ordered_kg=total_kg,
     )
 
 
@@ -444,6 +457,7 @@ def list_bills(
         .options(
             joinedload(Bill.customer),
             joinedload(Bill.location),
+            selectinload(Bill.lines),
         ),
         bill_type=bill_type,
         payment_status=payment_status,

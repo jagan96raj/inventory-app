@@ -1,8 +1,18 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 26 Aug 2026 — covers Spec v5.4 through **v17.3.22**; backend v12.21 + v12.22  
+**Last updated:** 26 Aug 2026 — covers Spec v5.4 through **v17.3.23**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.23 — Bill bags/kg + bill-number dialog
+
+1. **Form** — New/edit bill: beside Products billed, **Total bags** and **Total kg** update as lines change (bags + loose kg).
+2. **Detail** — Bill detail header shows Total bags + Total kg matching line sum; print/PDF header shows Ordered `X bags · Y kg`.
+3. **List API** — `GET /api/bills` items include `total_ordered_bags` / `total_ordered_kg` (computed; no migration).
+4. **Hover** — On desktop table and mobile cards, hover bill number → tooltip `X bags · Y kg` (notes hover still works when notes present).
+5. **Dialog** — Click bill number opens `BillDetailDialog` (does not leave list). Maximize → near fullscreen; Restore → xl. Actions: Open full page, Edit, Pay (if due), Print.
+6. **Refresh** — Close dialog after Edit/void from full page path → list reloads.
+7. **Automated** — `python -m unittest tests.test_bill_list_totals_v17323`.
 
 ## v17.3.22 — Notes board
 

@@ -272,6 +272,18 @@ export default function BillFormPage({
     [lines]
   );
 
+  const orderedBagsKg = useMemo(() => {
+    let bags = 0;
+    let kg = 0;
+    for (const line of lines) {
+      if (!line.product_id || !line.brand_id || !line.bag_type_id) continue;
+      const bt = getBagType(line.bag_type_id);
+      bags += Number(line.ordered_bags) || 0;
+      kg += orderedQtyKg(line, bt);
+    }
+    return { bags, kg };
+  }, [lines, getBagType]);
+
   const handleCustomerChange = (customerId: string) => {
     if (
       header.customer_id &&
@@ -1117,14 +1129,24 @@ export default function BillFormPage({
           </CardBody>
         </Card>
 
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-line/80 bg-surface-subtle/60 px-4 py-3 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line/80 bg-surface-subtle/60 px-4 py-3 sm:px-5">
           <div className="flex items-center gap-2.5 text-ink">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200">
               <Package className="h-4 w-4" aria-hidden="true" />
             </span>
             <p className="text-sm font-semibold text-ink">Products billed</p>
           </div>
-          <p className="v2-mono text-2xl font-bold tabular-nums text-ink">{productsBilledCount}</p>
+          <div className="flex flex-wrap items-baseline justify-end gap-x-5 gap-y-1">
+            <p className="v2-mono text-2xl font-bold tabular-nums text-ink">{productsBilledCount}</p>
+            <div className="text-right">
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Total bags</p>
+              <p className="v2-mono text-lg font-bold tabular-nums text-ink">{orderedBagsKg.bags}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Total kg</p>
+              <p className="v2-mono text-lg font-bold tabular-nums text-ink">{formatQtyKg(orderedBagsKg.kg)}</p>
+            </div>
+          </div>
         </div>
 
         <Card className="border-primary-200/60 bg-gradient-to-br from-primary-50/30 via-surface to-surface dark:border-primary-800/40 dark:from-primary-950/20">
