@@ -345,6 +345,7 @@ class SalesStockHintBillOut(BaseModel):
     bill_id: int
     bill_date: date
     remaining_kg: Decimal
+    remaining_bags: int = 0
 
 
 class SalesStockHintItemOut(BaseModel):
@@ -354,6 +355,7 @@ class SalesStockHintItemOut(BaseModel):
     stock_source: str
     customer_id: int | None = None
     on_hand_kg: Decimal
+    on_hand_bags: int = 0
     open_bills: list[SalesStockHintBillOut]
 
 

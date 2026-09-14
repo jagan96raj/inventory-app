@@ -399,11 +399,13 @@ def sales_stock_hints(
                 stock_source=it.stock_source,
                 customer_id=it.customer_id,
                 on_hand_kg=it.on_hand_kg,
+                on_hand_bags=it.on_hand_bags,
                 open_bills=[
                     SalesStockHintBillOut(
                         bill_id=b.bill_id,
                         bill_date=b.bill_date,
                         remaining_kg=b.remaining_kg,
+                        remaining_bags=b.remaining_bags,
                     )
                     for b in it.open_bills
                 ],

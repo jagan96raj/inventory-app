@@ -1,30 +1,31 @@
 import { formatQtyKg } from "../../lib/format";
-import { cn } from "../../lib/cn";
 
 export default function SalesStockHint({
+  isLoose,
   availableKg,
+  availableBags,
   reservedKg,
-  notDeliveredKg,
+  reservedBags,
 }: {
+  isLoose: boolean;
   availableKg: number;
+  availableBags: number;
   reservedKg: number;
-  notDeliveredKg: number;
+  reservedBags: number;
 }) {
-  const reservedWarn = reservedKg < 0;
+  const available = isLoose ? formatQtyKg(availableKg) : `${availableBags} bags`;
+  const reservedQty = isLoose ? reservedKg : reservedBags;
+  const reserved = isLoose ? formatQtyKg(reservedKg) : `${reservedBags} bags`;
   return (
     <div className="stock-hint flex flex-wrap items-baseline gap-x-4 gap-y-1">
       <span>
-        Available (on hand):{" "}
-        <strong className="v2-mono font-semibold text-ink">{formatQtyKg(availableKg)}</strong>
+        Available: <strong className="v2-mono font-semibold text-ink">{available}</strong>
       </span>
-      <span className={cn(reservedWarn && "font-semibold text-amber-800 dark:text-amber-300")}>
-        Reserved:{" "}
-        <strong className="v2-mono">{formatQtyKg(reservedKg)}</strong>
-      </span>
-      <span>
-        Not delivered:{" "}
-        <strong className="v2-mono font-semibold text-ink">{formatQtyKg(notDeliveredKg)}</strong>
-      </span>
+      {reservedQty > 0 && (
+        <span>
+          Reserved: <strong className="v2-mono font-semibold text-ink">{reserved}</strong>
+        </span>
+      )}
     </div>
   );
 }

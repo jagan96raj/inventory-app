@@ -4,6 +4,7 @@ export type OpenBillRemaining = {
   bill_id: number;
   bill_date: string;
   remaining_kg: number;
+  remaining_bags?: number;
 };
 
 export type SalesStockHintItem = {
@@ -13,47 +14,31 @@ export type SalesStockHintItem = {
   stock_source: string;
   customer_id?: number | null;
   on_hand_kg: string;
-  open_bills: { bill_id: number; bill_date: string; remaining_kg: string }[];
+  on_hand_bags?: number;
+  open_bills: { bill_id: number; bill_date: string; remaining_kg: string; remaining_bags?: number }[];
 };
 
 export type SalesStockHint = {
   availableKg: number;
+  availableBags: number;
   reservedKg: number;
-  notDeliveredKg: number;
+  reservedBags: number;
 };
-
-const UNSAVED_BILL_ID = Number.MAX_SAFE_INTEGER;
 
 export function computeSalesStockHint(
   onHandKg: number,
-  openBills: OpenBillRemaining[]
+  otherOpenBills: OpenBillRemaining[],
+  onHandBags = 0
 ): SalesStockHint {
-  const bills = openBills
-    .filter((b) => b.remaining_kg > 0)
-    .slice()
-    .sort((a, b) => a.bill_date.localeCompare(b.bill_date) || a.bill_id - b.bill_id);
-  const notDeliveredKg = bills.reduce((sum, b) => sum + b.remaining_kg, 0);
-  if (bills.length <= 1) {
-    return { availableKg: onHandKg, reservedKg: 0, notDeliveredKg };
-  }
-  const laterQty = bills.slice(1).reduce((sum, b) => sum + b.remaining_kg, 0);
-  return { availableKg: onHandKg, reservedKg: onHandKg - laterQty, notDeliveredKg };
-}
-
-export function mergeFormIntoOpenBills(
-  saved: OpenBillRemaining[],
-  formRemainingKg: number,
-  opts?: { billId?: number; billDate?: string }
-): OpenBillRemaining[] {
-  if (formRemainingKg <= 0) return saved;
-  return [
-    ...saved,
-    {
-      bill_id: opts?.billId ?? UNSAVED_BILL_ID,
-      bill_date: opts?.billDate ?? "9999-12-31",
-      remaining_kg: formRemainingKg,
-    },
-  ];
+  const bills = otherOpenBills.filter((b) => b.remaining_kg > 0 || (b.remaining_bags ?? 0) > 0);
+  const reservedKg = bills.reduce((sum, b) => sum + b.remaining_kg, 0);
+  const reservedBags = bills.reduce((sum, b) => sum + (b.remaining_bags ?? 0), 0);
+  return {
+    availableKg: onHandKg,
+    availableBags: onHandBags,
+    reservedKg,
+    reservedBags,
+  };
 }
 
 export function findHintItem(
@@ -78,16 +63,16 @@ export function findHintItem(
   });
 }
 
-export function hintFromItemAndForm(
+export function hintFromOtherBills(
   item: SalesStockHintItem | undefined,
   onHandKg: number,
-  formRemainingKg: number,
-  opts?: { billId?: number; billDate?: string }
+  onHandBags: number
 ): SalesStockHint {
-  const saved = (item?.open_bills ?? []).map((b) => ({
+  const others = (item?.open_bills ?? []).map((b) => ({
     bill_id: b.bill_id,
     bill_date: b.bill_date,
     remaining_kg: Number(b.remaining_kg) || 0,
+    remaining_bags: Number(b.remaining_bags) || 0,
   }));
-  return computeSalesStockHint(onHandKg, mergeFormIntoOpenBills(saved, formRemainingKg, opts));
+  return computeSalesStockHint(onHandKg, others, onHandBags);
 }

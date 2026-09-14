@@ -1,8 +1,17 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 14 Sep 2026 — covers Spec v5.4 through **v17.3.25**; backend v12.21 + v12.22  
+**Last updated:** 14 Sep 2026 — covers Spec v5.4 through **v17.3.26**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.26 — Sales stock hint (other bills, bags vs kg)
+
+1. **SKU only** — Packed 50kg vs Loose on the same product/brand/location stay separate; Available/Reserved never mix bag types.
+2. **First bill** — 50 bags on hand, bill A 100 bags: hint shows **Available 50 bags** only (no Reserved).
+3. **After deliver** — Deliver 20 of A: on hand 30 bags. New bill B: **Available 30 bags, Reserved 80 bags**.
+4. **Third bill** — After saving B 100: bill C shows **Available 30 bags, Reserved 180 bags**.
+5. **Loose** — Loose SKU shows kg, not bags. Reserved 0 hides the Reserved line.
+6. **Automated** — `python -m unittest tests.test_sales_stock_hints_v17324`.
 
 ## v17.3.25 — Over-on-hand sales Submit
 
@@ -10,7 +19,7 @@
 2. **Submit succeeds** — Click Submit bill; bill is created; inventory qty unchanged.
 3. **Packed + 0 stock** — SKU with 0 kg / missing row, packed bag type, bags > 0, rate entered: Submit does not show “Invalid bag type” or “quantity greater than zero”.
 4. **Deliver still blocked** — Deliver more than physical on-hand still fails.
-5. **Unchanged** — Hint math from v17.3.24; no Alembic.
+5. **Unchanged** — Deliver still cannot exceed physical on-hand; no Alembic.
 
 ## v17.3.24 — Sales stock hints + 0-qty SKUs
 

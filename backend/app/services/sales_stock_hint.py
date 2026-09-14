@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Sequence
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.entities import (
     Bill,
@@ -18,6 +18,7 @@ from app.models.entities import (
     InventoryOwnerType,
     StockSource,
 )
+from app.services.bills import bags_delivered_count
 from app.services.fulfillment import net_fulfilled_kg
 
 SkuKey = tuple[int, int, int, str, int | None]
@@ -28,14 +29,15 @@ class OpenBillRemaining:
     bill_id: int
     bill_date: date
     remaining_kg: Decimal
+    remaining_bags: int = 0
 
 
 @dataclass(frozen=True)
 class SalesStockHint:
     available_kg: Decimal
+    available_bags: int
     reserved_kg: Decimal
-    not_delivered_kg: Decimal
-    open_bill_count: int
+    reserved_bags: int
 
 
 @dataclass(frozen=True)
@@ -46,28 +48,29 @@ class SalesStockHintItem:
     stock_source: str
     customer_id: int | None
     on_hand_kg: Decimal
+    on_hand_bags: int
     open_bills: tuple[OpenBillRemaining, ...]
 
 
 def compute_sales_stock_hint(
     on_hand_kg: Decimal,
-    open_bills: Sequence[OpenBillRemaining],
+    other_open_bills: Sequence[OpenBillRemaining],
+    *,
+    on_hand_bags: int = 0,
 ) -> SalesStockHint:
-    """available = physical on_hand. Oldest open bill is excluded from reserved."""
-    bills = [b for b in open_bills if Decimal(b.remaining_kg) > 0]
-    bills.sort(key=lambda b: (b.bill_date, b.bill_id))
-    not_delivered = sum((Decimal(b.remaining_kg) for b in bills), Decimal("0"))
-    on_hand = Decimal(on_hand_kg)
-    if len(bills) <= 1:
-        reserved = Decimal("0")
-    else:
-        later_qty = sum((Decimal(b.remaining_kg) for b in bills[1:]), Decimal("0"))
-        reserved = on_hand - later_qty
+    """Available = physical on_hand. Reserved = remaining on OTHER open bills of this SKU."""
+    bills = [
+        b
+        for b in other_open_bills
+        if Decimal(b.remaining_kg) > 0 or int(b.remaining_bags or 0) > 0
+    ]
+    reserved_kg = sum((Decimal(b.remaining_kg) for b in bills), Decimal("0"))
+    reserved_bags = sum((int(b.remaining_bags or 0) for b in bills), 0)
     return SalesStockHint(
-        available_kg=on_hand,
-        reserved_kg=reserved,
-        not_delivered_kg=not_delivered,
-        open_bill_count=len(bills),
+        available_kg=Decimal(on_hand_kg),
+        available_bags=int(on_hand_bags),
+        reserved_kg=reserved_kg,
+        reserved_bags=reserved_bags,
     )
 
 
@@ -81,6 +84,13 @@ def _sku_key(
     return (product_id, brand_id, bag_type_id, stock_source, customer_id)
 
 
+def _line_remaining_bags(line: BillLine, bill: Bill) -> int:
+    if line.bag_type and line.bag_type.is_loose:
+        return 0
+    delivered = bags_delivered_count(line, bill.bill_type)
+    return max(int(line.ordered_bags or 0) - delivered, 0)
+
+
 def list_open_sales_remainings(
     db: Session,
     *,
@@ -91,6 +101,7 @@ def list_open_sales_remainings(
     q = (
         select(Bill, BillLine)
         .join(BillLine, BillLine.bill_id == Bill.id)
+        .options(joinedload(BillLine.bag_type))
         .where(
             Bill.company_id == company_id,
             Bill.bill_type == BillType.sales,
@@ -102,9 +113,10 @@ def list_open_sales_remainings(
         q = q.where(Bill.id != exclude_bill_id)
 
     by_sku_bill: dict[tuple[SkuKey, int], OpenBillRemaining] = {}
-    for bill, line in db.execute(q).all():
-        remaining = Decimal(line.ordered_quantity_kg or 0) - net_fulfilled_kg(line, bill.bill_type)
-        if remaining <= 0:
+    for bill, line in db.execute(q).unique().all():
+        remaining_kg = Decimal(line.ordered_quantity_kg or 0) - net_fulfilled_kg(line, bill.bill_type)
+        remaining_bags = _line_remaining_bags(line, bill)
+        if remaining_kg <= 0 and remaining_bags <= 0:
             continue
         source = (line.stock_source or StockSource.owned).value
         cust_id = bill.customer_id if source == StockSource.job_work.value else None
@@ -115,13 +127,15 @@ def list_open_sales_remainings(
             by_sku_bill[bill_key] = OpenBillRemaining(
                 bill_id=bill.id,
                 bill_date=bill.bill_date,
-                remaining_kg=existing.remaining_kg + remaining,
+                remaining_kg=existing.remaining_kg + remaining_kg,
+                remaining_bags=existing.remaining_bags + remaining_bags,
             )
         else:
             by_sku_bill[bill_key] = OpenBillRemaining(
                 bill_id=bill.id,
                 bill_date=bill.bill_date,
-                remaining_kg=remaining,
+                remaining_kg=remaining_kg,
+                remaining_bags=remaining_bags,
             )
 
     out: dict[SkuKey, list[OpenBillRemaining]] = {}
@@ -152,7 +166,7 @@ def list_sales_stock_hint_items(
         )
     ).all()
 
-    on_hand: dict[SkuKey, Decimal] = {}
+    on_hand: dict[SkuKey, tuple[Decimal, int]] = {}
     for inv in inv_rows:
         if inv.owner_type == InventoryOwnerType.job_work:
             source = StockSource.job_work.value
@@ -161,12 +175,13 @@ def list_sales_stock_hint_items(
             source = StockSource.owned.value
             cust_id = None
         key = _sku_key(inv.product_id, inv.brand_id, inv.bag_type_id, source, cust_id)
-        on_hand[key] = Decimal(inv.total_quantity_kg or 0)
+        on_hand[key] = (Decimal(inv.total_quantity_kg or 0), int(inv.bag_count or 0))
 
     keys = set(on_hand) | set(remainings)
     items: list[SalesStockHintItem] = []
     for key in sorted(keys):
         product_id, brand_id, bag_type_id, source, cust_id = key
+        kg, bags = on_hand.get(key, (Decimal("0"), 0))
         items.append(
             SalesStockHintItem(
                 product_id=product_id,
@@ -174,7 +189,8 @@ def list_sales_stock_hint_items(
                 bag_type_id=bag_type_id,
                 stock_source=source,
                 customer_id=cust_id,
-                on_hand_kg=on_hand.get(key, Decimal("0")),
+                on_hand_kg=kg,
+                on_hand_bags=bags,
                 open_bills=tuple(remainings.get(key, [])),
             )
         )

@@ -16,11 +16,7 @@ import { formatInr, formatQtyKg } from "../lib/format";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
 import { exceedsAvailableStock } from "../lib/stockWarning";
-import {
-  findHintItem,
-  hintFromItemAndForm,
-  type SalesStockHintItem,
-} from "../lib/salesStockHint";
+import { findHintItem, hintFromOtherBills, type SalesStockHintItem } from "../lib/salesStockHint";
 import SalesStockHint from "../components/bills/SalesStockHint";
 import {
   fetchBagTypesByIds,
@@ -591,7 +587,6 @@ export default function BillFormPage({
     if (!isSales || !line.product_id || !line.brand_id || !line.bag_type_id) return null;
     const owner = stockOwnerFilter(line.stock_source, header.customer_id);
     const inv = stockRow(stock, line.product_id, line.brand_id, line.bag_type_id, owner);
-    const onHand = inv ? Number(inv.total_quantity_kg) || 0 : 0;
     const item = findHintItem(
       stockHints,
       line.product_id,
@@ -600,25 +595,13 @@ export default function BillFormPage({
       line.stock_source,
       line.stock_source === "job_work" ? header.customer_id : null
     );
-    let formKg = 0;
-    lines.forEach((ln, i) => {
-      if (
-        ln.product_id !== line.product_id ||
-        ln.brand_id !== line.brand_id ||
-        ln.bag_type_id !== line.bag_type_id ||
-        ln.stock_source !== line.stock_source
-      ) {
-        return;
-      }
-      const lnBt = getBagType(ln.bag_type_id);
-      formKg += orderedQtyKg(ln, lnBt);
-      const delivered = Number(bill?.lines[i]?.delivered_quantity_kg ?? 0);
-      formKg -= delivered;
-    });
-    return hintFromItemAndForm(item, onHand, Math.max(formKg, 0), {
-      billId: editMode && bill ? bill.id : undefined,
-      billDate: editMode && bill ? bill.bill_date : undefined,
-    });
+    const onHandKg = inv ? Number(inv.total_quantity_kg) || 0 : Number(item?.on_hand_kg ?? 0);
+    const onHandBags = inv ? inv.bag_count || 0 : Number(item?.on_hand_bags ?? 0);
+    const bt = getBagType(line.bag_type_id);
+    return {
+      ...hintFromOtherBills(item, onHandKg, onHandBags),
+      isLoose: isLooseBagType(bt),
+    };
   };
 
   const renderCreateLine = (line: LineForm, idx: number) => {
@@ -771,9 +754,11 @@ export default function BillFormPage({
         </div>
         {isSales && s3 && hint && (
           <SalesStockHint
+            isLoose={hint.isLoose}
             availableKg={hint.availableKg}
+            availableBags={hint.availableBags}
             reservedKg={hint.reservedKg}
-            notDeliveredKg={hint.notDeliveredKg}
+            reservedBags={hint.reservedBags}
           />
         )}
         {s4 && qtyKg > 0 && (
@@ -871,9 +856,11 @@ export default function BillFormPage({
         </div>
         {isSales && hint && (
           <SalesStockHint
+            isLoose={hint.isLoose}
             availableKg={hint.availableKg}
+            availableBags={hint.availableBags}
             reservedKg={hint.reservedKg}
-            notDeliveredKg={hint.notDeliveredKg}
+            reservedBags={hint.reservedBags}
           />
         )}
         {qtyKg > 0 && qtyKg < floor && (
