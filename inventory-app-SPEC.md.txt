@@ -1,13 +1,32 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 11 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.6** (production security: no plaintext passwords, hide API docs, COOKIE_SECURE warning); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 14 Sep 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.25** (over-on-hand sales submit; v17.3.24 stock hints + 0-qty SKUs; v17.3.23 bill bags/kg dialog; v17.3.22 Notes board); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.25** — Sales create: hydrate bag types before Submit so billed qty is not treated as 0 / “Invalid bag type”; over-on-hand warning banner (“You can still submit this bill”) does not block save. Stock still moves only on Deliver. No Alembic. See **Spec v17.3.25** below.
+- **v17.3.24** — Sales bill **stock hints** (display only) + 0-qty / missing-row SKUs. Create/edit uses master product/brand/bag search (not stock-at-location qty > 0). Hint: Available (on hand) / Reserved / Not delivered. Billing never changes on_hand; oldest open sales bill is excluded from reserved; 2+ open bills → reserved = on_hand − later_qty (can be negative). Over-on-hand create is a warning only (submit allowed). Fulfillment: first Deliver wins; other open dialogs refetch stock; deliver still cannot exceed physical on_hand. `GET /api/bills/sales-stock-hints` read helper. No Alembic. See **Spec v17.3.24** below.
+- **v17.3.23** — Bill **Total bags / Total kg** live on form next to Products billed; same counters on detail (+ print header). `BillListItemOut` adds computed `total_ordered_bags` / `total_ordered_kg` (sum of lines; no migration). List: hover bill number → “X bags · Y kg”; click → `BillDetailDialog` (Modal xl, maximize ≈ fullscreen) with Open full page / Edit / Pay / Print; refresh list after close. See **Spec v17.3.23** below.
+- **v17.3.22** — **Notes** board (`/notes`, Overview sidebar): company-scoped soft-paper cards. Default **owner-only**; owner sets per-note `viewer_roles` (writer / stock_manager / factory_manager) via `company_note_role_access`. Owner CRUD; other roles read-only when shared. Migration `062`. See **Spec v17.3.22** below.
+- **v17.3.21** — Dashboard **Money now** snapshot cards (not month P&L / not an FY column): Amount in hand = M (cash + all bank + cash accounts = accounts `total_money`); After credit = M − C; After debit = M + D; After settlement = M − C + D. C/D are customer credit/debit sums. Do not use M − D for in hand; card 4 is not profit. `money_now` on `GET /api/reports/dashboard-bundle` via `get_accounts_summary`. See **Spec v17.3.21** below.
+- **v17.3.20** — `/customers` KPI cards: **Total credit (I owe)** = `SUM(credit_balance)`, **Total debit (they owe)** = `SUM(debit_balance)` over the full filtered set (search), not the current page. Same meaning as Accounts dashboard. `GET /api/customers` returns `credit_total` / `debit_total` on `CustomerPageOut`. Same totals on Customer balances (`GET /api/accounts/customers`). No migration. See **Spec v17.3.20** below.
+- **v17.3.19** — In-app **Download backup** (owner / `users_manage` only) on Profile: `GET /api/admin/backup` dumps via `pg_dump -Fc` to a file in the Postgres container, then `docker compose cp` to the API host (same pattern as `scripts/backup_db.ps1`). `pg_dump -Fc -f -` is empty on Lightsail. Saves `graintrack-YYYY-MM-DD_HHmm.dump` on the device. No restore API. See **Spec v17.3.19** below.
+- **v17.3.18** — Processing batch void: reverse by equivalent kg when the original bag type is empty but the same product/brand/owner still has the kg (same location first, then other locations). Names the failing line. Transfer/bag-change/disposal voids stay location-strict. See **Spec v17.3.18** below.
+- **v17.3.17** — App icons (clip + invert): rebuild centered emblem-only `logo-icon.png` (four-grain mark, no tractor scraps); OS icons on visiting-card cream `#E7E8E3` with dark olive `#586038` ink and ~24% pad so rounded masks don’t clip tips. See **Spec v17.3.17** below.
+- **v17.3.16** — App icons: regenerate Windows `desktop-shell/icon.png` + `icon.ico` and add `apple-touch-icon.png` from emblem-only `logo-icon.png` — square canvas, letterboxed (~15% pad) on solid `#586038` (no stretch / no full-transparency). Favicon padded the same way. Script: `scripts/generate_app_icons.py`. See **Spec v17.3.16** below.
+- **v17.3.15** — Brand theme: replace indigo/violet/blue-lavender with Raj Agro logo olive/sage greens (Tailwind `primary`, CSS tokens, AuthShell/PageHeader/FAB gradients, legacy Aurora CSS aliases, `theme-color`). Light canvas warm-green tinted; dark olive-readable. No business logic. See **Spec v17.3.15** below.
+- **v17.3.14** — Custom app logo: transparent `frontend/public/logo-mark.png` (tractor + circular grain mark only; company wordmark cropped out); `AppBrand` shows mark + `VITE_APP_NAME` (**GrainTrack**); wired in Sidebar + AuthShell; favicon + desktop-shell `icon.ico`. See **Spec v17.3.14** below.
+- **v17.3.13** — Responsive UI **Phase 7** (layout only — final polish): Shared Modal/`CardFooter`/`PageHeader`/`EmptyState` mobile stacking; money-accounts + expense-category cards; audit/login history cards; sticky submit on Bill/JW/ops/cash-book forms; inventory/processing dialog button stacks. No new features. See **Spec v17.3.13** below.
+- **v17.3.12** — Responsive UI **Phase 6** (layout only): Customer balances + statement cards below `lg`; Users/Profile touch targets + stacked modal/save actions; AuthShell phone padding + wider register; Pending access stacked CTAs. Desktop tables unchanged. No Phase 7+. See **Spec v17.3.12** below.
+- **v17.3.11** — Responsive UI **Phase 5** (layout only): Masters lists (products/brands via `MasterCrud`; customers/locations via `PartyMasterCrud`; bag types) use cards below `lg` + Add FAB; book settings Save full-width on phone + `min-w-0` comboboxes; `AddCustomerDialog` footer stacks on xs. Desktop tables unchanged. No Phase 6+. See **Spec v17.3.11** below.
+- **v17.3.10** — Responsive UI **Phase 4** (layout only): Inventory stock line cards below `lg` + Add-stock FAB; Summary/Detail SegmentedControl; bag-change / transfer / disposal history mobile cards via shared `OperationHistoryPage`; OperationPageHeader shortens History CTA. Desktop tables unchanged. No Phase 5+. See **Spec v17.3.10** below.
+- **v17.3.9** — Responsive UI **Phase 3** (layout only): Fulfillment + JW fulfillment line cards below `lg`; processing open-job FAB + history log cards; job-work list FAB / detail line cards + header CTAs; SegmentedControl wrap on filters/allocation. Desktop tables unchanged. No Phase 4+. See **Spec v17.3.9** below.
+- **v17.3.8** — Responsive UI **Phase 2** (layout only): Payments list mobile cards + FAB; Payment form stack/`min-w-0`; Cash book list cards + FAB; cash-book entry type segment wrap + stacked footer actions; Accounts dashboard bank/recent-entry cards + shorter header CTAs on phone. Desktop tables unchanged. No Phase 3+. See **Spec v17.3.8** below.
+- **v17.3.7** — Responsive UI **Phase 1** (layout only): AppShell mobile drawer (full labels, body scroll-lock, theme/density in user menu on narrow); Dashboard card headers / summary-table min-widths; Bills list payment segment + FAB clearance; Bill detail product + linked-expense mobile cards; desktop tables unchanged. No Phase 2+. See **Spec v17.3.7** below.
 - **v17.3.6** — Production security hardening: stop storing/returning `users.password_plain` (migration `061` NULLs existing values); Users API/UI set-new-password only (never display passwords); `DISABLE_API_DOCS=true` hides `/docs`, `/redoc`, `/openapi.json`; startup **WARNING** when `COOKIE_SECURE` is false. See **Spec v17.3.6** below.
 - **v17.3.5** — Dashboard: cash-book **Expense** excludes category **Self Withdrawal** (case-insensitive trim); expose `self_withdrawal_total`; **gross_profit** = sales − purchase − expense (excl. SW); **net_profit** = sales − purchase − all expenses (incl. SW) on month + FY (+ monthly FY rows). UI Net profit cards + Self WD column. Auth: auto-logout after **10 minutes** idle (mousemove/keydown/click/touch/scroll); hidden/minimized time counts toward the same limit (wall clock); calls `POST /api/auth/logout` then `/login`. See **Spec v17.3.5** below.
 - **v17.3.4** — UX polish matching live lists: bills list `product_id` filter (`EXISTS` line); payments list newest-first + post-create `?created=` highlight (`paymentCreated`); cash-book / payments tables `stickyHeader={false}`; `formatCustomerName` collapses whitespace on Customers / balances / statement. See **Spec v17.3.4** below.
@@ -106,17 +125,17 @@
 |------|------|----------------|
 | Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; no plaintext passwords; idle logout; optional hide API docs |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
-| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5** | `dashboard-bundle` (+ FY, job work); expenses excl. Self Withdrawal; gross + net profit; qty-first UI |
-| Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1** | list aggregates; snapshot UI; void reopen + close empty |
-| Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight |
-| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4** | sales lines: `stock_source`; notes; list `product_id` filter; form UX |
-| Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0** | deliver/return; audit log; product + brand filters on bills list |
-| Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment |
+| Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
+| Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
+| Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4**, **v17.3.8** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight; Phase 2 responsive |
+| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7**, **v17.3.24**, **v17.3.25** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive; stock hints; over-on-hand submit |
+| Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0**, **v17.3.9** | deliver/return; audit log; product + brand filters on bills list; Phase 3 responsive |
+| Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2**, **v17.3.10** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment; Phase 4 responsive |
 | Customers | v12.2, v13.2, **v14.0**, **v17.3.4** | `party_type`; `formatCustomerName` display |
 | Job Work orders | **v14.0**, **v14.3** | `services/job_work.py`, `routers/job_work.py`, JW-000001 counter; `/job-work` list/create/detail; activity log (receive + return events) |
 | Job Work fulfillment | **v14.0**, **v14.3** | `GET /api/job-work/fulfillment/orders`; receive/return/void receive on `/job-work/fulfillment`; `entry_type` on receipt rows — **not** bill `/fulfillment` |
 | Operations | v7, v12.17, **v14.1** | bag change / transfer / disposal owner-aware; `StockOwnerFields`; migration 026 |
-| Accounts | v12.21, v13.2, **v17.1.1**–**v17.1.3**, **v17.2.0**–**v17.2.4**, **v17.3.3** | unified money accounts (`kind` + `account_id`); cash book filter totals |
+| Accounts | v12.21, v13.2, **v17.1.1**–**v17.1.3**, **v17.2.0**–**v17.2.4**, **v17.3.3**, **v17.3.8** | unified money accounts (`kind` + `account_id`); cash book filter totals; Phase 2 responsive |
 | Cleanup | v12.6 | Removed legacy `bill_service`, `fulfillment_service`, `inventory_calc`, `models.py` |
 
 **Stack:** React + Vite + TypeScript (port 5173) | FastAPI (port 8000) | PostgreSQL | `VITE_API_URL` optional (Vite proxy recommended)
@@ -286,19 +305,20 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 ### Per-page redesign — all routes preserved
 | Route | Page | UI work | QA hardening surfaced |
 |---|---|---|---|
-| `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. | — |
+| `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. **v17.3.12** phone padding / register wide. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
-| `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). | — |
-| `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
-| `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
-| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
-| `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
+| `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). Owner **Download backup** (v17.3.19). **v17.3.12** full-width Save on phone. | — |
+| `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; **v17.3.21** Money now snapshot row (independent of year/month); FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
+| `/notes` | `NotesPage` | Soft paper Notes board; owner CRUD + per-note role visibility; others read-only when shared (**v17.3.22**). | — |
+| `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. **v17.3.23:** bill number hover bags·kg; click opens `BillDetailDialog` (not navigate). | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
+| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. **v17.3.23:** live Total bags + Total kg beside Products billed. **v17.3.24:** sales master SKU search (0-qty OK); Available / Reserved / Not delivered hint; over-on-hand warning only. **v17.3.25:** hydrate bag types on Submit; warning does not block save. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
+| `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. **v17.3.23:** header Total bags + Total kg; print header Ordered bags·kg. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
 | `/payments`, `/payments/new`, `/…/:id/payment` | `PaymentsPage`, `PaymentPage` | New listing with `Table` + per-row Void; record form with bill snapshot, set-off allocation preview, balance-mode autofill, validation banners. **v13.1:** full-row sales/purchase tint via `BILL_TYPE_THEME`. | **#4 v5.4** void from list; **v5.2** set-off allocations. |
-| `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. | **#12 v12.3** row-locked stock mutations (server-side). |
+| `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. **v17.3.24:** no soft-lock on open; refetch on_hand after another deliver (first Deliver wins); API still rejects over physical. | **#12 v12.3** row-locked stock mutations (server-side). |
 | `/inventory` | `InventoryPage` | Location-grouped tables with product `rowspan` column; low-stock amber highlight; add opening stock via `Modal` only. **v13.1:** larger product names; canvas background. | **#3 v12.1** opening qty only; PUT rejected; **#12 v12.3** row locking. |
 | `/operations/processing`, `/operations/processing/:id` | `ProcessingListPage`, `ProcessingJobPage` | Open job in `Modal`; job detail with compact summary strip, **At a glance** In/Out/Balance panel, collapsible batch log. | **#8 v9.4** reprocess guard hidden when no balance returned; **v9.3** mass-balance enforced. |
 | `/operations/bag-change`, `/operations/product-transfer`, `/operations/stock-disposal` and their `/histories/*` | `BagChangePage`, `ProductTransferPage`, `StockDisposalPage` + history pages | Sectioned forms via `OperationFormBlocks` (`OperationSection`, balance/flow hints, sticky footers). | — |
-| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
+| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page; **v17.3.11** cards below `lg` + FAB. **v17.3.20** `/customers` credit/debit total Stat cards. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
 
 ### Accessibility commitments
 - Focus rings via `:focus-visible` with 2-px primary halo on the new `body.app-shell-v2`.
@@ -336,14 +356,14 @@ See `TEST_PLAN.md` § "v13.0 UI redesign" for the 14-item manual smoke checklist
 - **Detail (`BillDetailPage`):** header summary card with status pills and totals; **Overview** tab shows product line items (**Lines** tab removed); redundant bill meta removed from Overview; **Payments** and **Fulfillment** tabs enlarged with mobile card layouts and `detailTh`/`detailTd` sizing.
 
 ### Fulfillment
-- `BILL_TYPE_THEME` / `themeForBillType()` in `src/lib/billTypeTheme.ts` — sales (indigo) vs purchase (emerald) row coloring, badges, and filter gradients.
+- `BILL_TYPE_THEME` / `themeForBillType()` in `src/lib/billTypeTheme.ts` — sales (olive primary) vs purchase (emerald) row coloring, badges, and filter gradients.
 - Bills grouped by bill number + customer in card blocks on `FulfillmentPage`.
 - Deliver / receive / return open **`FulfillmentActionDialog`** modal (`FulfillmentActionPanels` for context) instead of dedicated full pages.
 - `FulfillmentDeliverPage` / `FulfillmentReturnPage` redirect to `/fulfillment?action=…&line=…` (and `parent_entry_id` when needed) for deep links.
 - Sales fulfillment actions highlight the bill **source location**.
 
 ### Payments
-- Full-row tint by bill type (sales indigo / purchase emerald) via `BILL_TYPE_THEME`.
+- Full-row tint by bill type (sales olive primary / purchase emerald) via `BILL_TYPE_THEME`.
 - Summary cards for sales vs purchase counts; larger bill number, customer, amount, and date typography.
 
 ### Inventory
@@ -451,14 +471,14 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 
 ## UI — Aurora theme, layout & typography
 
-- **Theme:** “Aurora” — indigo / violet / cyan / amber palette, glassmorphism (`backdrop-filter`), gradients, animated KPI cards and charts (`index.css`).
+- **Theme (v17.3.15):** Olive / sage primary aligned to Raj Agro logo (`primary-700` ≈ `#586038`, `primary-500` ≈ `#737c50`, sage `50`/`100`); accent greens for secondary highlights; cyan/amber retained for status/charts. Glassmorphism + gradients remain; brand washes are warm-green, not indigo/violet. Legacy Aurora CSS keeps `--indigo` / `--violet` **aliases** remapped to olive.
 - **Fonts:** Inter (UI), Plus Jakarta Sans (headings), JetBrains Mono (numbers) — loaded in `index.html`.
 - **Motion:** page fade-in, staggered home cards, hover lift, animated nav/tabs/messages; `prefers-reduced-motion` respected.
 - **Qty inputs:** `type="number"` with empty placeholders (not pre-filled 0/1).
 - **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
 - **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
 - **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
-- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll`; mobile hamburger drawer.
+- **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops. **Phase 5 (v17.3.11):** Masters + book settings. **Phase 6 (v17.3.12):** Reports/balances/statement + users/profile/auth. **Phase 7 (v17.3.13):** Final polish — see Specs v17.3.7–v17.3.13.
 - **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
 - **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
 
@@ -1128,7 +1148,7 @@ Fresh input, balance return on Output tab, mass-balance v9.3, `net_balance_kg` f
   - Per commit: at least one input line, output line, or waste kg > 0. Per-batch incremental rules unchanged; **job-level** mass-balance guard with 100 kg tolerance — see **Spec v9.3**.
 - **Actions:**
   - `POST .../batches` — apply inventory for current body; job stays open.
-  - `POST .../complete` — if body has data: same as batch then complete; if empty: complete only when ≥1 batch exists. Completed jobs reject new batches (400).
+  - `POST .../complete` — if body has data: same as batch then complete; if empty: complete when ≥1 active batch **or** when zero active batches (**v17.3.1** Close empty process). Completed jobs reject new batches (400).
 - **API:** `POST/GET /api/operations/processing`, `GET /api/operations/processing/{id}`, `POST .../batches`, `POST .../complete`
 - **UI:** `/operations/processing` (new job + open jobs), `/operations/processing/:id` (batch history + form; disabled when completed).
 - **DB:** migration `011_spec_v9_processing` — `processing_jobs`, `processing_batches`, `processing_input_lines`, `processing_output_lines`.
@@ -1536,8 +1556,8 @@ POST   /api/bills/{id}/void                              # idempotent + X-Void-A
 | `/accounts/cashbook` | `CashBookListPage` | Aligned table (Date, Entry, Amount, Payment, Bill, Status, icon actions); filter grid with Clear filters |
 | `/accounts/cashbook/new` | `CashBookEntryFormPage` | Segmented control Expense / Income / Transfer; bill picker; bank dropdown |
 | `/accounts/cashbook/:id/edit` | `CashBookEntryFormPage` (editing) | Pre-filled; sends `expected_version` |
-| `/accounts/customers` | `CustomerBalancesPage` | Paginated; net credit / debit / net; search name + phones; click → statement |
-| `/accounts/customers/:id` | `CustomerStatementPage` | Date-ranged chronological events with running balance |
+| `/accounts/customers` | `CustomerBalancesPage` | Paginated; net credit / debit / net; search name + phones; click → statement; **v17.3.12** cards below `lg`; **v17.3.20** filtered credit/debit totals |
+| `/accounts/customers/:id` | `CustomerStatementPage` | Date-ranged chronological events with running balance; **v17.3.12** cards below `lg` |
 | `/accounts/bank-accounts` | `BankAccountsMasterPage` | CRUD + make-default; **Opening balance** + **Closing balance** columns (live `balance` from list API) |
 | `/accounts/expense-categories` | `ExpenseCategoriesMasterPage` | CRUD; system rows locked with lock icon |
 | `/accounts/setup` | `BookSettingsPage` | Cash opening balance + powder destination (company header on Profile — v17.0.5) |
@@ -3062,6 +3082,7 @@ Table `audit_events`: `user_id` (FK, SET NULL), denormalized `user_email`, `acti
 - `Permission.AUDIT_VIEW` — owner role only.
 - Wired after successful: void payment/fulfillment/bill; bill edit; inventory qty edit; master delete; void bag change/transfer/disposal/processing batch/cash book/job work order/receipt; user create/update.
 - `GET /api/audit/events` — paginated; filters: `user_id`, `action`, `entity_type`, `date_from`, `date_to`, `search` (entity_label ILIKE).
+- `GET /api/admin/backup` — owner-only dump download (v17.3.19).
 
 ### C. Frontend
 
@@ -3180,7 +3201,7 @@ Reads repo-root `.env` for `POSTGRES_USER`, `POSTGRES_DB` (defaults `inventory`)
 
 ### C. Out of scope
 
-In-app Backup button; cloud upload (S3/OneDrive) — user may point `BACKUP_DIR` to a synced folder; Linux cron (Windows-only scripts; README footnote with `pg_dump` one-liner).
+In-app Backup button **delivered in v17.3.19**; cloud upload (S3/OneDrive) — user may point `BACKUP_DIR` to a synced folder; Linux cron (Windows-only scripts; README footnote with `pg_dump` one-liner).
 
 ### D. Deploy
 
@@ -3347,6 +3368,254 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Files changed:** `backend/requirements.txt`, `backend/requirements.lock`, `README.md`.
 
 **Explicit:** No API, schema, migrations, or business logic changes. Frontend `package.json` out of scope.
+
+## Spec v17.3.19 — In-app database backup download
+
+**Problem:** Scheduled Windows `pg_dump` scripts (v16.0.8) write to a server folder. The owner needs a copy **on the device they are using** (browser Downloads, desktop app, iPad Files). Production data is Lightsail Postgres — not a local SQLite file.
+
+**Solution:**
+- Owner-only `GET /api/admin/backup` (also requires `users_manage`). Authenticated session cookie.
+- Backend (from repo root, same Compose service as production Postgres): `docker compose exec -T db pg_dump -U <user> -Fc -f /tmp/<unique>.dump <db>`, then `docker compose cp db:/tmp/<unique>.dump` to a host temp file, then `rm` the container file. Do **not** use `pg_dump -Fc -f -` (0-byte dumps on Lightsail). Timeout `BACKUP_TIMEOUT_SECONDS` (default 300). **503** if dump/copy fails, times out, is empty, or Docker/`pg_dump` is missing.
+- Response: `application/octet-stream` with `Content-Disposition: attachment; filename="graintrack-YYYY-MM-DD_HHmm.dump"` (business timezone).
+- Profile page (owner): **Download backup** + note that it saves all company data as a file on this device. Busy state; browser saves the blob.
+- Audit `backup_downloaded` (filename only). Existing hashed user passwords in the dump are unchanged; no new password format.
+- **No restore endpoint.** Restore remains ops (`scripts/restore_db.ps1` / `pg_restore`).
+
+**Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
+
+**Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.25 — Sales bill submit when qty > on_hand
+
+**Problem:** v17.3.24 said over-on-hand create is a warning only, but Submit could still fail if the bag type was not in the client cache (qty treated as 0, or “Invalid bag type on a line”). The warning also looked like a hard error.
+
+**Solution:**
+- Before create, fetch bag types for the lines and use them for qty validation and the create payload (bags vs loose).
+- Bag type combobox `ensure`s the type when the search option does not carry the full row.
+- Over-on-hand shows a **warning** banner titled **You can still submit this bill**; Submit stays enabled. Stock is taken only when you Deliver.
+
+**Unchanged:** Deliver still cannot exceed physical on_hand; bill money math; no Alembic; no desktop-shell.
+
+**Files:** `frontend/src/pages/BillFormPage.tsx`, `frontend/index.html` (no-cache meta).
+
+## Spec v17.3.24 — Sales stock hints + 0-qty SKUs (UI / validation only)
+
+**Problem:** Sales create only listed SKUs with stock at the bill location, so 0-qty / missing inventory rows could not be billed. Over-on-hand create was blocked even though deliver is the only stock movement. Operators need a display of physical on-hand vs later bills vs total not delivered — without reserving rows or changing money math.
+
+**Solution:**
+- **Create dropdowns:** Product / brand / bag type use the same master search as purchase. Missing inventory row = on_hand 0; line still allowed.
+- **Hint (same SKU + location + owner):** Available = on_hand (physical; billing never changes this). Not delivered = SUM(ordered − delivered) on active non-void sales bills for that SKU, including current form lines; when editing, exclude the current bill’s saved lines and replace with the form. Oldest active undelivered sales bill is **not** counted in reserved. If only one open bill: reserved = 0. If 2+: later_qty = remaining on the other open bills except that oldest; reserved = on_hand − later_qty (may be negative → warning tone).
+- **Examples:** 50 on hand + one bill 100 → available 50, reserved 0, not delivered 100. Second 100 → reserved −50, not delivered 200. Third → reserved −150. 200 on hand + one 100 → reserved 0; + second 100 → reserved 100.
+- **Submit:** Do **not** block create when qty > on_hand (warning only).
+- **Fulfillment (first Deliver wins):** Open dialogs may show the same on_hand. After one deliver succeeds, other open dialogs refetch stock. Submit over remaining on_hand is rejected. No older-bill FIFO on the server.
+- **Read API:** `GET /api/bills/sales-stock-hints?location_id=&exclude_bill_id=` returns on_hand + open bill remainings. No reserved column, no negative stock in DB, no Alembic.
+
+**Unchanged:** Bill money math; payments/balances; deliver is the only stock movement; olive brand; no desktop-shell.
+
+## Spec v17.3.23 — Bill bags/kg counters + bill-number dialog
+
+**Problem:** Operators need ordered quantity at a glance on create/edit/detail/list without opening every bill, and want a quick preview dialog from the list without leaving the page.
+
+**Solution:**
+- **Form (`BillFormPage`):** Next to **Products billed**, live **Total bags** and **Total kg** from current lines (same bag/loose math as line preview).
+- **Detail (`BillDetailPage`):** Header summary shows **Total bags** + **Total kg** (sum of `ordered_bags` / `ordered_quantity_kg`). Print document header shows **Ordered** as `X bags · Y kg`.
+- **List API:** `BillListItemOut` adds computed `total_ordered_bags` (int) and `total_ordered_kg` (Decimal) from loaded lines; `GET /api/bills` selectinloads lines for the sum only (lines still omitted from the slim list payload). **No Alembic.**
+- **List UI:** Hover bill number → tooltip `X bags · Y kg` (`BillBagsKgHover`, desktop table + mobile cards; notes hover unchanged). Click bill number → `BillDetailDialog` (Modal **xl**; Maximize → near-fullscreen `full`, Restore → xl) with money/qty summary, lines table, actions **Open full page** / **Edit** / **Pay** (if due) / **Print**. Does not navigate on number click. Closing the dialog refreshes the list (covers return from edit/void).
+- **Unchanged:** Bill money math, fulfillment rules, olive brand, no desktop-shell.
+
+**Files:** `backend/app/schemas.py`, `backend/app/routers/bills.py`, `backend/tests/test_bill_list_totals_v17323.py`, `frontend/src/api/client.ts`, `frontend/src/lib/billQty.ts`, `frontend/src/components/bills/BillBagsKgHover.tsx`, `BillDetailDialog.tsx`, `BillPrintDocument.tsx`, `frontend/src/components/ui/Modal.tsx` (`full` size + `headerActions`), `BillsListPage.tsx`, `BillFormPage.tsx`, `BillDetailPage.tsx`.
+
+## Spec v17.3.22 — Role-gated company Notes board
+
+**Problem:** Owner needs a light company notepad for reminders and mill tips, optionally shared with specific staff roles — not a full chat or docs product.
+
+**Solution:**
+- Route `/notes` under Overview; permission `notes_view` for all assigned roles.
+- Tables: `company_notes` (title nullable, body required, `note_date`, author FKs) + `company_note_role_access(note_id, role)` for viewer roles `writer` / `stock_manager` / `factory_manager`. Empty access rows = **owner-only**.
+- API: `GET/POST /api/notes`, `PATCH/DELETE /api/notes/{id}`. List filtered by role (owner sees all). `PATCH` may set `viewer_roles`. Non-owner mutate → **403**; note not visible → **404**.
+- UI: soft cream paper cards (slight tilt + float), badge Owner only / Shared with…; owner overflow → Edit, Delete (`ConfirmDialog`), Who can see… (checkboxes + Save). Non-owners read-only. FAB Add for owner on phone.
+- Migration `062_spec_v17322_company_notes`. No desktop-shell change.
+
+**Unchanged:** Existing RBAC elsewhere; no note restore/history.
+
+## Spec v17.3.21 — Dashboard Money now snapshot
+
+**Problem:** Month P&L on `/dashboard` does not show what is in the till right now, or what cash would look like after paying/collecting customer balances. Mixing that into the FY table would confuse profit with a cash snapshot.
+
+**Solution:**
+- New **Money now** row under month KPI cards (not an FY column; independent of year/month filters).
+- Let **M** = cash + all bank + cash accounts (`get_accounts_summary` `total_money`). **D** = `SUM(customer.debit_balance)`, **C** = `SUM(customer.credit_balance)`.
+- Cards (`formatInrCompact`):
+  1. **Amount in hand** = M — footer: Cash + all accounts (they owe me is not in the till)
+  2. **After credit** = M − C — footer: If I paid what I owe customers
+  3. **After debit** = M + D — footer: If they paid what they owe me
+  4. **After settlement** = M − C + D — footer: If both sides settled today — not profit
+- Do **not** use M − D for amount in hand (that double-counts uncollected sales). Card 4 is **not** gross/net profit.
+- `GET /api/reports/dashboard-bundle` includes `money_now` from `get_accounts_summary` (current snapshot). No extra FY math. **No migration.**
+
+**Unchanged:** Month/FY P&L cards and table; Accounts dashboard.
+
+## Spec v17.3.20 — Customer list total credit and debit
+
+**Problem:** `/customers` shows per-row credit (I owe) and debit (they owe) but no company-wide totals. Paging hid the true sums.
+
+**Solution:**
+- `CustomerPageOut` adds `credit_total` and `debit_total`.
+- `GET /api/customers` `SUM()`s `credit_balance` and `debit_balance` for the company, applying the same name/phone `search` as the list. Totals are for the **full filtered set**, not the current page.
+- `/customers`: two `Stat` cards (`formatInr`) between search and the table/mobile cards — **Total credit (I owe)** and **Total debit (they owe)**. Same meaning as Accounts dashboard.
+- `GET /api/accounts/customers` returns the same totals (also respects `has_balance` + search) and Customer balances shows matching cards.
+- Per-row balances unchanged. Opening balance on create only. **No migration.**
+
+**Unchanged:** Customer create/update rules; dashboard summary math.
+
+## Spec v17.3.18 — Processing void: reverse equivalent kg + name the missing line
+
+**Problem:** Voiding a processing batch raised “Cannot void — stock no longer available to reverse” even when the piles the operator was looking at were still there (e.g. grader rejection loose 155 and Unclean balance-return loose 111 — both outputs, both come off stock). Common causes: (1) original bag type empty after a bag-change; (2) same kg at another location; (3) void actually failing on **powder / another output brand**; (4) a **later batch reprocessed** this batch’s returned unclean.
+
+**Solution:**
+- Reverse by equivalent kg at the same product + brand + owner (prefer original location and bag type, then other bag types, then other locations). Transfer / bag-change / disposal voids do **not** take kg from other locations.
+- Error names the failing line (`powder` / `output <brand>` / `balance return`) with need vs have kg (here / all locations).
+- If a later batch reprocessed this batch’s balance return: tell the operator to void later batches first (newest first).
+- Load batch collections with `selectinload` (not `joinedload` + `scalar`).
+
+**Unchanged:** Completed-job reopen rules (v17.3.1); APIs; transfer/bag-change/disposal void rules.
+
+## Spec v17.3.16 — Square app icons (Windows + Apple touch)
+
+**Problem:** Desktop `icon.png` / `icon.ico` were derived from the wide tractor+emblem mark and stretched in the Windows taskbar / installer. iPad “Add to Home Screen” clipped the transparent favicon (`apple-touch-icon` pointed at `favicon.png`).
+
+**Solution:**
+- Source: `frontend/public/logo-icon.png` (emblem only — **not** `logo-mark`).
+- Canvas: square ≥256, contain/letterbox with ~12–18% padding on solid brand green `#586038` (matches `theme-color`).
+- Outputs: `desktop-shell/icon.png` (512), `desktop-shell/icon.ico` (multi-size incl. 256 for electron-builder), `frontend/public/apple-touch-icon.png` (180), improved `favicon.png` (256).
+- Regenerator: `python scripts/generate_app_icons.py`.
+- `index.html`: `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />`.
+
+**Rebuild after merge:** `cd desktop-shell && npm run dist` then reinstall the NSIS package. Redeploy frontend static assets (Lightsail / host) so Safari picks up the new apple-touch-icon.
+
+**Unchanged:** In-app `AppBrand` logo-mark usage; business logic.
+
+## Spec v17.3.15 — Raj Agro olive brand theme
+
+**Change:** Retheme the frontend so GrainTrack reads as olive/green brand (matching logo mark), not indigo/violet/blue-lavender.
+
+**Touches:** `frontend/tailwind.config.ts` primary (+ accent) scales; `frontend/src/styles/index.css` canvas/surface/ink/line/shadow/`--primary-rgb`; legacy `frontend/src/index.css` Aurora tokens (`--indigo*` / `--violet*` aliased to olive) + RGBA washes; hardcoded brand gradients in shared chrome (PageHeader, Modals, FABs, AuthShell, processing cards, etc.); `index.html` `theme-color` `#586038`.
+
+**Unchanged:** Business logic, APIs, and non-brand status colors (emerald purchase, amber/danger semantic).
+
+## Spec v17.3.14 — App logo (GrainTrack brand mark)
+
+**Change:** Replace Lucide `Wheat` app glyph with custom tractor + circular grain emblem from the Raj Agro visiting-card artwork (text wordmark **not** used in the asset). App name under the mark remains `VITE_APP_NAME` (default **GrainTrack**).
+
+**Assets:** `frontend/public/logo-mark.png` (tractor + emblem), `logo-icon.png` (emblem only), `logo.png` (same as mark), `favicon.png`; extract script `scripts/extract_app_logo.py`. Desktop/square icons regenerated via `scripts/generate_app_icons.py` (**v17.3.16**). Desktop shell: `desktop-shell/icon.ico` (+ `icon.png`) wired in electron-builder.
+
+**UI:** `AppBrand` / `AppLogoMark` in Sidebar brand area and AuthShell (login/register); `index.html` favicon + apple-touch-icon links.
+
+**Unchanged:** Nav item icons (Processing/Products still use Lucide Wheat); business logic.
+
+## Spec v17.3.13 — Responsive UI Phase 7 (final polish)
+
+**Problem:** After Phases 1–6, leftover phone pain remained in account masters, audit/login histories, shared dialog footers, and long forms whose primary CTA scrolled off-screen.
+
+**Solution (Phase 7 only — layout/CSS; no business-logic or new features):**
+- **Shared chrome:** `Modal` footer stacks + full-width buttons on xs; `CardFooter`/`PageHeader`/`EmptyState` mobile-friendly defaults.
+- **Money accounts + expense categories:** Cards below `lg`; desktop tables from `lg`; modal footers use Modal default stack.
+- **Audit log + login history:** Cards below `lg`; filter grids `min-w-0`.
+- **Sticky actions:** Bill form, job-work create, bag-change / transfer / disposal, cash-book entry footers stick on scroll with phone-friendly button widths.
+- **Dialogs:** Inventory add/edit stock + processing open-job action rows stack on xs.
+- **Out of scope:** New product features; intentional redesign beyond leftover mobile polish.
+
+**Unchanged:** Aurora design language; APIs and business rules.
+
+## Spec v17.3.12 — Responsive UI Phase 6 (reports, users, profile, auth)
+
+**Problem:** Customer balances/statement relied on wide `Table` (`min-w-[40rem]`) on phones; Users/Profile action rows and auth register forms crowded ~375px.
+
+**Solution (Phase 6 only — layout/CSS; no business-logic changes):**
+- **Customer balances / statement:** Cards below `lg`; desktop tables from `lg`; filters/`min-w-0`; statement header Back shortens on xs.
+- **Users:** Create + list grid `minmax(0,…)`; full-width role select on phone; larger icon actions; stacked edit/OTP modal footers; empty-state copy adapts to stacked layout.
+- **Profile:** Header Save from `sm`; footer Save full-width on phone; `min-w-0` / break-words on long emails.
+- **Auth:** `AuthShell` phone padding + `min-h-svh`; optional `wide` column for company register; Pending access CTAs stack; register address grid `min-w-0`.
+- **Out of scope:** Phase 7 (final polish / audit & login histories unless leftover on these pages).
+
+**Unchanged:** Aurora design language; accounts statement/balance APIs; user admin and auth flows.
+
+## Spec v17.3.11 — Responsive UI Phase 5 (masters and book settings)
+
+**Problem:** Master list pages and bag types forced wide tables on phones; book-settings save/actions and add-customer dialog footers crowded ~375px.
+
+**Solution (Phase 5 only — layout/CSS; no business-logic changes):**
+- **Products / brands (`MasterCrud`):** Cards below `lg`; desktop table from `lg`; header Add from `sm`; Add FAB + `pb-24`; modal footer stacks on xs.
+- **Customers / locations (`PartyMasterCrud`):** Same cards/table/FAB/footer pattern; search `min-w-0`.
+- **Bag types:** Same pattern; Seed label shortens on xs; confirm/add modal footers stack.
+- **Book settings:** `min-w-0` on form/comboboxes; Save full-width on phone.
+- **Shared:** `AddCustomerDialog` footer stacks full-width buttons on xs.
+- **Out of scope:** Phase 6+ (reports, users, auth/login histories).
+
+**Unchanged:** Aurora design language; master APIs, void-delete rules, book-settings payload.
+
+## Spec v17.3.10 — Responsive UI Phase 4 (inventory and stock ops)
+
+**Problem:** Inventory forced nested wide tables (`min-w-[44–52rem]`) with deep left padding on phones; bag-change / transfer / disposal histories were table-only shells with no mobile cards.
+
+**Solution (Phase 4 only — layout/CSS; no business-logic changes):**
+- **Inventory:** Summary/Detail SegmentedControl; search `min-w-0`; Add-stock FAB + `pb-24`; stock line cards below `lg` in `InventoryStockViews` (desktop tables from `lg`); softer nest padding on narrow.
+- **Stock ops forms:** Already stacked grids; OperationPageHeader shortens “View history” on xs.
+- **History (bag change / product transfer / stock disposal):** Shared `OperationHistoryPage` supports `renderCards`; table from `lg`; New-record FAB; per-page mobile cards with void actions.
+- **Out of scope:** Phase 5+ (masters, settings, reports, audit/login histories).
+
+**Unchanged:** Aurora design language; inventory quantity / ops APIs and void rules.
+
+---
+
+## Spec v17.3.9 — Responsive UI Phase 3 (fulfillment, processing, job work)
+
+**Problem:** Daily ops surfaces still forced wide line tables (`min-w-[48–52rem]`) and crowded SegmentedControls / multi-action headers on phones.
+
+**Solution (Phase 3 only — layout/CSS; no business-logic changes):**
+- **Fulfillment:** Line cards below `lg`; desktop table unchanged; bill-type SegmentedControl wraps; touch-friendlier action buttons; lighter Audit CTA on xs. Audit history SegmentedControl wrap (cards already existed).
+- **Processing list:** FAB + bottom padding for Open job; cards/table split aligned to `lg`.
+- **Processing job:** Output-allocation SegmentedControl wraps; input/output/waste log tables from `lg` with stacked log cards below.
+- **Job work list:** FAB for New order; card/table breakpoint → `lg`.
+- **Job work detail:** Prioritized header CTAs; line cards below `lg`.
+- **Job work fulfillment:** Same line card/table split + visibility SegmentedControl wrap; dialog footer stacks on xs.
+- **Out of scope:** Phase 4+ (inventory, masters, accounts subpages beyond Phase 2). Deliver/Return route redirects unchanged.
+
+**Unchanged:** Aurora design language; fulfillment / processing / JW business rules and APIs.
+
+---
+
+## Spec v17.3.8 — Responsive UI Phase 2 (payments, cash book, accounts dashboard)
+
+**Problem:** Payments and cash-book lists relied on wide `Table` (`min-w-[40rem]`), forcing awkward horizontal scroll on phones; cash-book entry type control and Accounts dashboard action/table clusters crowded ~375px.
+
+**Solution (Phase 2 only — layout/CSS; no business-logic changes):**
+- **Payments list:** Card layout below `lg`; desktop table unchanged; FAB + bottom padding for “Record payment”; header CTA from `sm`.
+- **Payment (pay) form:** Single-column stack until `lg`; `min-w-0` / truncate on summary; shorter Back label on xs.
+- **Cash book list:** Same cards/table split + FAB; filters already grid-stack.
+- **Cash book entry form:** Entry-type `SegmentedControl` wraps on narrow; footer actions stack full-width on phone.
+- **Accounts dashboard:** Shorter CTAs on phone; bank balances + recent entries as cards below `lg`, tables from `lg`.
+- **Out of scope:** Phase 3+ (fulfillment, processing, masters, etc.).
+
+**Unchanged:** Aurora visual language; APIs; void/set-off rules; desktop table columns.
+
+---
+
+## Spec v17.3.7 — Responsive UI Phase 1 (shell, dashboard, bills)
+
+**Problem:** On narrow viewports (~375px), AppShell chrome crowded the topbar; dashboard summary tables forced wide mins; bills payment segments and bill-detail product/expense tables required awkward horizontal scroll.
+
+**Solution (Phase 1 only — layout/CSS; no business-logic changes):**
+- **AppShell / Sidebar / Topbar:** Mobile drawer always shows full nav labels; collapse control desktop-only; body scroll locked while drawer open; Density/Theme move into User menu below `md` (icon toggles remain from `md` up).
+- **Shared CardHeader:** Title and actions stack on narrow, row from `sm`.
+- **Dashboard:** Softer `DASH_TABLE` min-widths by breakpoint; product-breakdown toolbar already wraps via CardHeader.
+- **Bills list:** Payment `SegmentedControl` `sm` + wrap/`flex-1` on phone; fulfillment filter `min-w-0`; bottom padding so FAB does not cover content.
+- **Bill detail:** Products and Linked expenses — table from `lg`, stacked cards below; PageHeader prioritizes Record payment; short “PDF” label on xs.
+- **Out of scope:** Phase 2+ pages; sticky bill-form save bar.
+
+**Unchanged:** Visual language / Aurora tokens; desktop table layouts; APIs and permission rules.
+
+---
 
 ## Spec v17.3.6 — Production security hardening
 

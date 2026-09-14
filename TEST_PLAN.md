@@ -1,15 +1,23 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 14 Sep 2026 — covers Spec v5.4 through **v17.3.24**; backend v12.21 + v12.22  
+**Last updated:** 14 Sep 2026 — covers Spec v5.4 through **v17.3.25**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.25 — Over-on-hand sales Submit
+
+1. **Warning only** — New sales bill with billed qty > on-hand: yellow banner **You can still submit this bill**; Submit bill stays enabled (not a red error).
+2. **Submit succeeds** — Click Submit bill; bill is created; inventory qty unchanged.
+3. **Packed + 0 stock** — SKU with 0 kg / missing row, packed bag type, bags > 0, rate entered: Submit does not show “Invalid bag type” or “quantity greater than zero”.
+4. **Deliver still blocked** — Deliver more than physical on-hand still fails.
+5. **Unchanged** — Hint math from v17.3.24; no Alembic.
 
 ## v17.3.24 — Sales stock hints + 0-qty SKUs
 
 1. **0-qty / missing row** — New sales bill: search a product with 0 kg or no inventory row at the location; it appears and can be billed.
 2. **Hint 50 + 100** — 50 kg on hand, bill 100: Available 50, Reserved 0, Not delivered 100. Second bill 100: Reserved −50 (warning tone), Available still 50. Third: Reserved −150.
 3. **Hint 200 + 100** — 200 on hand + one bill 100: Reserved 0, Available 200. Second 100: Reserved 100, Available 200.
-4. **Create over on_hand** — Submit a sales bill larger than on-hand: succeeds; inventory qty unchanged until Deliver.
+4. **Create over on_hand** — Submit a sales bill larger than on-hand: succeeds; inventory qty unchanged until Deliver. Banner says you can still submit.
 5. **Deliver over on_hand** — Two open deliver dialogs can show the same on-hand. After one deliver succeeds, the other refetches. Deliver more than remaining physical stock still fails.
 6. **Automated** — `python -m unittest tests.test_sales_stock_hints_v17324`.
 

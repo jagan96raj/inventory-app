@@ -155,6 +155,7 @@ export default function BillFormPage({
   const [backdateAuthError, setBackdateAuthError] = useState("");
   const { submitting, guardedSubmit, submitDisabled } = useSubmitGuard();
   const idemKeyRef = useRef<string | null>(null);
+  const submitBagTypeGetRef = useRef<typeof bagTypeCache.get>(bagTypeCache.get);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [pendingCustomerChange, setPendingCustomerChange] = useState<string | null>(null);
   const [pendingLocationChange, setPendingLocationChange] = useState<string | null>(null);
@@ -350,7 +351,15 @@ export default function BillFormPage({
     return null;
   };
 
-  const validateCreateLines = (): string | null => {
+  const loadBagTypesForLines = async (): Promise<typeof getBagType> => {
+    const ids = lines.map((l) => Number(l.bag_type_id)).filter((id) => Number.isFinite(id) && id > 0);
+    const fetched = await fetchBagTypesByIds(ids);
+    bagTypeCache.rememberMany(fetched);
+    const extra = new Map(fetched.map((bt) => [bt.id, bt]));
+    return (id) => extra.get(Number(id)) ?? getBagType(id);
+  };
+
+  const validateCreateLines = (getBt: typeof getBagType = getBagType): string | null => {
     const complete = lines.filter((l) => l.product_id && l.brand_id && l.bag_type_id);
     if (!complete.length) return "Add at least one complete line";
     for (let i = 0; i < lines.length; i++) {
@@ -358,7 +367,7 @@ export default function BillFormPage({
     }
     let hasPositiveQty = false;
     for (const line of complete) {
-      const bt = getBagType(line.bag_type_id);
+      const bt = getBt(line.bag_type_id);
       if (!bt) return "Invalid bag type on a line";
       const qty = orderedQtyKg(line, bt);
       if (qty < 0) return "Quantity cannot be negative";
@@ -419,7 +428,7 @@ export default function BillFormPage({
     return warnings;
   }, [billType, headerReady, lines, getBagType, stock, header.customer_id]);
 
-  const buildCreatePayload = () => {
+  const buildCreatePayload = (getBt: typeof getBagType = getBagType) => {
     const payload: Record<string, unknown> = {
       bill_type: billType,
       customer_id: Number(header.customer_id),
@@ -429,7 +438,7 @@ export default function BillFormPage({
       notes: notes.trim() || null,
       lines: lines
         .filter((l) => l.product_id && l.brand_id && l.bag_type_id)
-        .map((l) => linePayload(l, getBagType, isSales)),
+        .map((l) => linePayload(l, getBt, isSales)),
     };
     if (isSales) {
       payload.location_id = Number(header.location_id);
@@ -504,8 +513,8 @@ export default function BillFormPage({
     });
   };
 
-  const postCreateBill = async (authorizationPassword?: string) => {
-    await api.post<Bill>("/api/bills", buildCreatePayload(), {
+  const postCreateBill = async (authorizationPassword?: string, getBt: typeof getBagType = getBagType) => {
+    await api.post<Bill>("/api/bills", buildCreatePayload(getBt), {
       headers: idempotencyHeadersOptionalAuth(idemKey(), authorizationPassword),
     });
     clearIdemKey();
@@ -525,7 +534,14 @@ export default function BillFormPage({
       clearIdemKey();
       return;
     }
-    const lineErr = validateCreateLines();
+    let getBt = getBagType;
+    try {
+      getBt = await loadBagTypesForLines();
+    } catch {
+      /* use cache already in memory */
+    }
+    submitBagTypeGetRef.current = getBt;
+    const lineErr = validateCreateLines(getBt);
     if (lineErr) {
       setError(lineErr);
       clearIdemKey();
@@ -537,6 +553,7 @@ export default function BillFormPage({
       clearIdemKey();
       return;
     }
+    // Over-on-hand is a warning only — do not block create (stock moves on Deliver).
     if (isBackdatedDate(billDate)) {
       setBackdateAuthError("");
       setBackdateAuthOpen(true);
@@ -544,7 +561,7 @@ export default function BillFormPage({
     }
     await guardedSubmit(async () => {
       try {
-        await postCreateBill();
+        await postCreateBill(undefined, getBt);
       } catch (err) {
         setError(errMsg(err));
       }
@@ -555,7 +572,7 @@ export default function BillFormPage({
     setBackdateAuthError("");
     await guardedSubmit(async () => {
       try {
-        await postCreateBill(authorizationPassword);
+        await postCreateBill(authorizationPassword, submitBagTypeGetRef.current);
         setBackdateAuthOpen(false);
       } catch (err) {
         const msg = errMsg(err);
@@ -659,6 +676,7 @@ export default function BillFormPage({
           onChange={(id, opt) => {
             const bagOpt = opt as MasterComboOption | undefined;
             if (bagOpt?.bagType) bagTypeCache.remember(bagOpt.bagType);
+            else if (id != null) void bagTypeCache.ensure(id);
             updateLine(idx, {
               ...resetLineFrom({ ...line, brand_id: line.brand_id }, "bag_type"),
               bag_type_id: id != null ? String(id) : "",
@@ -909,13 +927,14 @@ export default function BillFormPage({
         </V13Banner>
       )}
       {!editMode && stockWarnings.length > 0 && (
-        <div className="card card--plain" style={{ borderColor: "var(--return-accent)" }}>
-          {stockWarnings.map((w) => (
-            <p key={w} className="stock-warning">
-              Warning: {w} — you can still submit this bill.
-            </p>
-          ))}
-        </div>
+        <V13Banner tone="warning" className="mb-4" title="You can still submit this bill">
+          <ul className="list-disc space-y-1 pl-5">
+            {stockWarnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <p className="mt-2">Click Submit bill below. Stock is taken only when you Deliver.</p>
+        </V13Banner>
       )}
 
       <div className="space-y-6">
