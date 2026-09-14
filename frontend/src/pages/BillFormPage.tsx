@@ -15,13 +15,13 @@ import { isLooseBagType, calcPreviewTotalKg } from "../lib/bagType";
 import { formatInr, formatQtyKg } from "../lib/format";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
+import { exceedsAvailableStock } from "../lib/stockWarning";
 import {
-  exceedsAvailableStock,
-  formatRemainingStockAfterReserved,
-  reservedStockFromEarlierLines,
-  reservedStockFromSiblingLines,
-  stockExceedsMessageWithReserved,
-} from "../lib/stockWarning";
+  findHintItem,
+  hintFromItemAndForm,
+  type SalesStockHintItem,
+} from "../lib/salesStockHint";
+import SalesStockHint from "../components/bills/SalesStockHint";
 import {
   fetchBagTypesByIds,
   searchBagTypes,
@@ -32,7 +32,7 @@ import {
   type MasterComboOption,
 } from "../lib/masterSearch";
 import { deliveryStatusLabel, statusBadgeClass } from "../lib/statusLabels";
-import { stockRow, type StockAtLocation, bagTypesFromStock, brandsFromStock, filterStockForOwner, jobWorkCustodiansAtLocation, productsFromStock, stockOwnerFilter } from "../lib/stockAtLocation";
+import { stockRow, type StockAtLocation, filterStockForOwner, jobWorkCustodiansAtLocation, stockOwnerFilter } from "../lib/stockAtLocation";
 import PageHeader from "../components/ui/PageHeader";
 import V13Button from "../components/ui/Button";
 import V13Banner from "../components/ui/Banner";
@@ -149,6 +149,7 @@ export default function BillFormPage({
   const [previewBillNumber, setPreviewBillNumber] = useState("");
   const [stock, setStock] = useState<StockRow[]>([]);
   const [stockLoading, setStockLoading] = useState(false);
+  const [stockHints, setStockHints] = useState<SalesStockHintItem[]>([]);
   const [error, setError] = useState("");
   const [backdateAuthOpen, setBackdateAuthOpen] = useState(false);
   const [backdateAuthError, setBackdateAuthError] = useState("");
@@ -232,17 +233,28 @@ export default function BillFormPage({
   }, [billType, editMode]);
 
   useEffect(() => {
-    if (!isSales || editMode || !header.location_id) {
+    if (!isSales || !header.location_id) {
       setStock([]);
+      setStockHints([]);
       return;
     }
     setStockLoading(true);
-    api
-      .get<StockRow[]>(`/api/inventory/stock-at-location?location_id=${header.location_id}`)
-      .then(setStock)
-      .catch(() => setStock([]))
+    const loc = header.location_id;
+    const exclude = editMode && id ? `&exclude_bill_id=${id}` : "";
+    Promise.all([
+      api.get<StockRow[]>(`/api/inventory/stock-at-location?location_id=${loc}`),
+      api.get<{ items: SalesStockHintItem[] }>(`/api/bills/sales-stock-hints?location_id=${loc}${exclude}`),
+    ])
+      .then(([rows, hints]) => {
+        setStock(rows);
+        setStockHints(hints.items);
+      })
+      .catch(() => {
+        setStock([]);
+        setStockHints([]);
+      })
       .finally(() => setStockLoading(false));
-  }, [header.location_id, editMode, isSales]);
+  }, [header.location_id, editMode, isSales, id]);
 
   const getBagType = bagTypeCache.get;
 
@@ -399,7 +411,9 @@ export default function BillFormPage({
       if (totalKg <= 0) return;
 
       if (!row || exceedsAvailableStock(bt, totalBags, totalLooseKg, row)) {
-        warnings.push(`${label}: insufficient ${sourceLabel} stock at this location`);
+        warnings.push(
+          `${label}: billed more than ${sourceLabel} on-hand at this location — stock is taken only when you Deliver`
+        );
       }
     });
     return warnings;
@@ -523,11 +537,6 @@ export default function BillFormPage({
       clearIdemKey();
       return;
     }
-    if (stockWarnings.length > 0) {
-      setError(stockWarnings[0]);
-      clearIdemKey();
-      return;
-    }
     if (isBackdatedDate(billDate)) {
       setBackdateAuthError("");
       setBackdateAuthOpen(true);
@@ -561,83 +570,51 @@ export default function BillFormPage({
     });
   };
 
+  const skuHint = (line: LineForm) => {
+    if (!isSales || !line.product_id || !line.brand_id || !line.bag_type_id) return null;
+    const owner = stockOwnerFilter(line.stock_source, header.customer_id);
+    const inv = stockRow(stock, line.product_id, line.brand_id, line.bag_type_id, owner);
+    const onHand = inv ? Number(inv.total_quantity_kg) || 0 : 0;
+    const item = findHintItem(
+      stockHints,
+      line.product_id,
+      line.brand_id,
+      line.bag_type_id,
+      line.stock_source,
+      line.stock_source === "job_work" ? header.customer_id : null
+    );
+    let formKg = 0;
+    lines.forEach((ln, i) => {
+      if (
+        ln.product_id !== line.product_id ||
+        ln.brand_id !== line.brand_id ||
+        ln.bag_type_id !== line.bag_type_id ||
+        ln.stock_source !== line.stock_source
+      ) {
+        return;
+      }
+      const lnBt = getBagType(ln.bag_type_id);
+      formKg += orderedQtyKg(ln, lnBt);
+      const delivered = Number(bill?.lines[i]?.delivered_quantity_kg ?? 0);
+      formKg -= delivered;
+    });
+    return hintFromItemAndForm(item, onHand, Math.max(formKg, 0), {
+      billId: editMode && bill ? bill.id : undefined,
+      billDate: editMode && bill ? bill.bill_date : undefined,
+    });
+  };
+
   const renderCreateLine = (line: LineForm, idx: number) => {
     const owner = stockOwnerFilter(line.stock_source, header.customer_id);
     const scopedStock = isSales ? filterStockForOwner(stock, owner) : stock;
-    const productOptions = isSales ? productsFromStock(scopedStock) : [];
-    const brandOptions = isSales ? brandsFromStock(scopedStock, line.product_id) : [];
-    const bagOptions = isSales
-      ? bagTypesFromStock(scopedStock, line.product_id, line.brand_id)
-      : [];
-    const inv = isSales
-      ? stockRow(
-          scopedStock,
-          line.product_id,
-          line.brand_id,
-          line.bag_type_id,
-          stockOwnerFilter(line.stock_source, header.customer_id)
-        )
-      : undefined;
     const bt = getBagType(line.bag_type_id);
     const s1 = Boolean(line.product_id);
     const s2 = s1 && Boolean(line.brand_id);
     const s3 = s2 && Boolean(line.bag_type_id);
     const s4 = s3 && line.rate_per_kg !== "" && Number(line.rate_per_kg) >= 0;
-    const lineStockLines = lines.map((l) => ({
-      bag_count: l.ordered_bags,
-      loose_kg: l.ordered_loose_kg,
-    }));
-    const sameBucket = (i: number) =>
-      lines[i].product_id === line.product_id &&
-      lines[i].brand_id === line.brand_id &&
-      lines[i].bag_type_id === line.bag_type_id &&
-      lines[i].stock_source === line.stock_source;
-    const reservedEarlier = reservedStockFromEarlierLines(bt, lineStockLines, idx, sameBucket);
-    const reservedSiblings = reservedStockFromSiblingLines(bt, lineStockLines, idx, sameBucket);
-    const hasEarlierReserved = reservedEarlier.bagCount > 0 || reservedEarlier.looseKg > 0;
-    const remainingDisplay =
-      inv && bt ? formatRemainingStockAfterReserved(bt, inv, reservedEarlier.bagCount, reservedEarlier.looseKg) : "";
-    const exceedMsg = stockExceedsMessageWithReserved(
-      bt,
-      line.ordered_bags,
-      line.ordered_loose_kg,
-      inv,
-      reservedSiblings.bagCount,
-      reservedSiblings.looseKg
-    );
     const qtyKg = orderedQtyKg(line, bt);
     const dup = !isSales && isDuplicateLine(lines, idx, isSales);
-    const productDisabled =
-      !linesEnabled || (isSales && (stockLoading || scopedStock.length === 0));
-    const productPlaceholder = !linesEnabled
-      ? isSales
-        ? "Select location first"
-        : "Select customer first"
-      : isSales && scopedStock.length === 0
-        ? line.stock_source === "job_work"
-          ? "No job work stock for this customer at this location"
-          : "No owned stock at this location"
-        : "Select product";
-    const cascade = (
-      label: string,
-      value: string,
-      disabled: boolean,
-      ph: string,
-      opts: { id: number; label: string }[],
-      onPick: (v: string) => void
-    ) => (
-      <label key={label}>
-        {label}
-        <select value={value} disabled={disabled} onChange={(e) => onPick(e.target.value)}>
-          <option value="">{ph}</option>
-          {opts.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </label>
-    );
+    const hint = skuHint(line);
     const purchaseProductField = (
       <label key="product">
         Product
@@ -731,50 +708,9 @@ export default function BillFormPage({
                 that customer on the bill.
               </p>
             )}
-          {isSales ? (
-            <>
-              {cascade(
-                "Product",
-                line.product_id,
-                productDisabled,
-                productPlaceholder,
-                productOptions,
-                (v) => updateLine(idx, { ...resetLineFrom(line, "product"), product_id: v })
-              )}
-              {cascade(
-                "Brand",
-                line.brand_id,
-                !linesEnabled || !s1,
-                s1 ? "Select brand" : "Select product first",
-                brandOptions,
-                (v) =>
-                  updateLine(idx, {
-                    ...resetLineFrom({ ...line, product_id: line.product_id }, "brand"),
-                    brand_id: v,
-                  })
-              )}
-              {cascade(
-                "Bag type",
-                line.bag_type_id,
-                !linesEnabled || !s2,
-                s2 ? "Select bag type" : "Select brand first",
-                bagOptions,
-                (v) => {
-                  if (v) void bagTypeCache.ensure(v);
-                  updateLine(idx, {
-                    ...resetLineFrom({ ...line, brand_id: line.brand_id }, "bag_type"),
-                    bag_type_id: v,
-                  });
-                }
-              )}
-            </>
-          ) : (
-            <>
-              {purchaseProductField}
-              {purchaseBrandField}
-              {purchaseBagTypeField}
-            </>
-          )}
+          {purchaseProductField}
+          {purchaseBrandField}
+          {purchaseBagTypeField}
           {isLooseBagType(bt) ? (
             <label>
               Loose kg
@@ -815,14 +751,12 @@ export default function BillFormPage({
             />
           </label>
         </div>
-        {inv && s3 && (
-          <div className="stock-hint">
-            {hasEarlierReserved ? "Remaining" : "Available"} (
-            {line.stock_source === "job_work" ? "job work" : "owned"}): {remainingDisplay}
-            {isSales && exceedMsg && (
-              <span className="stock-warning"> — {exceedMsg.replace(" — cannot submit", "")}</span>
-            )}
-          </div>
+        {isSales && s3 && hint && (
+          <SalesStockHint
+            availableKg={hint.availableKg}
+            reservedKg={hint.reservedKg}
+            notDeliveredKg={hint.notDeliveredKg}
+          />
         )}
         {s4 && qtyKg > 0 && (
           <p className="hint">
@@ -844,6 +778,7 @@ export default function BillFormPage({
     const qtyKg = orderedQtyKg(line, bt);
     const floor = Number(bl?.delivered_quantity_kg ?? 0);
     const bagsDelivered = bl?.bags_delivered ?? 0;
+    const hint = skuHint(line);
 
     return (
       <div key={idx} className="bill-form-line line-block">
@@ -916,6 +851,13 @@ export default function BillFormPage({
             <input type="text" readOnly value={deliveryStatusLabel(bl?.line_delivery_status ?? "not_delivered")} />
           </label>
         </div>
+        {isSales && hint && (
+          <SalesStockHint
+            availableKg={hint.availableKg}
+            reservedKg={hint.reservedKg}
+            notDeliveredKg={hint.notDeliveredKg}
+          />
+        )}
         {qtyKg > 0 && qtyKg < floor && (
           <p className="error">Below delivered minimum — return first or increase qty</p>
         )}
@@ -1081,9 +1023,7 @@ export default function BillFormPage({
               <p className="text-sm text-ink-muted">
                 {stockLoading
                   ? "Loading inventory at location…"
-                  : stock.length
-                    ? `${stock.length} stock row(s) at this location — job work lines show only that customer's custody stock`
-                    : "No stock at this location; add inventory first"}
+                  : "Search any product, brand, and bag type (including 0 kg). Available is physical on-hand; billing does not reserve stock."}
               </p>
             )}
             {!editMode && !isSales && (
@@ -1110,9 +1050,6 @@ export default function BillFormPage({
               <p className="text-base text-ink-muted">
                 {isSales ? "Confirm customer and location in the header section." : "Select customer in the header section."}
               </p>
-            )}
-            {!editMode && isSales && headerReady && !stockLoading && !stock.length && (
-              <p className="text-base text-ink-muted">No stock at this location; add inventory first</p>
             )}
             {!editMode && lines.map((line, idx) => renderCreateLine(line, idx))}
             {editMode && lines.map((line, idx) => renderEditLine(line, idx))}

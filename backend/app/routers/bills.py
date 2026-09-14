@@ -46,6 +46,9 @@ from app.schemas import (
     BillsListSummaryOut,
     BillsPageOut,
     BillVoidLinkedInfoOut,
+    SalesStockHintBillOut,
+    SalesStockHintItemOut,
+    SalesStockHintsOut,
     CashBookEntryOut,
     CashBookEntryPageOut,
 )
@@ -69,6 +72,7 @@ from app.services.bills import (
     void_bill,
 )
 from app.services.fulfillment import net_fulfilled_kg
+from app.services.sales_stock_hint import list_sales_stock_hint_items
 from app.services.bill_lock import lock_bill_for_update
 from app.services.bill_concurrency import (
     assert_bill_version,
@@ -366,6 +370,47 @@ def preview_next_bill_number(
     return {
         "bill_number": preview_bill_number(db, bill_type, company_id_for_user(user)),
     }
+
+
+@router.get("/bills/sales-stock-hints", response_model=SalesStockHintsOut)
+def sales_stock_hints(
+    location_id: int,
+    exclude_bill_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Read-only on_hand + open undelivered sales remainings. Does not reserve stock."""
+    if location_id < 1:
+        raise HTTPException(400, "location_id must be >= 1")
+    if exclude_bill_id is not None and exclude_bill_id < 1:
+        raise HTTPException(400, "exclude_bill_id must be >= 1")
+    items = list_sales_stock_hint_items(
+        db,
+        company_id=company_id_for_user(user),
+        location_id=location_id,
+        exclude_bill_id=exclude_bill_id,
+    )
+    return SalesStockHintsOut(
+        items=[
+            SalesStockHintItemOut(
+                product_id=it.product_id,
+                brand_id=it.brand_id,
+                bag_type_id=it.bag_type_id,
+                stock_source=it.stock_source,
+                customer_id=it.customer_id,
+                on_hand_kg=it.on_hand_kg,
+                open_bills=[
+                    SalesStockHintBillOut(
+                        bill_id=b.bill_id,
+                        bill_date=b.bill_date,
+                        remaining_kg=b.remaining_kg,
+                    )
+                    for b in it.open_bills
+                ],
+            )
+            for it in items
+        ]
+    )
 
 
 @router.get("/bills/picker", response_model=BillPickerPageOut)

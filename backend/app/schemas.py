@@ -341,6 +341,26 @@ class BillListItemOut(BaseModel):
     total_ordered_kg: Decimal = Decimal("0")
 
 
+class SalesStockHintBillOut(BaseModel):
+    bill_id: int
+    bill_date: date
+    remaining_kg: Decimal
+
+
+class SalesStockHintItemOut(BaseModel):
+    product_id: int
+    brand_id: int
+    bag_type_id: int
+    stock_source: str
+    customer_id: int | None = None
+    on_hand_kg: Decimal
+    open_bills: list[SalesStockHintBillOut]
+
+
+class SalesStockHintsOut(BaseModel):
+    items: list[SalesStockHintItemOut]
+
+
 class BillsListSummaryOut(BaseModel):
     total_count: int
     unpaid_count: int

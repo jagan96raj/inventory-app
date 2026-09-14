@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 26 Aug 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.23** (bill bags/kg counters + bill-number dialog; v17.3.22 Notes board; v17.3.21 Money now; v17.3.20 customer list totals); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 14 Sep 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.24** (sales stock hints + 0-qty SKUs; v17.3.23 bill bags/kg dialog; v17.3.22 Notes board); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.24** — Sales bill **stock hints** (display only) + 0-qty / missing-row SKUs. Create/edit uses master product/brand/bag search (not stock-at-location qty > 0). Hint: Available (on hand) / Reserved / Not delivered. Billing never changes on_hand; oldest open sales bill is excluded from reserved; 2+ open bills → reserved = on_hand − later_qty (can be negative). Over-on-hand create is a warning only (submit allowed). Fulfillment: first Deliver wins; other open dialogs refetch stock; deliver still cannot exceed physical on_hand. `GET /api/bills/sales-stock-hints` read helper. No Alembic. See **Spec v17.3.24** below.
 - **v17.3.23** — Bill **Total bags / Total kg** live on form next to Products billed; same counters on detail (+ print header). `BillListItemOut` adds computed `total_ordered_bags` / `total_ordered_kg` (sum of lines; no migration). List: hover bill number → “X bags · Y kg”; click → `BillDetailDialog` (Modal xl, maximize ≈ fullscreen) with Open full page / Edit / Pay / Print; refresh list after close. See **Spec v17.3.23** below.
 - **v17.3.22** — **Notes** board (`/notes`, Overview sidebar): company-scoped soft-paper cards. Default **owner-only**; owner sets per-note `viewer_roles` (writer / stock_manager / factory_manager) via `company_note_role_access`. Owner CRUD; other roles read-only when shared. Migration `062`. See **Spec v17.3.22** below.
 - **v17.3.21** — Dashboard **Money now** snapshot cards (not month P&L / not an FY column): Amount in hand = M (cash + all bank + cash accounts = accounts `total_money`); After credit = M − C; After debit = M + D; After settlement = M − C + D. C/D are customer credit/debit sums. Do not use M − D for in hand; card 4 is not profit. `money_now` on `GET /api/reports/dashboard-bundle` via `get_accounts_summary`. See **Spec v17.3.21** below.
@@ -309,10 +310,10 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; **v17.3.21** Money now snapshot row (independent of year/month); FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
 | `/notes` | `NotesPage` | Soft paper Notes board; owner CRUD + per-note role visibility; others read-only when shared (**v17.3.22**). | — |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. **v17.3.23:** bill number hover bags·kg; click opens `BillDetailDialog` (not navigate). | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
-| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. **v17.3.23:** live Total bags + Total kg beside Products billed. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
+| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. **v17.3.23:** live Total bags + Total kg beside Products billed. **v17.3.24:** sales master SKU search (0-qty OK); Available / Reserved / Not delivered hint; over-on-hand warning only. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
 | `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. **v17.3.23:** header Total bags + Total kg; print header Ordered bags·kg. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
 | `/payments`, `/payments/new`, `/…/:id/payment` | `PaymentsPage`, `PaymentPage` | New listing with `Table` + per-row Void; record form with bill snapshot, set-off allocation preview, balance-mode autofill, validation banners. **v13.1:** full-row sales/purchase tint via `BILL_TYPE_THEME`. | **#4 v5.4** void from list; **v5.2** set-off allocations. |
-| `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. | **#12 v12.3** row-locked stock mutations (server-side). |
+| `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. **v17.3.24:** no soft-lock on open; refetch on_hand after another deliver (first Deliver wins); API still rejects over physical. | **#12 v12.3** row-locked stock mutations (server-side). |
 | `/inventory` | `InventoryPage` | Location-grouped tables with product `rowspan` column; low-stock amber highlight; add opening stock via `Modal` only. **v13.1:** larger product names; canvas background. | **#3 v12.1** opening qty only; PUT rejected; **#12 v12.3** row locking. |
 | `/operations/processing`, `/operations/processing/:id` | `ProcessingListPage`, `ProcessingJobPage` | Open job in `Modal`; job detail with compact summary strip, **At a glance** In/Out/Balance panel, collapsible batch log. | **#8 v9.4** reprocess guard hidden when no balance returned; **v9.3** mass-balance enforced. |
 | `/operations/bag-change`, `/operations/product-transfer`, `/operations/stock-disposal` and their `/histories/*` | `BagChangePage`, `ProductTransferPage`, `StockDisposalPage` + history pages | Sectioned forms via `OperationFormBlocks` (`OperationSection`, balance/flow hints, sticky footers). | — |
@@ -3382,6 +3383,20 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.24 — Sales stock hints + 0-qty SKUs (UI / validation only)
+
+**Problem:** Sales create only listed SKUs with stock at the bill location, so 0-qty / missing inventory rows could not be billed. Over-on-hand create was blocked even though deliver is the only stock movement. Operators need a display of physical on-hand vs later bills vs total not delivered — without reserving rows or changing money math.
+
+**Solution:**
+- **Create dropdowns:** Product / brand / bag type use the same master search as purchase. Missing inventory row = on_hand 0; line still allowed.
+- **Hint (same SKU + location + owner):** Available = on_hand (physical; billing never changes this). Not delivered = SUM(ordered − delivered) on active non-void sales bills for that SKU, including current form lines; when editing, exclude the current bill’s saved lines and replace with the form. Oldest active undelivered sales bill is **not** counted in reserved. If only one open bill: reserved = 0. If 2+: later_qty = remaining on the other open bills except that oldest; reserved = on_hand − later_qty (may be negative → warning tone).
+- **Examples:** 50 on hand + one bill 100 → available 50, reserved 0, not delivered 100. Second 100 → reserved −50, not delivered 200. Third → reserved −150. 200 on hand + one 100 → reserved 0; + second 100 → reserved 100.
+- **Submit:** Do **not** block create when qty > on_hand (warning only).
+- **Fulfillment (first Deliver wins):** Open dialogs may show the same on_hand. After one deliver succeeds, other open dialogs refetch stock. Submit over remaining on_hand is rejected. No older-bill FIFO on the server.
+- **Read API:** `GET /api/bills/sales-stock-hints?location_id=&exclude_bill_id=` returns on_hand + open bill remainings. No reserved column, no negative stock in DB, no Alembic.
+
+**Unchanged:** Bill money math; payments/balances; deliver is the only stock movement; olive brand; no desktop-shell.
 
 ## Spec v17.3.23 — Bill bags/kg counters + bill-number dialog
 

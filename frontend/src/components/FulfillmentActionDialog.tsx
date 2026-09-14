@@ -29,6 +29,7 @@ import NumberInput from "./ui/NumberInput";
 import AsyncSearchCombobox from "./ui/AsyncSearchCombobox";
 import { searchLocations } from "../lib/masterSearch";
 import Skeleton from "./ui/Skeleton";
+import { notifyFulfillmentStockChanged, subscribeFulfillmentStockChanged } from "../lib/fulfillmentStockSync";
 
 export type FulfillmentActionMode = "deliver" | "return";
 
@@ -103,26 +104,35 @@ export default function FulfillmentActionDialog({
   const isDeliver = mode === "deliver";
   const isReturn = mode === "return";
 
-  const loadLine = useCallback(() => {
+  const loadLine = useCallback((opts?: { resetForm?: boolean }) => {
     if (!open || !lineId) return;
-    setLoading(true);
-    setError("");
+    const resetForm = opts?.resetForm !== false;
+    if (resetForm) {
+      setLoading(true);
+      setError("");
+    }
     const qs =
       isReturn && parentEntryId != null ? `?parent_entry_id=${parentEntryId}` : "";
     api
       .get<FulfillmentLineDetail>(`/api/fulfillment/lines/${lineId}${qs}`)
       .then((data) => {
         setLine(data);
-        setForm((f) => {
-          const next = { ...emptyForm(), vehicle_no: f.vehicle_no };
-          if (data.bill_type === "sales" && data.bill_location_id) {
-            next.location_id = String(data.bill_location_id);
-          }
-          return next;
-        });
+        if (resetForm) {
+          setForm((f) => {
+            const next = { ...emptyForm(), vehicle_no: f.vehicle_no };
+            if (data.bill_type === "sales" && data.bill_location_id) {
+              next.location_id = String(data.bill_location_id);
+            }
+            return next;
+          });
+        }
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (resetForm) setError(e.message);
+      })
+      .finally(() => {
+        if (resetForm) setLoading(false);
+      });
   }, [open, lineId, isReturn, parentEntryId]);
 
   useEffect(() => {
@@ -133,8 +143,26 @@ export default function FulfillmentActionDialog({
       setPickedParentId(null);
       return;
     }
-    loadLine();
+    loadLine({ resetForm: true });
   }, [open, loadLine]);
+
+  useEffect(() => {
+    if (!open || !isDeliver) return;
+    const refetch = () => loadLine({ resetForm: false });
+    const unsub = subscribeFulfillmentStockChanged(refetch);
+    const onVis = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    window.addEventListener("focus", refetch);
+    document.addEventListener("visibilitychange", onVis);
+    const poll = window.setInterval(refetch, 4000);
+    return () => {
+      unsub();
+      window.removeEventListener("focus", refetch);
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(poll);
+    };
+  }, [open, isDeliver, loadLine]);
 
   const isPurchase = line?.bill_type === "purchase";
   const isSales = line?.bill_type === "sales";
@@ -237,6 +265,7 @@ export default function FulfillmentActionDialog({
       { headers: idempotencyHeadersOptionalAuth(idemKeyRef.current, authorizationPassword) }
     );
     idemKeyRef.current = null;
+    notifyFulfillmentStockChanged();
     onSuccess();
     onClose();
   };
