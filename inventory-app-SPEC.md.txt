@@ -1,7 +1,7 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 22 Sep 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.28** (security hardening package: IDOR tests, API rate limits, gitleaks, log hygiene; RLS deferred); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.29** (Nginx security headers + Turnstile auth bot protection; v17.3.28 IDOR/rate limits/gitleaks); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
@@ -9,6 +9,7 @@
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.29** — Security follow-up: production **Nginx security headers** snippet for `app.rajagro.org` (`docs/nginx-security-headers.md`, `scripts/nginx-security-headers.snippet.conf`) — HSTS (after HTTPS), nosniff, DENY frames, Referrer-Policy, Permissions-Policy; CSP deferred Phase 2 with draft allowlist. FastAPI `SecurityHeadersMiddleware` mirrors non-CSP headers (HSTS when `COOKIE_SECURE`). Auth-only **Cloudflare Turnstile** behind `BOT_PROTECTION_ENABLED` (default false): Login, OTP login, company register; server verifies token; site key from `GET /api/auth/bot-protection-status`. No captcha on bills/payments/fulfillment. Does **not** open company registration. RLS still deferred. See **Spec v17.3.29** below.
 - **v17.3.28** — Security hardening package (checklist gaps; **does not** unlock `ALLOW_COMPANY_REGISTRATION`). (1) Company isolation / IDOR: inventory create FK company asserts; JW receive + sales-return location company checks; notes use `company_id_for_user`; automated cross-company GET/mutate tests. Isolation remains **API `company_id` scoping** (Postgres RLS deferred — see Spec). (2) Light IP rate limits on OTP login/request, company register (when enabled), payment create, dashboard-bundle — env-tunable, 429 message. Login email lockout (v15.5) unchanged. (3) `.gitignore` dumps/env variants; CI **gitleaks** + `scripts/scan_secrets.sh`. (4) Header/body log sanitize helpers; audit metadata redacts OTP/tokens; no request-logging middleware that prints Authorization/cookies. (5) Confirm User/Auth payloads still omit passwords (v17.3.6). See **Spec v17.3.28** below.
 - **v17.3.26** — Sales stock hint: Available / Reserved are **this SKU only** (product + brand + bag type + location + owned/job-work). Available = physical on hand (drops only on Deliver). Reserved = remaining on **other** open sales bills of that SKU (not the current bill). Packed bag type shows bags; loose shows kg. If reserved is 0, show Available only. No “Not delivered” line; no oldest-bill exclusion. No Alembic. See **Spec v17.3.26** below.
 - **v17.3.25** — Sales create: hydrate bag types before Submit so billed qty is not treated as 0 / “Invalid bag type”; over-on-hand warning banner (“You can still submit this bill”) does not block save. Stock still moves only on Deliver. No Alembic. See **Spec v17.3.25** below.
@@ -126,7 +127,7 @@
 
 | Area | Spec | Implementation |
 |------|------|----------------|
-| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6**, **v17.3.28** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit + light API rate limits; password policy; no plaintext passwords; idle logout; optional hide API docs; gitleaks CI |
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6**, **v17.3.28**, **v17.3.29** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit + light API rate limits; optional Turnstile on auth; password policy; no plaintext passwords; idle logout; optional hide API docs; gitleaks CI; Nginx security headers |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
@@ -3387,6 +3388,29 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.29 — Nginx security headers + auth Turnstile
+
+**Goal:** Useful leftovers after v17.3.28 — Force HTTPS companion headers and optional bot protection on auth pages only.
+
+### Security headers
+- Documented Lightsail Nginx snippet: `docs/nginx-security-headers.md` + `scripts/nginx-security-headers.snippet.conf`.
+- Headers: `Strict-Transport-Security` (after HTTPS confirmed), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, restrictive `Permissions-Policy`.
+- FastAPI `SecurityHeadersMiddleware` mirrors the non-CSP headers on API responses; HSTS only when `COOKIE_SECURE=true`.
+- **CSP Phase 2:** draft allowlist in the Nginx doc — do not enable until staging-tested (Vite, Turnstile, PDF/print, future Google OAuth).
+
+### Bot protection (auth only)
+- Cloudflare Turnstile when `BOT_PROTECTION_ENABLED=true` with `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY`.
+- Server verifies token via Cloudflare siteverify before accepting: `POST /api/auth/login`, `POST /api/auth/otp-login`, `POST /api/companies/register`.
+- Public `GET /api/auth/bot-protection-status` returns `{ enabled, provider, site_key }` for the UI widget.
+- Default **false** — Raj Agro unchanged until keys are set. No captcha on bill/payment/fulfillment APIs.
+- Owner OTP **generation** (`POST /users/{id}/login-otp`) stays without captcha (authenticated owner action); OTP **login** form is protected when enabled.
+
+### Out of scope / deferred
+- Postgres RLS (API `company_id` isolation remains); field-level encryption; opening `ALLOW_COMPANY_REGISTRATION`; weakening allowlists.
+
+### Tests
+- `tests.test_security_headers_bot_v17329`
 
 ## Spec v17.3.28 — Security hardening package (IDOR, rate limits, secrets, logs)
 

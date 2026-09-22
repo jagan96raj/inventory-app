@@ -1,8 +1,34 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 22 Sep 2026 — covers Spec v5.4 through **v17.3.28**; backend v12.21 + v12.22  
+**Last updated:** 22 Sep 2026 — covers Spec v5.4 through **v17.3.29**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt` · Repo: `inventory-app-SPEC.md.txt`
+
+## v17.3.29 — Nginx headers + Turnstile (auth only)
+
+### Automated
+1. `python -m unittest tests.test_security_headers_bot_v17329`
+
+### Nginx headers (Lightsail)
+1. Paste snippet from `docs/nginx-security-headers.md` into HTTPS `server { }` for `app.rajagro.org`.
+2. `sudo nginx -t && sudo systemctl reload nginx`
+3. Verify:
+   ```bash
+   curl -sI https://app.rajagro.org | grep -iE 'strict-transport|x-content-type|x-frame|referrer-policy|permissions-policy'
+   ```
+   Or browser DevTools → Network → document → Response Headers.
+4. Optional API mirror: `curl -sI https://app.rajagro.org/api/health` — same non-CSP headers.
+
+### Turnstile (optional — leave off until keys ready)
+1. Create a Cloudflare Turnstile widget for `app.rajagro.org`.
+2. Set in `.env`: `BOT_PROTECTION_ENABLED=true`, `TURNSTILE_SITE_KEY=…`, `TURNSTILE_SECRET_KEY=…`
+3. `sudo systemctl restart inventory-api` (service name may differ); hard-refresh `/login`.
+4. Login shows Turnstile; submit without completing → blocked; with token → succeeds.
+5. With `BOT_PROTECTION_ENABLED=false`, login works as before (allowlist still applies).
+6. Create bill / record payment — **no** captcha.
+
+### CSP
+Do **not** enable CSP in production until staging-tested (Phase 2 draft in Nginx doc).
 
 ## v17.3.28 — Security hardening
 

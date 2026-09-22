@@ -24,6 +24,7 @@ from app.services.companies import (
 from app.services.login_history import record_login_event
 from app.services.login_rate_limit import record_successful_login
 from app.core.rate_limit import rate_limit_company_register
+from app.services.bot_protection import require_captcha_token
 
 # Authenticated company endpoints (mounted under protected_router).
 router = APIRouter(prefix="/companies", tags=["companies"])
@@ -50,6 +51,7 @@ def register_company(
         raise HTTPException(status_code=403, detail=COMPANY_REGISTRATION_CLOSED)
 
     rate_limit_company_register(request)
+    require_captcha_token(body.captcha_token)
 
     email = body.email.strip().lower()
     _raise_login_rate_limited(db, email, request)

@@ -11,6 +11,7 @@ from app.config import settings
 from app.core.auth import validate_auth_email_policy
 from app.core.cors import parse_cors_origins
 from app.core.health import check_database
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import SessionLocal, engine
 from app.routers import api_router
 from app.services.idempotency import cleanup_idempotency_records
@@ -90,6 +91,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Outer-most after CORS so API responses also carry security headers behind Nginx.
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(api_router, prefix="/api")
 
