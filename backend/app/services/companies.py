@@ -41,19 +41,6 @@ def get_company_for_user(db: Session, company_id: int) -> Company | None:
     return db.get(Company, company_id)
 
 
-def format_company_address(company: Company) -> str | None:
-    """Single-line address join (legacy helpers / tests)."""
-    parts = [
-        company.address_line,
-        company.address_line_2,
-        company.district,
-        company.state,
-        company.pin_code,
-    ]
-    joined = ", ".join(p.strip().rstrip(",") for p in parts if p and str(p).strip())
-    return joined or None
-
-
 def update_company_profile(
     db: Session,
     company_id: int,

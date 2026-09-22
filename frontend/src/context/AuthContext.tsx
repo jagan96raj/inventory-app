@@ -26,7 +26,6 @@ type AuthContextValue = {
     newPassword?: string,
     captchaToken?: string | null
   ) => Promise<void>;
-  signup: (email: string, password: string, name?: string) => Promise<void>;
   registerCompany: (input: CompanyRegisterInput) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
@@ -76,11 +75,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const signup = useCallback(async (email: string, password: string, name?: string) => {
-    const me = await api.post<AuthUser>("/api/auth/signup", { email, password, name: name || null }, { skipAuthRedirect: true });
-    setUser(me);
-  }, []);
-
   const registerCompany = useCallback(async (input: CompanyRegisterInput) => {
     const me = await api.post<AuthUser>("/api/companies/register", input, { skipAuthRedirect: true });
     setUser(me);
@@ -95,8 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, loginWithOtp, signup, registerCompany, logout, refreshMe }),
-    [user, loading, login, loginWithOtp, signup, registerCompany, logout, refreshMe]
+    () => ({ user, loading, login, loginWithOtp, registerCompany, logout, refreshMe }),
+    [user, loading, login, loginWithOtp, registerCompany, logout, refreshMe]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

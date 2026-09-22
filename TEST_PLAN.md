@@ -485,7 +485,7 @@ Amended tests/helpers only (no production logic changes): signup lockdown mocks 
 3. **Blocked login** — Existing user not on list → **403** on login (before password check).
 4. **Allowlisted login** — `jaganraj@rajagro.com` can sign up (if new) and log in.
 5. **Case insensitive** — `JaganRaj@RajAgro.com` matches allowlist.
-6. **Login UI** — No **Create an account** link; footer says contact owner. `/signup` → `/login`.
+6. **Login UI** — No **Create an account** link; footer says contact owner. `/signup` → `/register`.
 7. **Staff flow** — Add email to `ALLOWED_EMAILS` + create user in **Users** page with role; staff logs in.
 8. **Dev warning** — Empty `ALLOWED_EMAILS` → backend startup WARNING in logs.
 9. **Production guard** — `REQUIRE_ALLOWED_EMAILS=true` with empty list → backend refuses to start.

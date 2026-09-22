@@ -156,7 +156,3 @@ export function jwRemainingReceiveQty(line: JwLineQtyRow): JwQtyFields {
   };
 }
 
-/** @deprecated Legacy alias — use {@link jwNetReceivedQty} for UI "Received (net)". */
-export function jwCustodyQty(line: JwLineQtyRow): JwQtyFields {
-  return jwNetReceivedQty(line);
-}

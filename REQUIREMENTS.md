@@ -289,7 +289,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 - `frontend/src/lib/density.tsx` — `DensityProvider`, `useDensity()`.
 - `frontend/src/lib/format.ts` — extended with `formatInrCompact`, `formatDate`, `formatDateTime`, `formatRelative` (Intl-based).
 - `frontend/src/components/ui/` — primitive library (see below).
-- `frontend/src/components/AppShell.tsx` — replaces `Layout.tsx` (which is now a thin re-export shim).
+- `frontend/src/components/AppShell.tsx` — replaces the legacy `Layout.tsx` (shim removed).
 - `frontend/src/components/Sidebar.tsx` — collapsible sidebar with grouped sections, mobile drawer, persisted (`v13.sidebar.collapsed`).
 - `frontend/src/components/Topbar.tsx` — sticky glass topbar with breadcrumbs, global search (`Cmd/Ctrl+K`), theme toggle (cycles light/dark/system), density toggle, user menu.
 - `frontend/src/components/CommandPalette.tsx` — Headless UI Combobox listing bills (sales + purchase), customers, products, plus quick navigation and quick-action items.
@@ -298,7 +298,6 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 - `frontend/src/main.tsx` — wraps in `ThemeProvider`, `DensityProvider`, mounts `Toaster`, imports new + legacy stylesheets.
 - `frontend/src/App.tsx` — uses `AppShell` instead of legacy `Layout` (route paths unchanged; AnimatePresence transitions live inside the shell).
 - `frontend/index.html` — drops Google-Fonts `<link>` in favour of self-hosted fontsource imports.
-- `frontend/src/components/Layout.tsx` — thin `export { default } from "./AppShell"` shim for one release.
 - `frontend/src/components/AuthShell.tsx` — split-screen hero + auth card.
 - `frontend/src/components/MasterCrud.tsx`, `PartyMasterCrud.tsx`, `BagTypesPage.tsx`, `OperationPageHeader.tsx` — rebuilt on UI primitives; master delete uses `VoidConfirmDialog` + `X-Void-Authorization` (v15.3); surfaces v12.2 backend guard messages via `Banner` + toast.
 - Icons — `lucide-react` directly (legacy `Icons.tsx` removed in v16.0.10).
@@ -310,7 +309,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 ### Per-page redesign — all routes preserved
 | Route | Page | UI work | QA hardening surfaced |
 |---|---|---|---|
-| `/login`, `/signup` | `LoginPage`, `SignupPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. **v17.3.12** phone padding / register wide. | — |
+| `/login`, `/register` (`/signup` redirects to `/register`) | `LoginPage`, `CompanyRegisterPage`, `AuthShell` | Split-screen with animated rotating value props; auth card uses new `FormField` + `Banner` + `Button`. ALLOWED_EMAILS rejection text rendered via `Banner`. **v17.3.12** phone padding / register wide. | — |
 | `/home` | `HomePage` | Hero, animated quick-action grid with gradient cards, ops chip row, tips. | — |
 | `/profile` | `ProfilePage` | Account (view) + company details; owner edits company (v17.0.5). Owner **Download backup** (v17.3.19). **v17.3.12** full-width Save on phone. | — |
 | `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; **v17.3.21** Money now snapshot row (independent of year/month); FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
@@ -469,7 +468,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **Login:** `POST /api/auth/login` — email + password; generic error on failure (`Invalid email or password`).
 - **Session:** JWT in httpOnly cookie `access_token` (same as v10); `GET /api/auth/me`, `POST /api/auth/logout`. **v15.4:** JWT includes `jti`; logout adds `jti` to `revoked_tokens` — session invalid immediately.
 - **Protected API:** all `/api/*` except `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/google` require `get_current_user`.
-- **Frontend:** `/login` and `/signup` pages (no sidebar); `AuthContext` with `login`, `signup`, `logout`; `credentials: 'include'` on all fetch.
+- **Frontend:** `/login` and `/register` pages (no sidebar); `AuthContext` with `login`, `loginWithOtp`, `registerCompany`, `logout`; `credentials: 'include'` on all fetch.
 - **DB:** `users` table — `email`, `password_hash`, optional `google_sub` (for future Google), `name`, `picture_url`, timestamps; migration `014_spec_v101_password_auth`.
 - **Google Sign-In:** backend `POST /api/auth/google` retained for later; not wired in UI yet.
 - **Optional allowlist:** `ALLOWED_EMAILS` applies to signup and login.
@@ -483,7 +482,7 @@ See `TEST_PLAN.md` § "v13.1 UI polish" for the manual smoke checklist.
 - **Qty inputs:** `type="number"` with empty placeholders (not pre-filled 0/1).
 - **Mouse wheel:** scrolling while a number input is focused must **not** change its value (`preventNumberInputWheel.ts` in `main.tsx`).
 - **Layout scroll:** `html`/`body`/`#root` height chain with `body.app-shell`; main content scrolls in `.content` only; sidebar nav scrolls independently.
-- **Sidebar nav:** grouped dropdown menus (`Layout.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
+- **Sidebar nav:** grouped dropdown menus (`AppShell.tsx` + `Sidebar.tsx`); bounded flex middle section; themed scrollbar on dark sidebar.
 - **Responsive (≤1024px / ≤768px):** dashboard grids stack; tables use horizontal `.table-scroll` / `overflow-x-auto` where needed; mobile hamburger drawer. **Phase 1 (v17.3.7):** AppShell + Dashboard + Bills. **Phase 2 (v17.3.8):** Payments + Cash book + Accounts dashboard. **Phase 3 (v17.3.9):** Fulfillment + Processing + Job work. **Phase 4 (v17.3.10):** Inventory + stock ops. **Phase 5 (v17.3.11):** Masters + book settings. **Phase 6 (v17.3.12):** Reports/balances/statement + users/profile/auth. **Phase 7 (v17.3.13):** Final polish — see Specs v17.3.7–v17.3.13.
 - **Typography scale** (`--fs-2xs` … `--fs-2xl`); qty display toggle kg / quintal / ton in sidebar footer.
 - **Voided rows:** struck-through payments and fulfillment entries with `status-badge--voided` on bill detail.
@@ -2511,7 +2510,7 @@ Only emails on an allowlist can **sign up** or **log in**. Strangers are blocked
 ### C. Frontend
 
 - Login page: no public **Sign up** link; footer message: contact owner for access.
-- `/signup` redirects to `/login`.
+- `/signup` redirects to `/register`.
 - Owner workflow unchanged: **Users** page to create accounts and assign roles.
 
 ### D. Staff onboarding
