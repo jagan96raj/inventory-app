@@ -761,3 +761,226 @@ def void_payment(
         )
     return payment
 
+
+CUSTOMER_PAY_NO_BALANCE_MSG = "Customer has no balance in that direction"
+CUSTOMER_PAY_NO_OPEN_BILLS_MSG = "No open bills with remaining due for this customer"
+CUSTOMER_PAY_OVER_CAP_MSG = "Amount exceeds allowed balance payment"
+
+
+def _direction_to_bill_type(direction: str) -> BillType:
+    d = (direction or "").strip().lower()
+    if d == "debit":
+        return BillType.sales
+    if d == "credit":
+        return BillType.purchase
+    raise ValueError("direction must be debit or credit")
+
+
+def _customer_balance_for_direction(customer: Customer, direction: str) -> Decimal:
+    if direction == "debit":
+        return Decimal(customer.debit_balance)
+    return Decimal(customer.credit_balance)
+
+
+def load_customer_bills_with_due(
+    db: Session,
+    customer_id: int,
+    bill_type: BillType,
+    company_id: int | None = None,
+) -> list[tuple[Bill, Decimal]]:
+    """Finalized bills of the given type with due > 0, FIFO (bill_date, id)."""
+    q = (
+        select(Bill)
+        .where(
+            Bill.customer_id == customer_id,
+            Bill.bill_type == bill_type,
+            Bill.status == BillStatus.finalized,
+        )
+        .options(joinedload(Bill.payments), joinedload(Bill.customer))
+        .order_by(Bill.bill_date, Bill.id)
+    )
+    if company_id is not None:
+        q = q.where(Bill.company_id == company_id)
+    bills = db.scalars(q).unique().all()
+    out: list[tuple[Bill, Decimal]] = []
+    for bill in bills:
+        due = _bill_remaining_due(bill)
+        if due > 0:
+            out.append((bill, due))
+    return out
+
+
+def preview_customer_pay_balance(
+    db: Session,
+    customer_id: int,
+    direction: str,
+    amount: Decimal,
+    company_id: int | None = None,
+) -> dict:
+    direction = (direction or "").strip().lower()
+    bill_type = _direction_to_bill_type(direction)
+    q = select(Customer).where(Customer.id == customer_id)
+    if company_id is not None:
+        q = q.where(Customer.company_id == company_id)
+    customer = db.scalar(q)
+    if not customer:
+        raise ValueError("Customer not found")
+
+    balance = _customer_balance_for_direction(customer, direction)
+    open_bills = load_customer_bills_with_due(db, customer_id, bill_type, company_id=company_id)
+    open_due_total = sum((due for _, due in open_bills), Decimal("0"))
+    max_amount = min(balance, open_due_total)
+    if max_amount < 0:
+        max_amount = Decimal("0")
+
+    effective_amount = min(amount, max_amount) if amount > 0 else max_amount
+    allocations = allocate_setoff_fifo(open_bills, effective_amount)
+    return {
+        "customer_id": customer_id,
+        "customer_name": customer.name,
+        "direction": direction,
+        "balance": balance,
+        "open_due_total": open_due_total,
+        "max_amount": max_amount,
+        "amount": effective_amount,
+        "allocations": [
+            {
+                "bill_id": bid,
+                "bill_number": next(b.bill_number for b, _ in open_bills if b.id == bid),
+                "amount": amt,
+            }
+            for bid, amt in allocations
+        ],
+    }
+
+
+def pay_customer_balance(
+    db: Session,
+    customer_id: int,
+    direction: str,
+    amount: Decimal,
+    account_id: int,
+    *,
+    paid_date: date | None = None,
+    company_id: int | None = None,
+) -> dict:
+    """
+    Cash/bank FIFO payment across open sales (pay debit) or purchase (pay credit) bills.
+    Reduces customer debit_balance or credit_balance via apply_payment_balance.
+    """
+    direction = (direction or "").strip().lower()
+    bill_type = _direction_to_bill_type(direction)
+    _, paid_at = resolve_business_entry(paid_date)
+
+    if amount <= 0:
+        raise ValueError("Payment amount must be positive")
+    if account_id is None or int(account_id) < 1:
+        raise ValueError(PAYMENT_ACCOUNT_REQUIRED_MSG)
+
+    q = select(Customer).where(Customer.id == customer_id)
+    if company_id is not None:
+        q = q.where(Customer.company_id == company_id)
+    customer = db.scalar(q)
+    if not customer:
+        raise ValueError("Customer not found")
+
+    balance = _customer_balance_for_direction(customer, direction)
+    if balance <= 0:
+        raise ValueError(CUSTOMER_PAY_NO_BALANCE_MSG)
+
+    open_bills = load_customer_bills_with_due(db, customer_id, bill_type, company_id=company_id)
+    if not open_bills:
+        raise ValueError(CUSTOMER_PAY_NO_OPEN_BILLS_MSG)
+
+    open_due_total = sum((due for _, due in open_bills), Decimal("0"))
+    max_amount = min(balance, open_due_total)
+    if amount > max_amount:
+        raise ValueError(f"{CUSTOMER_PAY_OVER_CAP_MSG} ({max_amount})")
+
+    money_company_id = int(getattr(customer, "company_id", None) or company_id or 1)
+    account = db.scalar(
+        select(BankAccount).where(
+            BankAccount.id == account_id,
+            BankAccount.company_id == money_company_id,
+        )
+    )
+    if not account:
+        raise ValueError(PAYMENT_ACCOUNT_NOT_FOUND_MSG)
+    if not account.is_active:
+        raise ValueError(PAYMENT_ACCOUNT_INACTIVE_MSG)
+    if account.kind == BankAccountKind.cash:
+        payment_mode = PaymentMode.cash
+    elif account.kind == BankAccountKind.bank:
+        payment_mode = PaymentMode.bank
+    else:
+        raise ValueError(PAYMENT_ACCOUNT_KIND_MISMATCH_MSG)
+
+    resolved_account_id = _resolve_money_account_id(
+        db, payment_mode, account_id, company_id=money_company_id
+    )
+
+    lock_bills_for_update(db, [b.id for b, _ in open_bills])
+    # Re-load dues after lock
+    open_bills = load_customer_bills_with_due(db, customer_id, bill_type, company_id=company_id)
+    open_due_total = sum((due for _, due in open_bills), Decimal("0"))
+    balance = _customer_balance_for_direction(customer, direction)
+    max_amount = min(balance, open_due_total)
+    if amount > max_amount:
+        raise ValueError(f"{CUSTOMER_PAY_OVER_CAP_MSG} ({max_amount})")
+
+    allocations = allocate_setoff_fifo(open_bills, amount)
+    allocated_total = sum((amt for _, amt in allocations), Decimal("0"))
+    if allocated_total != amount:
+        raise ValueError("Could not allocate the full payment amount across open bills")
+
+    bill_by_id = {b.id: b for b, _ in open_bills}
+    created: list[Payment] = []
+    touched: list[Bill] = []
+
+    for bill_id, slice_amt in allocations:
+        bill = bill_by_id.get(bill_id)
+        if bill is None:
+            raise ValueError("Bill not found during allocation")
+        payment = Payment(
+            bill_id=bill_id,
+            amount=slice_amt,
+            payment_mode=payment_mode,
+            account_id=resolved_account_id,
+            paid_at=paid_at,
+        )
+        db.add(payment)
+        db.flush()
+        bill.payments.append(payment)
+        apply_payment_balance(db, bill, payment)
+        update_bill_payment_status(bill)
+        created.append(payment)
+        touched.append(bill)
+
+    bump_bills_version(touched)
+    db.commit()
+
+    for p in created:
+        db.refresh(p)
+    db.refresh(customer)
+
+    return {
+        "customer_id": customer_id,
+        "customer_name": customer.name,
+        "direction": direction,
+        "amount": amount,
+        "account_id": resolved_account_id,
+        "payment_mode": payment_mode,
+        "payments_created": len(created),
+        "new_credit_balance": Decimal(customer.credit_balance),
+        "new_debit_balance": Decimal(customer.debit_balance),
+        "allocations": [
+            {
+                "bill_id": p.bill_id,
+                "bill_number": bill_by_id[p.bill_id].bill_number,
+                "payment_id": p.id,
+                "amount": p.amount,
+            }
+            for p in created
+        ],
+    }
+

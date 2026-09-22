@@ -89,6 +89,8 @@ type Props<T extends { id: number }> = {
   getInitial?: () => Record<string, string | number>;
   /** Enable name/phone search (customers list API). */
   searchable?: boolean;
+  /** Extra per-row actions (e.g. Pay debit / Pay credit). */
+  rowActions?: (row: T) => ReactNode;
 };
 
 export default function PartyMasterCrud<T extends { id: number }>({
@@ -100,6 +102,7 @@ export default function PartyMasterCrud<T extends { id: number }>({
   columns,
   getInitial,
   searchable = false,
+  rowActions,
 }: Props<T>) {
   const meta = KIND_META[kind];
   const Icon = kind === "customer" ? User : MapPin;
@@ -376,6 +379,7 @@ export default function PartyMasterCrud<T extends { id: number }>({
                       ))}
                       <td className="px-5 py-4 text-right">
                         <div className="inline-flex items-center justify-end gap-0.5">
+                          {rowActions?.(row)}
                           <IconButton
                             label={kind === "customer" ? "Edit customer" : "Edit location"}
                             size="sm"
@@ -433,6 +437,7 @@ export default function PartyMasterCrud<T extends { id: number }>({
                       </dl>
                     )}
                     <div className="flex flex-wrap gap-2 border-t border-line/60 pt-3">
+                      {rowActions?.(row)}
                       <Button
                         size="md"
                         variant="secondary"

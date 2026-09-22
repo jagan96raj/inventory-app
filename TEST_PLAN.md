@@ -1,8 +1,18 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 14 Sep 2026 — covers Spec v5.4 through **v17.3.26**; backend v12.21 + v12.22  
+**Last updated:** 22 Sep 2026 — covers Spec v5.4 through **v17.3.27**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+
+## v17.3.27 — Customer Pay debit / Pay credit (FIFO)
+
+1. **Row actions** — Customer with debit > 0 shows **Pay debit**; credit > 0 shows **Pay credit**; zero balance hides both.
+2. **Pay debit partial** — Customer with 3 unpaid sales (e.g. 4000 / 3000 / 3000) and debit ≥ 5000: Pay debit 5000 from cash → oldest bill paid, second partial 1000, third unpaid; debit reduced by 5000; customers list updates.
+3. **Pay credit** — Customer with open purchase dues and credit > 0: Pay credit allocates FIFO on purchase bills; credit reduced.
+4. **Cap** — Amount > min(balance, open dues) rejected (UI + API).
+5. **No set-off** — Pay pages offer cash/bank accounts only (no Debit/Credit set-off options).
+6. **Backdate** — Past paid date requires authorization password.
+7. **Automated** — `python -m unittest tests.test_customer_pay_balance`.
 
 ## v17.3.26 — Sales stock hint (other bills, bags vs kg)
 

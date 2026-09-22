@@ -488,6 +488,49 @@ class SetoffPreviewOut(BaseModel):
     allocations: list[SetoffAllocationPreview]
 
 
+class CustomerPayBalanceCreate(BaseModel):
+    direction: Literal["debit", "credit"]
+    amount: Decimal = Field(..., gt=0)
+    account_id: int = Field(..., ge=1)
+    paid_date: date | None = None
+
+    @field_validator("paid_date")
+    @classmethod
+    def paid_date_not_future(cls, v: date | None) -> date | None:
+        return _business_date_not_future(v)
+
+
+class CustomerPayBalanceAllocationOut(BaseModel):
+    bill_id: int
+    bill_number: str
+    amount: Decimal
+    payment_id: int | None = None
+
+
+class CustomerPayBalancePreviewOut(BaseModel):
+    customer_id: int
+    customer_name: str
+    direction: Literal["debit", "credit"]
+    balance: Decimal
+    open_due_total: Decimal
+    max_amount: Decimal
+    amount: Decimal
+    allocations: list[CustomerPayBalanceAllocationOut]
+
+
+class CustomerPayBalanceOut(BaseModel):
+    customer_id: int
+    customer_name: str
+    direction: Literal["debit", "credit"]
+    amount: Decimal
+    account_id: int | None = None
+    payment_mode: PaymentMode
+    payments_created: int
+    new_credit_balance: Decimal
+    new_debit_balance: Decimal
+    allocations: list[CustomerPayBalanceAllocationOut]
+
+
 class FulfillmentBillEventLineIn(BaseModel):
     bill_line_id: int
     bag_count: int = Field(0, ge=0)

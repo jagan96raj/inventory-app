@@ -1,13 +1,14 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 14 Sep 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.26** (sales hint reserved = other SKU bills; bags vs kg; v17.3.25 over-on-hand submit; v17.3.24 0-qty SKUs); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 22 Sep 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.27** (customer Pay debit / Pay credit FIFO from Customers list; v17.3.26 sales hint reserved = other SKU bills); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.27** — Customers list **Pay debit** / **Pay credit** (cash/bank only, FIFO across open sales or purchase bills). Full pages `/customers/:id/pay-debit` and `/pay-credit` (PaymentPage-style). `POST /api/customers/{id}/pay-balance` + preview GET; cap = min(balance, open dues); `payments_manage`; Idempotency-Key; no set-off on this page; no Alembic. See **Spec v17.3.27** below.
 - **v17.3.26** — Sales stock hint: Available / Reserved are **this SKU only** (product + brand + bag type + location + owned/job-work). Available = physical on hand (drops only on Deliver). Reserved = remaining on **other** open sales bills of that SKU (not the current bill). Packed bag type shows bags; loose shows kg. If reserved is 0, show Available only. No “Not delivered” line; no oldest-bill exclusion. No Alembic. See **Spec v17.3.26** below.
 - **v17.3.25** — Sales create: hydrate bag types before Submit so billed qty is not treated as 0 / “Invalid bag type”; over-on-hand warning banner (“You can still submit this bill”) does not block save. Stock still moves only on Deliver. No Alembic. See **Spec v17.3.25** below.
 - **v17.3.24** — Sales bill **stock hints** (display only) + 0-qty / missing-row SKUs. Create/edit uses master product/brand/bag search (not stock-at-location qty > 0). Hint: Available (on hand) / Reserved / Not delivered. Billing never changes on_hand; oldest open sales bill is excluded from reserved; 2+ open bills → reserved = on_hand − later_qty (can be negative). Over-on-hand create is a warning only (submit allowed). Fulfillment: first Deliver wins; other open dialogs refetch stock; deliver still cannot exceed physical on_hand. `GET /api/bills/sales-stock-hints` read helper. No Alembic. See **Spec v17.3.24** below.
@@ -128,7 +129,7 @@
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
-| Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4**, **v17.3.8** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight; Phase 2 responsive |
+| Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4**, **v17.3.8**, **v17.3.27** | `account_id` money account; void + set-off; customer pay-balance FIFO; newest-first list + just-recorded highlight; Phase 2 responsive |
 | Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7**, **v17.3.24**, **v17.3.25**, **v17.3.26** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive; stock hints; over-on-hand submit |
 | Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0**, **v17.3.9** | deliver/return; audit log; product + brand filters on bills list; Phase 3 responsive |
 | Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2**, **v17.3.10** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment; Phase 4 responsive |
@@ -235,7 +236,7 @@
 
 **Bills:** `GET /api/bills`, `GET /api/bills/next-number` (preview), `POST /api/bills`, `PATCH /api/bills/{id}`, `GET /api/bills/{id}/void-precheck`, `POST /api/bills/{id}/void` (owner + `X-Void-Authorization`, v15.9)
 
-**Payments:** `GET/POST /api/payments`, `GET /api/payments/setoff-preview`, `POST /api/payments/{id}/void` (requires `X-Void-Authorization`)
+**Payments:** `GET/POST /api/payments`, `GET /api/payments/setoff-preview`, `POST /api/payments/{id}/void` (requires `X-Void-Authorization`); **v17.3.27** `GET /api/customers/{id}/pay-balance-preview`, `POST /api/customers/{id}/pay-balance`
 
 **Fulfillment (bills):** `GET /api/fulfillment/bills|lines|entries`, `POST /api/fulfillment`, `POST /api/fulfillment/bill-event`, `POST /api/fulfillment/{id}/void`
 
@@ -247,7 +248,7 @@
 
 ## Frontend routes (summary)
 
-`/dashboard` (default) · `/home` · masters (`/products` … `/inventory`) · `/sales-bills`, `/purchase-bills` (+ `/new`, `/:id`, `/:id/edit`, `/:id/payment`) · `/payments` · `/job-work` (+ `/new`, `/:id`) · `/job-work/fulfillment` · `/fulfillment` (bill deliver/receive) · `/histories/fulfillment` (bill fulfillment audit log) · `/operations/*` · `/histories/*` · `/login`, `/signup`
+`/dashboard` (default) · `/home` · masters (`/products` … `/inventory`) · `/sales-bills`, `/purchase-bills` (+ `/new`, `/:id`, `/:id/edit`, `/:id/payment`) · `/payments` · `/customers/:id/pay-debit`, `/customers/:id/pay-credit` · `/job-work` (+ `/new`, `/:id`) · `/job-work/fulfillment` · `/fulfillment` (bill deliver/receive) · `/histories/fulfillment` (bill fulfillment audit log) · `/operations/*` · `/histories/*` · `/login`, `/signup`
 
 Bill list: client-side payment + delivery filters (v12.4). Bill detail: payments void (v5.4) + fulfillment history void (v12.5).
 
@@ -314,12 +315,13 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. **v17.3.23:** bill number hover bags·kg; click opens `BillDetailDialog` (not navigate). | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
 | `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. **v17.3.23:** live Total bags + Total kg beside Products billed. **v17.3.24:** sales master SKU search (0-qty OK). **v17.3.25:** hydrate bag types on Submit; warning does not block save. **v17.3.26:** Available / Reserved per SKU (bags or kg); reserved = other open bills only. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
 | `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. **v17.3.23:** header Total bags + Total kg; print header Ordered bags·kg. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
-| `/payments`, `/payments/new`, `/…/:id/payment` | `PaymentsPage`, `PaymentPage` | New listing with `Table` + per-row Void; record form with bill snapshot, set-off allocation preview, balance-mode autofill, validation banners. **v13.1:** full-row sales/purchase tint via `BILL_TYPE_THEME`. | **#4 v5.4** void from list; **v5.2** set-off allocations. |
+| `/payments`, `/payments/new`, `/…/:id/payment` | `PaymentsPage`, `PaymentPage` | New listing with `Table` + per-row Void; record form with bill snapshot, set-off allocation preview, balance-mode autofill, validation banners. **v13.1:** full-row sales/purchase tint via `BILL_TYPE_THEME`. **v17.3.27:** customer pay-balance pages are separate routes under `/customers/:id/pay-*`. | **#4 v5.4** void from list; **v5.2** set-off allocations. |
 | `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. **v17.3.24:** no soft-lock on open; refetch on_hand after another deliver (first Deliver wins); API still rejects over physical. | **#12 v12.3** row-locked stock mutations (server-side). |
 | `/inventory` | `InventoryPage` | Location-grouped tables with product `rowspan` column; low-stock amber highlight; add opening stock via `Modal` only. **v13.1:** larger product names; canvas background. | **#3 v12.1** opening qty only; PUT rejected; **#12 v12.3** row locking. |
 | `/operations/processing`, `/operations/processing/:id` | `ProcessingListPage`, `ProcessingJobPage` | Open job in `Modal`; job detail with compact summary strip, **At a glance** In/Out/Balance panel, collapsible batch log. | **#8 v9.4** reprocess guard hidden when no balance returned; **v9.3** mass-balance enforced. |
 | `/operations/bag-change`, `/operations/product-transfer`, `/operations/stock-disposal` and their `/histories/*` | `BagChangePage`, `ProductTransferPage`, `StockDisposalPage` + history pages | Sectioned forms via `OperationFormBlocks` (`OperationSection`, balance/flow hints, sticky footers). | — |
-| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page; **v17.3.11** cards below `lg` + FAB. **v17.3.20** `/customers` credit/debit total Stat cards. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
+| `/customers`, `/products`, `/brands`, `/locations`, `/bag-types` | masters | `MasterCrud` / `PartyMasterCrud` / `BagTypesPage` — add/edit in `Modal`; list on page; **v17.3.11** cards below `lg` + FAB. **v17.3.20** `/customers` credit/debit total Stat cards. **v17.3.27** row Pay debit / Pay credit when balance > 0. | **#11 v12.2** delete-guard 400 messages; **v15.3** void password on delete. |
+| `/customers/:id/pay-debit`, `/customers/:id/pay-credit` | `PayBalancePage` | PaymentPage-style cash/bank FIFO pay against customer debit (sales bills) or credit (purchase bills). Amount empty until typed; FIFO preview; backdate auth; success → `/customers`. | **v17.3.27** `payments_manage` |
 
 ### Accessibility commitments
 - Focus rings via `:focus-visible` with 2-px primary halo on the new `body.app-shell-v2`.
@@ -3385,6 +3387,27 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.27 — Customer Pay debit / Pay credit (FIFO)
+
+**Problem:** Operators need to settle a customer’s debit (they owe) or credit (I owe) from the Customers list without opening each bill, using cash/bank and FIFO oldest→newest open bills.
+
+**UI**
+- `/customers` row: **Pay debit** only if `debit_balance > 0`; **Pay credit** only if `credit_balance > 0`.
+- Full pages (not dialogs): `/customers/:id/pay-debit`, `/customers/:id/pay-credit` — styled like Record payment (`PaymentPage`).
+- Show customer name + balance left; cash/bank account picker (same money-accounts pattern); amount empty until typed; `0 < amount ≤` max payable; paid date + backdate auth; optional read-only FIFO allocation preview.
+- Submit → success toast → `/customers` (list refreshes balances).
+- No set-off modes on this page (cash/bank only). Permission: `payments_manage`.
+
+**API**
+- `GET /api/customers/{id}/pay-balance-preview?direction=debit|credit&amount=` — max = min(customer balance, sum open dues); FIFO preview.
+- `POST /api/customers/{id}/pay-balance` — body: `direction`, `amount`, `account_id`, `paid_date`; header `Idempotency-Key`; backdate auth header when needed.
+- Pay debit → allocate across unpaid/partial **sales** bills FIFO; create Payment rows (cash|bank); update `amount_paid` / `payment_status`; reduce `debit_balance`.
+- Pay credit → same for **purchase** bills; reduce `credit_balance`.
+- Reject when amount > min(balance, open dues), no balance, or no open bills.
+- Reuses `apply_payment_balance`, account resolution, void rules on existing payments. No Alembic.
+
+**Tests:** `python -m unittest tests.test_customer_pay_balance`.
 
 ## Spec v17.3.26 — Sales stock hint: other-bill reserved, bags vs kg
 

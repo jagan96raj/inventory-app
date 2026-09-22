@@ -1,8 +1,12 @@
+import { useNavigate } from "react-router-dom";
+import { HandCoins, Wallet } from "lucide-react";
 import { formatInr } from "../lib/format";
 import { formatCustomerName } from "../lib/customerDisplay";
 import AddressSummaryLink from "../components/AddressSummaryLink";
 import PartyMasterCrud from "../components/PartyMasterCrud";
 import { addressFormFields } from "../lib/addressFormFields";
+import IconButton from "../components/ui/IconButton";
+import Button from "../components/ui/Button";
 
 type Customer = {
   id: number;
@@ -18,6 +22,8 @@ type Customer = {
 };
 
 export default function CustomersPage() {
+  const navigate = useNavigate();
+
   return (
     <PartyMasterCrud<Customer>
       kind="customer"
@@ -127,6 +133,61 @@ export default function CustomersPage() {
         credit_balance: "",
         debit_balance: "",
       })}
+      rowActions={(row) => {
+        const debit = Number(row.debit_balance) > 0;
+        const credit = Number(row.credit_balance) > 0;
+        if (!debit && !credit) return null;
+        return (
+          <>
+            <span className="hidden items-center gap-0.5 lg:inline-flex">
+              {debit && (
+                <IconButton
+                  label="Pay debit"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/customers/${row.id}/pay-debit`)}
+                >
+                  <HandCoins />
+                </IconButton>
+              )}
+              {credit && (
+                <IconButton
+                  label="Pay credit"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate(`/customers/${row.id}/pay-credit`)}
+                >
+                  <Wallet />
+                </IconButton>
+              )}
+            </span>
+            <span className="flex w-full flex-wrap gap-2 lg:hidden">
+              {debit && (
+                <Button
+                  size="md"
+                  variant="secondary"
+                  className="min-h-10 flex-1 sm:flex-none"
+                  leftIcon={<HandCoins className="h-3.5 w-3.5" />}
+                  onClick={() => navigate(`/customers/${row.id}/pay-debit`)}
+                >
+                  Pay debit
+                </Button>
+              )}
+              {credit && (
+                <Button
+                  size="md"
+                  variant="secondary"
+                  className="min-h-10 flex-1 sm:flex-none"
+                  leftIcon={<Wallet className="h-3.5 w-3.5" />}
+                  onClick={() => navigate(`/customers/${row.id}/pay-credit`)}
+                >
+                  Pay credit
+                </Button>
+              )}
+            </span>
+          </>
+        );
+      }}
     />
   );
 }

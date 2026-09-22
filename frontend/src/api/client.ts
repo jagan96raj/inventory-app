@@ -447,6 +447,35 @@ export type SetoffPreview = {
   max_amount: string;
   allocations: SetoffAllocationPreview[];
 };
+
+export type CustomerPayBalanceAllocation = {
+  bill_id: number;
+  bill_number: string;
+  amount: string;
+  payment_id?: number | null;
+};
+export type CustomerPayBalancePreview = {
+  customer_id: number;
+  customer_name: string;
+  direction: "debit" | "credit";
+  balance: string;
+  open_due_total: string;
+  max_amount: string;
+  amount: string;
+  allocations: CustomerPayBalanceAllocation[];
+};
+export type CustomerPayBalanceOut = {
+  customer_id: number;
+  customer_name: string;
+  direction: "debit" | "credit";
+  amount: string;
+  account_id: number | null;
+  payment_mode: string;
+  payments_created: number;
+  new_credit_balance: string;
+  new_debit_balance: string;
+  allocations: CustomerPayBalanceAllocation[];
+};
 export type ProcessingInputSource = "fresh" | "balance_reprocess";
 
 export type ProcessingInputLine = {

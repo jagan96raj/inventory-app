@@ -13,9 +13,22 @@ from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_d
 from app.database import get_db
 from app.models.entities import Bill, Customer, Payment, PaymentMode, User, BankAccountKind
 from app.services.idempotency import hash_empty_body, hash_pydantic_body
-from app.schemas import PaymentCreate, PaymentOut, PaymentPageOut, SetoffPreviewOut
-from app.services.payments import create_payment, preview_setoff_allocation, void_payment
-from app.services.bill_concurrency import EXPECTED_BILL_VERSION_HEADER, http_exception_for_value_error
+from app.schemas import (
+    CustomerPayBalanceCreate,
+    CustomerPayBalanceOut,
+    CustomerPayBalancePreviewOut,
+    PaymentCreate,
+    PaymentOut,
+    PaymentPageOut,
+    SetoffPreviewOut,
+)
+from app.services.payments import (
+    create_payment,
+    pay_customer_balance,
+    preview_customer_pay_balance,
+    preview_setoff_allocation,
+    void_payment,
+)from app.services.bill_concurrency import EXPECTED_BILL_VERSION_HEADER, http_exception_for_value_error
 
 router = APIRouter(tags=["payments"])
 
@@ -108,6 +121,67 @@ def setoff_preview(
     except ValueError as e:
         raise http_exception_for_value_error(e) from e
     return SetoffPreviewOut(**data)
+
+
+@router.get(
+    "/customers/{customer_id}/pay-balance-preview",
+    response_model=CustomerPayBalancePreviewOut,
+    dependencies=MANAGE,
+)
+def customer_pay_balance_preview(
+    customer_id: int,
+    direction: str = Query(..., pattern="^(debit|credit)$"),
+    amount: Decimal = Query(Decimal("0")),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        data = preview_customer_pay_balance(
+            db,
+            customer_id,
+            direction,
+            amount,
+            company_id=company_id_for_user(user),
+        )
+    except ValueError as e:
+        raise http_exception_for_value_error(e) from e
+    return CustomerPayBalancePreviewOut(**data)
+
+
+@router.post(
+    "/customers/{customer_id}/pay-balance",
+    response_model=CustomerPayBalanceOut,
+    status_code=201,
+    dependencies=MANAGE,
+)
+def customer_pay_balance(
+    customer_id: int,
+    body: CustomerPayBalanceCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    idempotency_key: str = Depends(require_idempotency_key),
+    void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
+):
+    verify_backdate_authorization(body.paid_date, void_password, user)
+    route_key = f"POST /api/customers/{customer_id}/pay-balance"
+    request_hash = hash_pydantic_body(body)
+
+    def execute():
+        try:
+            data = pay_customer_balance(
+                db,
+                customer_id,
+                body.direction,
+                body.amount,
+                body.account_id,
+                paid_date=body.paid_date,
+                company_id=company_id_for_user(user),
+            )
+        except ValueError as e:
+            raise http_exception_for_value_error(e) from e
+        return CustomerPayBalanceOut(**data), 201
+
+    return run_idempotent_mutation(db, user, idempotency_key, route_key, request_hash, execute)
 
 
 @router.get("/payments/{payment_id}", response_model=PaymentOut, dependencies=MANAGE)

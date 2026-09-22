@@ -13,6 +13,7 @@ import BrandsPage from "./pages/BrandsPage";
 import LocationsPage from "./pages/LocationsPage";
 import BagTypesPage from "./pages/BagTypesPage";
 import CustomersPage from "./pages/CustomersPage";
+import PayBalancePage from "./pages/PayBalancePage";
 import InventoryPage from "./pages/InventoryPage";
 import BillsListPage from "./pages/BillsListPage";
 import BillDetailPage from "./pages/BillDetailPage";
@@ -132,6 +133,8 @@ export default function App() {
           <Route element={<RequireRole permission="payments_manage" />}>
             <Route path="/payments" element={<PaymentsListRoute />} />
             <Route path="/payments/new" element={<PaymentPage />} />
+            <Route path="/customers/:id/pay-debit" element={<PayBalancePage direction="debit" />} />
+            <Route path="/customers/:id/pay-credit" element={<PayBalancePage direction="credit" />} />
           </Route>
           <Route element={<RequireRole anyOf={["fulfillment_write", "fulfillment_view"]} />}>
             <Route path="/fulfillment" element={<FulfillmentPage />} />
