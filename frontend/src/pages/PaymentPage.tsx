@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { ArrowLeft, IndianRupee } from "lucide-react";
 import {
   api,
-  bankAccountsApi,
   idempotencyHeadersOptionalAuth,
   newIdempotencyKey,
   type BankAccount,
@@ -11,7 +10,7 @@ import {
   type Payment,
   type SetoffPreview,
 } from "../api/client";
-import { accountsByKind, pickDefaultMoneyAccountId } from "../lib/moneyAccounts";
+import { accountsByKind, loadMoneyAccountsWithDefault } from "../lib/moneyAccounts";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import { billDueAmount } from "../lib/billAmounts";
 import { rememberPaymentCreated } from "../lib/paymentCreated";
@@ -129,17 +128,13 @@ export default function PaymentPage({ billType: billTypeProp }: Props) {
   }, [billId]);
 
   useEffect(() => {
-    bankAccountsApi
-      .list({ limit: 200, active: "true", kind: "all" })
-      .then((p) => {
-        setAccounts(p.items);
-        setForm((f) => {
-          if (f.source !== "") return f;
-          const def = pickDefaultMoneyAccountId(p.items);
-          return def !== "" ? { ...f, source: String(def) } : f;
-        });
-      })
-      .catch(() => setAccounts([]));
+    void loadMoneyAccountsWithDefault().then(({ accounts: items, defaultId }) => {
+      setAccounts(items);
+      setForm((f) => {
+        if (f.source !== "") return f;
+        return defaultId !== "" ? { ...f, source: String(defaultId) } : f;
+      });
+    });
   }, []);
 
   const creditBal = Number(bill?.customer_credit_balance ?? 0);

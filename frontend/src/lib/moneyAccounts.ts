@@ -1,4 +1,24 @@
-import type { BankAccount, BankAccountKind } from "../api/client";
+import { bankAccountsApi, type BankAccount, type BankAccountKind } from "../api/client";
+
+/**
+ * Load the active money accounts and pre-pick a sensible default source id.
+ *
+ * Used by payment pages (PaymentPage, PayBalancePage) that show a
+ * "cash / bank" source picker. On network failure we silently return an
+ * empty list + empty default so the picker just shows "no accounts" instead
+ * of exploding the whole form.
+ */
+export async function loadMoneyAccountsWithDefault(): Promise<{
+  accounts: BankAccount[];
+  defaultId: number | "";
+}> {
+  try {
+    const page = await bankAccountsApi.list({ limit: 200, active: "true", kind: "all" });
+    return { accounts: page.items, defaultId: pickDefaultMoneyAccountId(page.items) };
+  } catch {
+    return { accounts: [], defaultId: "" };
+  }
+}
 
 export function pickDefaultMoneyAccountId(accounts: BankAccount[]): number | "" {
   const cash = accounts.find((a) => a.kind === "cash" && a.is_active);

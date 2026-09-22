@@ -3,7 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, IndianRupee } from "lucide-react";
 import {
   api,
-  bankAccountsApi,
   idempotencyHeadersOptionalAuth,
   newIdempotencyKey,
   type BankAccount,
@@ -11,7 +10,7 @@ import {
   type CustomerPayBalanceOut,
   type CustomerPayBalancePreview,
 } from "../api/client";
-import { accountsByKind, pickDefaultMoneyAccountId } from "../lib/moneyAccounts";
+import { accountsByKind, loadMoneyAccountsWithDefault } from "../lib/moneyAccounts";
 import { isAuthPasswordError, isBackdatedDate } from "../lib/backdateAuth";
 import BackdateAuthDialog from "../components/ui/BackdateAuthDialog";
 import { useSubmitGuard } from "../hooks/useSubmitGuard";
@@ -87,17 +86,13 @@ export default function PayBalancePage({ direction }: Props) {
   }, [customerId]);
 
   useEffect(() => {
-    bankAccountsApi
-      .list({ limit: 200, active: "true", kind: "all" })
-      .then((p) => {
-        setAccounts(p.items);
-        setForm((f) => {
-          if (f.source !== "") return f;
-          const def = pickDefaultMoneyAccountId(p.items);
-          return def !== "" ? { ...f, source: String(def) } : f;
-        });
-      })
-      .catch(() => setAccounts([]));
+    void loadMoneyAccountsWithDefault().then(({ accounts: items, defaultId }) => {
+      setAccounts(items);
+      setForm((f) => {
+        if (f.source !== "") return f;
+        return defaultId !== "" ? { ...f, source: String(defaultId) } : f;
+      });
+    });
   }, []);
 
   useEffect(() => {
