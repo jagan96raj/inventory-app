@@ -29,7 +29,8 @@ from app.services.payments import (
     preview_customer_pay_balance,
     preview_setoff_allocation,
     void_payment,
-)from app.services.bill_concurrency import EXPECTED_BILL_VERSION_HEADER, http_exception_for_value_error
+)
+from app.services.bill_concurrency import EXPECTED_BILL_VERSION_HEADER, http_exception_for_value_error
 
 router = APIRouter(tags=["payments"])
 
