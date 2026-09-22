@@ -1,0 +1,381 @@
+/* Raj Agro landing — rajagro.org
+   Self-contained stylesheet. No framework, no build step.
+   Palette matches inventory-app Aurora primary (Spec v17.3.15). */
+
+/* ---------- Fonts (self-hosted WOFF2) ---------- */
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/fraunces-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../fonts/fraunces-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/manrope-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../fonts/manrope-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../fonts/jetbrains-mono-500.woff2") format("woff2");
+}
+
+/* ---------- Design tokens ---------- */
+:root {
+  --cream: #faf7f0;
+  --cream-warm: #f2ecdc;
+  --olive: #737c50;
+  --olive-deep: #454c2d;
+  --olive-ink: #2f331e;
+  --ink: #2b2a24;
+  --ink-soft: #5c584b;
+  --rule: rgba(69, 76, 45, 0.12);
+  --focus-ring: rgba(115, 124, 80, 0.55);
+
+  --serif: "Fraunces", "Iowan Old Style", "Georgia", serif;
+  --sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", "Menlo", monospace;
+
+  --max: 1240px;
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+}
+
+/* ---------- Reset (compact) ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+img, svg { display: block; max-width: 100%; }
+button { font: inherit; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--olive); outline-offset: 3px; border-radius: 4px; }
+
+body {
+  font-family: var(--sans);
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--cream);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ---------- Atmospheric background ----------
+   Layered on the <body>::before so the whole page sits on one continuous
+   surface. Order: cream base (body) -> diagonal olive wash -> film-grain
+   noise. The line-drawn wheat lives inside the hero as a separate SVG so
+   it can bleed off the bottom-right corner responsively. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(ellipse 100% 60% at 100% 100%, rgba(115, 124, 80, 0.14), transparent 62%),
+    radial-gradient(ellipse 90% 55% at 0% 0%, rgba(115, 124, 80, 0.10), transparent 60%),
+    linear-gradient(160deg, var(--cream) 0%, var(--cream-warm) 100%);
+  pointer-events: none;
+}
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.55;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.27 0 0 0 0 0.29 0 0 0 0 0.19 0 0 0 0.055 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* ---------- Page shell ---------- */
+.wrap {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+/* ---------- Top strip ---------- */
+.top {
+  padding-top: clamp(1.25rem, 3vw, 2rem);
+  padding-bottom: clamp(1rem, 2vw, 1.5rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--olive-ink);
+}
+.brand__mark {
+  /* logo-mark.png is a compound mark (tractor + grain medallion) — keep
+     it wide enough that both symbols read at header size */
+  width: 72px;
+  height: 36px;
+  object-fit: contain;
+  object-position: left center;
+}
+.brand__name {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.45rem;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  margin-left: 0.15rem;
+}
+.brand__since {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding-left: 0.6rem;
+  border-left: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.portal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--olive-deep);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.1rem;
+  border-bottom: 1px solid transparent;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.portal-link:hover { border-bottom-color: var(--olive-deep); }
+.portal-link__arrow { font-family: var(--serif); font-weight: 500; }
+
+/* ---------- Hero ---------- */
+.hero {
+  position: relative;
+  min-height: calc(100svh - 6rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding-bottom: clamp(3rem, 8vh, 6rem);
+}
+.hero__copy {
+  max-width: 34rem;
+  position: relative;
+  z-index: 1;
+}
+.hero__eyebrow {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--olive-deep);
+  margin: 0 0 clamp(1.5rem, 5vh, 2.5rem);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.hero__eyebrow::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.7;
+}
+.hero__headline {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(2.6rem, 6vw, 4.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.022em;
+  color: var(--olive-ink);
+  margin: 0 0 clamp(1rem, 2.5vw, 1.5rem);
+  /* Fraunces looks its best with old-style figures + slight optical size */
+  font-feature-settings: "onum", "ss01";
+}
+.hero__support {
+  font-family: var(--sans);
+  font-size: clamp(1.05rem, 1.5vw, 1.2rem);
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 0 0 clamp(2rem, 4vh, 2.75rem);
+  max-width: 32rem;
+}
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.95rem 1.4rem;
+  background: var(--olive-deep);
+  color: var(--cream);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.005em;
+  border: 1px solid var(--olive-deep);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px -8px rgba(69, 76, 45, 0.55);
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+.cta:hover {
+  background: var(--olive-ink);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px -8px rgba(69, 76, 45, 0.65);
+}
+.cta__arrow { font-family: var(--serif); font-weight: 500; font-size: 1.15em; line-height: 0; margin-top: 2px; }
+
+/* Wheat silhouette bleeds off the bottom-right of the hero.
+   Kept subtle so the headline stays first in the reading order, but
+   visible enough to give the composition weight on the right side. */
+.hero__wheat {
+  color: var(--olive-deep);
+  opacity: 0.22;
+  position: absolute;
+  right: clamp(-6rem, -5vw, -2rem);
+  bottom: clamp(-8rem, -10vh, -3rem);
+  width: clamp(380px, 52vw, 640px);
+  height: auto;
+  pointer-events: none;
+  transform: rotate(6deg);
+  filter: drop-shadow(0 8px 24px rgba(69, 76, 45, 0.08));
+}
+
+/* ---------- Below the fold ---------- */
+.trade {
+  padding: clamp(4rem, 10vh, 7rem) 0 clamp(2rem, 4vh, 3rem);
+  border-top: 1px solid var(--rule);
+}
+.trade__title {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(1.3rem, 2.4vw, 1.75rem);
+  color: var(--olive-ink);
+  letter-spacing: -0.01em;
+  margin: 0 0 clamp(1.25rem, 2.5vw, 1.75rem);
+}
+.trade__title::after {
+  content: "";
+  display: block;
+  width: 42px;
+  height: 2px;
+  background: var(--olive);
+  margin-top: 0.6rem;
+  border-radius: 2px;
+}
+.trade__products {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+  color: var(--ink);
+  line-height: 1.4;
+  margin: 0 0 0.5rem;
+}
+.trade__products span + span::before {
+  content: " · ";
+  color: var(--olive);
+  opacity: 0.7;
+  margin: 0 0.1em;
+}
+.trade__avail {
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.contact {
+  margin-top: clamp(2rem, 5vh, 3rem);
+  padding-top: clamp(1.5rem, 3vw, 2rem);
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+}
+.contact__label {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.contact__phone {
+  font-family: var(--mono);
+  font-size: clamp(1.35rem, 3vw, 1.85rem);
+  font-weight: 500;
+  color: var(--olive-ink);
+  letter-spacing: -0.005em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.contact__phone:hover { color: var(--olive-deep); }
+.contact__phone-icon {
+  width: 1em;
+  height: 1em;
+  color: var(--olive);
+  flex-shrink: 0;
+}
+.contact__where {
+  margin-left: auto;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+/* ---------- Footer ---------- */
+.foot {
+  padding: clamp(2rem, 5vh, 3rem) 0 clamp(1.5rem, 3vh, 2rem);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule);
+  margin-top: clamp(2rem, 4vh, 3rem);
+}
+.foot__sep { color: var(--olive); opacity: 0.5; }
+.foot__portal { color: var(--olive-deep); font-weight: 600; margin-left: auto; }
+.foot__portal:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 860px) {
+  .hero {
+    grid-template-columns: 1fr;
+    min-height: calc(100svh - 5rem);
+    padding-bottom: clamp(4rem, 12vh, 7rem);
+  }
+  .hero__wheat {
+    right: -12vw;
+    bottom: -6vw;
+    width: 78vw;
+    opacity: 0.09;
+  }
+  .brand__since { display: none; }
+  .portal-link span:not(.portal-link__arrow) { display: none; }
+  .portal-link__arrow { font-size: 1.4rem; }
+  .cta { width: 100%; justify-content: center; }
+  .contact__where { margin-left: 0; width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta, .portal-link { transition: none; }
+  .cta:hover { transform: none; }
+}
