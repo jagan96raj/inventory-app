@@ -24,6 +24,11 @@ from app.services.bill_concurrency import (
 )
 from app.utils.time import resolve_business_entry, utc_now
 
+# Void cascade rule (Spec v5.4 / v17.1.x): a set-off Payment on one bill is
+# always the "child" side of a primary Payment on the opposite-type bill for
+# the same customer. Voiding the primary payment must also void its linked
+# set-off children in the same transaction. Direct-voiding a child is refused
+# with PAYMENT_VOID_SETOFF_MSG so users can't leave orphan half-voided pairs.
 PAYMENT_VOID_SETOFF_MSG = (
     "Void the primary payment instead; linked set-off payments will be voided automatically."
 )
@@ -46,7 +51,9 @@ def _sum_paid(bill: Bill) -> Decimal:
 
 
 def _bill_remaining_due(bill: Bill) -> Decimal:
-
+    # Live "open due" on a bill. Voided payments are already excluded because
+    # _sum_paid iterates _active_payments (voided_at IS NULL), so a voided
+    # payment automatically re-opens the amount it had previously covered.
     return bill.grand_total - _sum_paid(bill)
 
 

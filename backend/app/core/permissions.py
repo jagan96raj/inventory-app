@@ -1,4 +1,11 @@
-"""Spec v15.0 — role-based access control."""
+"""Spec v15.0 — role-based access control.
+
+Keep in lockstep with ``frontend/src/lib/permissions.ts``: every string added
+or removed from the ``Permission`` enum below (or from the ``ROLE_PERMISSIONS``
+mapping) must be mirrored in the TS ``Permission`` union and its
+``ROLE_PERMISSIONS`` record, otherwise the UI will hide/show controls that
+disagree with the API guard.
+"""
 
 from enum import Enum
 from typing import Callable

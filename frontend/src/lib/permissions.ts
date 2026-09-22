@@ -1,3 +1,8 @@
+// Keep in lockstep with `backend/app/core/permissions.py`: the `Permission`
+// union and `ROLE_PERMISSIONS` map below mirror the Python enum + role table
+// by hand. When you add / rename / remove a permission on the backend, update
+// both files in the same commit — otherwise the UI will hide or show controls
+// that disagree with the API guard.
 import { useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 

@@ -41,6 +41,12 @@ def apply_company_on_create(entity: Any, company_id: int) -> Any:
 
 
 def assert_entity_company(entity: Any | None, company_id: int, label: str) -> None:
+    # Service-layer check: raises ValueError so business services stay
+    # framework-free. Routers should either use `require_for_company` /
+    # `require_entity_company` (which raise HTTPException 404 directly) or run
+    # the ValueError through `http_exception_for_value_error` in
+    # `bill_concurrency.py` (there the "not found" suffix maps to 404 and the
+    # cross-company message falls through to 400).
     if entity is None:
         raise ValueError(f"{label} not found")
     entity_cid = getattr(entity, "company_id", None)

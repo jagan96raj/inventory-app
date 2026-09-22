@@ -168,6 +168,9 @@ def apply_customer_balance_on_submit(db: Session, bill: Bill) -> None:
 
 
 def _sum_paid(bill: Bill) -> Decimal:
+    # Thin wrapper around payments._sum_paid — lazy import avoids the
+    # bills <-> payments circular import at module load. Returns the sum of
+    # non-voided payments on this bill (voided rows are already excluded upstream).
     from app.services.payments import _sum_paid as sum_active_paid
 
     return sum_active_paid(bill)

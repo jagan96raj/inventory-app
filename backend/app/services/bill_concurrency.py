@@ -20,6 +20,10 @@ EXPECTED_BILL_VERSION_HEADER = "X-Expected-Bill-Version"
 
 
 def assert_bill_version(bill: Bill, expected_version: int | None) -> None:
+    # Optimistic-lock check: the client must echo back the `version` it fetched
+    # (via the X-Expected-Bill-Version header). Any mismatch means another
+    # request has already mutated the bill; we raise STALE_BILL_MSG so the
+    # caller is forced to refresh instead of silently overwriting.
     if expected_version is None:
         raise ValueError(EXPECTED_VERSION_REQUIRED_MSG)
     if expected_version != bill.version:
