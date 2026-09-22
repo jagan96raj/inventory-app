@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Iterable
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.entities import (
@@ -19,7 +18,6 @@ from app.models.entities import (
     Brand,
     CashBookEntry,
     CashBookEntryType,
-    CashBookSourceMode,
     Customer,
     Location,
     Payment,
