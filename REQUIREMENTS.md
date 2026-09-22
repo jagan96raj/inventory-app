@@ -1,7 +1,7 @@
 # Inventory & Billing — Requirements (Snapshot)
 
 **Last updated:** 22 Sep 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.29** (Nginx security headers + Turnstile; v17.3.28 IDOR/rate limits/gitleaks; v17.3.27 customer Pay debit / Pay credit FIFO); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Spec range:** v5 (bills / payments / edit) through **v17.3.30** (public marketing landing at `rajagro.org`; v17.3.29 Nginx headers + Turnstile; v17.3.28 IDOR/rate limits/gitleaks; v17.3.27 customer Pay debit / Pay credit FIFO); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
@@ -9,6 +9,7 @@
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.30** — Public marketing homepage for apex **`rajagro.org`** (not the inventory app). Static site in repo `landing/` (zero JS, no build step): brand-first first viewport (wordmark + “Whole grain, honest weight.” + one support line + single CTA → `https://app.rajagro.org/login`); one below-fold section (What we trade + phone `73733 34343` + Coimbatore). Self-hosted Fraunces / Manrope / JetBrains Mono; olive `#737c50` / cream `#faf7f0` matching Aurora primary (v17.3.15); line-drawn wheat silhouette. Deploy: Nginx site for apex + www→apex 301 + Certbot; inventory at **`app.rajagro.org` untouched** (APIs/auth/DB/frontend unchanged). See **Spec v17.3.30** below and `landing/README.md`.
 - **v17.3.29** — Security follow-up: production **Nginx security headers** snippet for `app.rajagro.org` (`docs/nginx-security-headers.md`, `scripts/nginx-security-headers.snippet.conf`) — HSTS (after HTTPS), nosniff, DENY frames, Referrer-Policy, Permissions-Policy; CSP deferred Phase 2 with draft allowlist. FastAPI `SecurityHeadersMiddleware` mirrors non-CSP headers (HSTS when `COOKIE_SECURE`). Auth-only **Cloudflare Turnstile** behind `BOT_PROTECTION_ENABLED` (default false): Login, OTP login, company register; server verifies token; site key from `GET /api/auth/bot-protection-status`. No captcha on bills/payments/fulfillment. Does **not** open company registration. RLS still deferred. See **Spec v17.3.29** below.
 - **v17.3.28** — Security hardening package (checklist gaps; **does not** unlock `ALLOW_COMPANY_REGISTRATION`). (1) Company isolation / IDOR: inventory create FK company asserts; JW receive + sales-return location company checks; notes use `company_id_for_user`; automated cross-company GET/mutate tests. Isolation remains **API `company_id` scoping** (Postgres RLS deferred — see Spec). (2) Light IP rate limits on OTP login/request, company register (when enabled), payment create, dashboard-bundle — env-tunable, 429 message. Login email lockout (v15.5) unchanged. (3) `.gitignore` dumps/env variants; CI **gitleaks** + `scripts/scan_secrets.sh`. (4) Header/body log sanitize helpers; audit metadata redacts OTP/tokens; no request-logging middleware that prints Authorization/cookies. (5) Confirm User/Auth payloads still omit passwords (v17.3.6). See **Spec v17.3.28** below.
 - **v17.3.27** — Customers list **Pay debit** / **Pay credit** (cash/bank only, FIFO across open sales or purchase bills). Full pages `/customers/:id/pay-debit` and `/pay-credit` (PaymentPage-style). `POST /api/customers/{id}/pay-balance` + preview GET; cap = min(balance, open dues); `payments_manage`; Idempotency-Key; no set-off on this page; no Alembic. See **Spec v17.3.27** below.
@@ -129,6 +130,7 @@
 | Area | Spec | Implementation |
 |------|------|----------------|
 | Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6**, **v17.3.28**, **v17.3.29** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit + light API rate limits; optional Turnstile on auth; password policy; no plaintext passwords; idle logout; optional hide API docs; gitleaks CI; Nginx security headers |
+| Marketing landing | **v17.3.30** | Static `landing/` for apex `rajagro.org` → CTA to `app.rajagro.org/login`; app domain unchanged |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
@@ -143,9 +145,20 @@
 | Accounts | v12.21, v13.2, **v17.1.1**–**v17.1.3**, **v17.2.0**–**v17.2.4**, **v17.3.3**, **v17.3.8** | unified money accounts (`kind` + `account_id`); cash book filter totals; Phase 2 responsive |
 | Cleanup | v12.6 | Removed legacy `bill_service`, `fulfillment_service`, `inventory_calc`, `models.py` |
 
-**Stack:** React + Vite + TypeScript (port 5173) | FastAPI (port 8000) | PostgreSQL | `VITE_API_URL` optional (Vite proxy recommended)
+**Stack:** React + Vite + TypeScript (port 5173) | FastAPI (port 8000) | PostgreSQL | `VITE_API_URL` optional (Vite proxy recommended) | Static marketing `landing/` on apex `rajagro.org` (**v17.3.30**)
 
 ## Codebase layout (active, post v12.6)
+
+### Marketing landing (`landing/` — v17.3.30)
+
+| Path | Responsibility |
+|------|----------------|
+| `landing/index.html` | Public homepage markup (hero + What we trade + phone + footer) |
+| `landing/assets/styles.css` | Atmospheric cream/olive CSS; Fraunces/Manrope/JetBrains Mono `@font-face` |
+| `landing/assets/logo-mark.png` | Copy of app mark (tractor + grain medallion) |
+| `landing/favicon.png` | Favicon reused from `frontend/public` |
+| `landing/fonts/*.woff2` | Self-hosted latin subsets (no CDN at runtime) |
+| `landing/README.md` | Lightsail Nginx + Certbot deploy / rollback |
 
 ### Backend services (`backend/app/services/`)
 
@@ -3389,6 +3402,22 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.30 — Public marketing homepage (`rajagro.org`)
+
+**Goal:** Ship a brand-first public landing at the apex domain **`rajagro.org`** that markets Raj Agro and deep-links into the inventory product at **`https://app.rajagro.org/login`**. The inventory app (APIs, auth, DB, `frontend/`) must not change.
+
+**Solution:**
+- New folder **`landing/`** in this repo: plain static site — `index.html` + `assets/styles.css` + self-hosted WOFF2 fonts + logo mark + favicon. **Zero JavaScript. No Vite/npm build step.**
+- **First viewport only:** brand lockup (logo-mark + “Raj Agro” + Since 2022) · eyebrow “Grain traders · Coimbatore” · headline **Whole grain, honest weight.** · one support line (pulses, cereals, multi-grains, multigrain rice — bulk & retail, since 2022) · single CTA **Open inventory portal →** → `https://app.rajagro.org/login`. Top-right **Inventory portal ↗** (same URL). No hero cards, no overlay panels, no photo hero.
+- **Below the fold (one short section):** “What we trade” · product line · Bulk & retail · phone **73733 34343** (`tel:+917373334343`) · Coimbatore · India · footer copyright + portal link.
+- **Visual:** cream base `#faf7f0` + olive `#737c50` / `#454c2d` (matches Aurora primary v17.3.15); Fraunces (display) + Manrope (body) + JetBrains Mono (phone); atmospheric layers (olive radial washes + SVG film-grain noise); inline line-drawn wheat silhouette bleeding off hero bottom-right (logo stroke language). Mobile: portal link collapses to arrow; CTA full-width; wheat scales down. `prefers-reduced-motion` respected.
+- **Deploy (Lightsail):** DNS A for `rajagro.org` + `www` → same IP as app. Rsync `landing/` → `/var/www/rajagro-landing`. Nginx site: HTTP→HTTPS 301, www→apex 301, apex serves static root; include existing security-headers snippet (v17.3.29); long-cache fonts/png/svg. `certbot --nginx -d rajagro.org -d www.rajagro.org`. Full copy-paste in `landing/README.md`.
+- **Rollback:** remove Nginx symlink for `rajagro-landing` and reload — app.rajagro.org unaffected.
+
+**Explicitly unchanged:** `frontend/`, backend APIs, auth, DB, migrations, business rules, `app.rajagro.org` Nginx product site.
+
+**Local preview:** `cd landing && python -m http.server 8080`
 
 ## Spec v17.3.29 — Nginx security headers + auth Turnstile
 

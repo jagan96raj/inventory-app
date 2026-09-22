@@ -1,8 +1,31 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 22 Sep 2026 — covers Spec v5.4 through **v17.3.29**; backend v12.21 + v12.22  
+**Last updated:** 22 Sep 2026 — covers Spec v5.4 through **v17.3.30**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt` · Repo: `inventory-app-SPEC.md.txt`
+
+## v17.3.30 — Marketing landing (`rajagro.org`)
+
+### Local
+1. `cd landing && python -m http.server 8080` → open `http://localhost:8080`.
+2. Desktop: brand + headline **Whole grain, honest weight.** + one support line + **Open inventory portal →** visible in first viewport; wheat silhouette on the right; no cards/overlays.
+3. CTA and top-right **Inventory portal ↗** both go to `https://app.rajagro.org/login`.
+4. Scroll: **What we trade** · products · **73733 34343** (tap-to-call) · Coimbatore · India · footer.
+5. Narrow (~390px): portal link is arrow-only; CTA full-width; composition still readable.
+
+### Lightsail (apex)
+1. DNS: `rajagro.org` + `www.rajagro.org` A → same IP as `app.rajagro.org`.
+2. Follow `landing/README.md` (rsync → `/var/www/rajagro-landing`, Nginx site, Certbot).
+3. Verify:
+   ```bash
+   curl -sI https://rajagro.org | head -n 1          # 200
+   curl -sI https://www.rajagro.org | head -n 5      # 301 → apex
+   curl -sI https://app.rajagro.org | head -n 1      # still 200 — app untouched
+   ```
+4. Browser: hard-refresh `https://rajagro.org`; CTA opens app login.
+
+### Unchanged
+No frontend/backend/DB changes for this Spec. Rollback = remove Nginx landing symlink only.
 
 ## v17.3.29 — Nginx headers + Turnstile (auth only)
 
