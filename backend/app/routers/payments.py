@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -10,6 +10,7 @@ from app.core.tenant import company_filter, company_id_for_user
 from app.core.void_auth import VOID_AUTH_HEADER, verify_backdate_authorization, verify_void_authorization
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
+from app.core.rate_limit import rate_limit_payment_create
 from app.database import get_db
 from app.models.entities import Bill, Customer, Payment, PaymentMode, User, BankAccountKind
 from app.services.idempotency import hash_empty_body, hash_pydantic_body
@@ -134,11 +135,13 @@ def get_payment(
 @router.post("/payments", response_model=PaymentOut, status_code=201, dependencies=MANAGE)
 def add_payment(
     body: PaymentCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     idempotency_key: str = Depends(require_idempotency_key),
     void_password: str | None = Header(None, alias=VOID_AUTH_HEADER),
 ):
+    rate_limit_payment_create(request)
     verify_backdate_authorization(body.paid_date, void_password, user)
     route_key = "POST /api/payments"
     request_hash = hash_pydantic_body(body)

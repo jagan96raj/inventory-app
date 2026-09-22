@@ -626,7 +626,12 @@ def _validate_fulfillment_line(
         )
     if location_id is None:
         raise ValueError("location_id is required for sales return")
-    if not db.get(Location, location_id):
+    loc = db.get(Location, location_id)
+    if not loc:
+        raise ValueError("Invalid location")
+    bill_company = int(getattr(bill, "company_id", None) or 1)
+    loc_company = int(getattr(loc, "company_id", None) or 1)
+    if loc_company != bill_company:
         raise ValueError("Invalid location")
     if quantity_kg > net:
         raise ValueError(f"Line {line.id}: return cannot exceed net fulfilled quantity")

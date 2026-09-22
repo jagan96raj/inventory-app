@@ -361,6 +361,9 @@ def receive_job_work(
     if line.order.status == JobWorkOrderStatus.cancelled:
         raise ValueError(JW_ORDER_NOT_OPEN_MSG)
 
+    effective_company = int(company_id) if company_id is not None else int(line.order.company_id)
+    assert_entity_company(db.get(Location, location_id), effective_company, "Location")
+
     bt = line.bag_type
     if not bt:
         raise ValueError("Invalid bag type")

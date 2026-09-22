@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.entities import CompanyNote, CompanyNoteRoleAccess, User, UserRole
 from app.utils.time import business_today, utc_now
+from app.core.tenant import company_id_for_user
 
 OWNER_ONLY_NOTES_MSG = "Only the owner can create, edit, or delete notes."
 NOTE_NOT_FOUND_MSG = "Note not found."
@@ -81,7 +82,7 @@ def _set_role_access(db: Session, note: CompanyNote, viewer_roles: list[str]) ->
 
 
 def list_notes(db: Session, user: User) -> list[dict]:
-    company_id = user.company_id
+    company_id = company_id_for_user(user)
     q = (
         select(CompanyNote)
         .where(CompanyNote.company_id == company_id)
@@ -101,7 +102,7 @@ def list_notes(db: Session, user: User) -> list[dict]:
 def get_note_for_user(db: Session, note_id: int, user: User) -> CompanyNote:
     note = db.scalar(
         select(CompanyNote)
-        .where(CompanyNote.id == note_id, CompanyNote.company_id == user.company_id)
+        .where(CompanyNote.id == note_id, CompanyNote.company_id == company_id_for_user(user))
         .options(
             selectinload(CompanyNote.role_access),
             selectinload(CompanyNote.created_by),
@@ -130,7 +131,7 @@ def create_note(
     title_clean = (title or "").strip() or None
     roles = _normalize_viewer_roles(viewer_roles)
     note = CompanyNote(
-        company_id=user.company_id,
+        company_id=company_id_for_user(user),
         title=title_clean,
         body=text,
         note_date=note_date or business_today(),

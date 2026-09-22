@@ -1,8 +1,43 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 14 Sep 2026 — covers Spec v5.4 through **v17.3.26**; backend v12.21 + v12.22  
-**Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`
+**Last updated:** 22 Sep 2026 — covers Spec v5.4 through **v17.3.28**; backend v12.21 + v12.22  
+**Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt` · Repo: `inventory-app-SPEC.md.txt`
+
+## v17.3.28 — Security hardening
+
+### Automated
+1. `python -m unittest tests.test_company_isolation_idor_v17328`
+2. `python -m unittest tests.test_security_rate_limit_v17328`
+3. CI gitleaks on PR (or `bash scripts/scan_secrets.sh` locally if gitleaks installed).
+
+### Attack your own app (manual IDOR)
+1. Ensure two companies exist (Raj Agro = company 1 owner; register a second company only on a **dev** DB with `ALLOW_COMPANY_REGISTRATION=true`, then set it back to **false**).
+2. As company-2 owner, note ids of company-1 resources from an owner-1 session (bill id, customer id, payment id, inventory id, job-work id, note id) — or copy from DB.
+3. While logged in as company 2, call (browser Network or curl with company-2 cookie):
+   - `GET /api/bills/{co1_bill_id}` → **404**
+   - `PATCH /api/bills/{co1_bill_id}` → **404/400**
+   - `GET /api/payments/{co1_payment_id}` → **404**
+   - `POST /api/payments` with `bill_id` = co1 bill → **404/400**
+   - `GET /api/customers/{co1_customer_id}` → **404**
+   - `PUT /api/inventory/{co1_inv_id}` → **404**
+   - `GET /api/job-work/{co1_jw_id}` → **404**
+   - `PATCH /api/notes/{co1_note_id}` → **404**
+4. As company 1, same ids still return **200** for own GETs.
+
+### Rate limit smoke
+1. Rapidly hammer `POST /api/auth/otp-login` beyond `API_RATE_LIMIT_OTP_LOGIN` → **429** with wait message.
+2. Normal bill create / fulfill / pay a few dozen times → must **not** 429 (payment create default 120/min).
+
+### Lightsail log hygiene (one-liner)
+```bash
+sudo journalctl -u inventory-api -n 200 --no-pager | grep -iE 'password|authorization|bearer|void-auth|cookie=' || echo "OK: no secret hits"
+```
+Also check nginx access logs do not include Authorization query strings (they should not — auth is cookie/header only).
+
+### Secrets / gitignore
+1. Confirm `.env`, `*.dump`, `*.sql` are ignored (`git check-ignore -v .env`).
+2. Open PR → gitleaks job passes.
 
 ## v17.3.26 — Sales stock hint (other bills, bags vs kg)
 

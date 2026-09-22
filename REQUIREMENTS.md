@@ -1,13 +1,15 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 14 Sep 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.26** (sales hint reserved = other SKU bills; bags vs kg; v17.3.25 over-on-hand submit; v17.3.24 0-qty SKUs); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 22 Sep 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.28** (security hardening package: IDOR tests, API rate limits, gitleaks, log hygiene; RLS deferred); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
+**Repo snapshot:** `inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.28** — Security hardening package (checklist gaps; **does not** unlock `ALLOW_COMPANY_REGISTRATION`). (1) Company isolation / IDOR: inventory create FK company asserts; JW receive + sales-return location company checks; notes use `company_id_for_user`; automated cross-company GET/mutate tests. Isolation remains **API `company_id` scoping** (Postgres RLS deferred — see Spec). (2) Light IP rate limits on OTP login/request, company register (when enabled), payment create, dashboard-bundle — env-tunable, 429 message. Login email lockout (v15.5) unchanged. (3) `.gitignore` dumps/env variants; CI **gitleaks** + `scripts/scan_secrets.sh`. (4) Header/body log sanitize helpers; audit metadata redacts OTP/tokens; no request-logging middleware that prints Authorization/cookies. (5) Confirm User/Auth payloads still omit passwords (v17.3.6). See **Spec v17.3.28** below.
 - **v17.3.26** — Sales stock hint: Available / Reserved are **this SKU only** (product + brand + bag type + location + owned/job-work). Available = physical on hand (drops only on Deliver). Reserved = remaining on **other** open sales bills of that SKU (not the current bill). Packed bag type shows bags; loose shows kg. If reserved is 0, show Available only. No “Not delivered” line; no oldest-bill exclusion. No Alembic. See **Spec v17.3.26** below.
 - **v17.3.25** — Sales create: hydrate bag types before Submit so billed qty is not treated as 0 / “Invalid bag type”; over-on-hand warning banner (“You can still submit this bill”) does not block save. Stock still moves only on Deliver. No Alembic. See **Spec v17.3.25** below.
 - **v17.3.24** — Sales bill **stock hints** (display only) + 0-qty / missing-row SKUs. Create/edit uses master product/brand/bag search (not stock-at-location qty > 0). Hint: Available (on hand) / Reserved / Not delivered. Billing never changes on_hand; oldest open sales bill is excluded from reserved; 2+ open bills → reserved = on_hand − later_qty (can be negative). Over-on-hand create is a warning only (submit allowed). Fulfillment: first Deliver wins; other open dialogs refetch stock; deliver still cannot exceed physical on_hand. `GET /api/bills/sales-stock-hints` read helper. No Alembic. See **Spec v17.3.24** below.
@@ -124,7 +126,7 @@
 
 | Area | Spec | Implementation |
 |------|------|----------------|
-| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; no plaintext passwords; idle logout; optional hide API docs |
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6**, **v17.3.28** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit + light API rate limits; password policy; no plaintext passwords; idle logout; optional hide API docs; gitleaks CI |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
@@ -3385,6 +3387,39 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.28 — Security hardening package (IDOR, rate limits, secrets, logs)
+
+**Goal:** Close checklist gaps without opening public company registration or weakening allowlists.
+
+### 1) IDOR / company isolation
+- API loaders already scope get-by-id / mutate by `company_id` for bills, payments, customers, inventory, job work, fulfillment, notes, cash book.
+- Hardened: inventory create asserts Product/Brand/Location/BagType company; JW receive asserts Location company; sales-return location must match bill company; notes use `company_id_for_user`.
+- **Tenant isolation layer:** application-level `company_id` filters (`app/core/tenant.py`). Postgres **RLS is deferred** — a full RLS pilot risks breaking single-tenant Raj Agro until session `SET` / role plumbing is designed; document here rather than ship half-baked policies.
+
+### 2) Light API rate limiting
+- Keep v15.5 per-email login/signup lockout.
+- Add per-IP sliding-window limits (`app/core/rate_limit.py`): OTP login, OTP request (`POST /users/{id}/login-otp`), company register (when flag on), payment create, dashboard-bundle.
+- Env: `API_RATE_LIMIT_*` (0 disables a bucket). Clear `429` detail. Defaults high enough for a single operator’s bill/fulfillment work.
+
+### 3) Git secrets
+- `.gitignore`: `.env.*`, `*.dump` / `*.sql` / `*.bak`, credentials patterns.
+- CI job **gitleaks** on push/PR (`.gitleaks.toml`); local `scripts/scan_secrets.sh`. No production secrets in Actions env beyond `GITHUB_TOKEN`.
+
+### 4) Sensitive logs
+- No middleware currently dumps Authorization / Cookie / `X-Void-Authorization`.
+- `app/core/log_sanitize.py` redacts those headers and password/OTP body keys for any future access logging.
+- Audit metadata blocks password/OTP/token keys.
+
+### 5) Trim API responses
+- Reconfirmed: `UserOut` / `UserAdminOut` never include password/hash/plain (v17.3.6). No debug admin dumps added.
+
+### Tests
+- `tests.test_company_isolation_idor_v17328` — company B cannot GET/PATCH bill, GET/POST payment, GET customer, PUT inventory, GET job-work, PATCH note belonging to company A.
+- `tests.test_security_rate_limit_v17328` — rate limit + sanitize helpers.
+
+### Explicit out of scope
+- Enabling `ALLOW_COMPANY_REGISTRATION`; weakening `ALLOWED_EMAILS` / `REQUIRE_ALLOWED_EMAILS`; desktop-shell rewrite; full WAF/Cloudflare product; Postgres RLS (deferred).
 
 ## Spec v17.3.26 — Sales stock hint: other-bill reserved, bags vs kg
 

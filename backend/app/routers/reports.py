@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.core.auth import get_current_user
 from app.core.permissions import Permission, require_permission
+from app.core.rate_limit import rate_limit_dashboard_bundle
 from app.core.tenant import company_id_for_user
 from app.database import get_db
 from app.models.entities import BillType, User
@@ -62,6 +63,7 @@ def fiscal_year_summary(
 
 @router.get("/dashboard-bundle", response_model=DashboardBundleOut)
 def dashboard_bundle(
+    request: Request,
     year: int = Query(...),
     month: int = Query(..., ge=1, le=12),
     bill_type: str = Query("sales", pattern="^(sales|purchase)$"),
@@ -70,6 +72,7 @@ def dashboard_bundle(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    rate_limit_dashboard_bundle(request)
     validate_year_month(year, month)
     company_id = company_id_for_user(user)
     return reports.get_dashboard_bundle(

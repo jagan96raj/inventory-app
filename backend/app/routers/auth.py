@@ -376,7 +376,13 @@ def otp_login(
 
 ):
 
+    from app.core.rate_limit import rate_limit_otp_login
+
+    rate_limit_otp_login(request)
+
     email = body.email.strip().lower()
+
+    _raise_login_rate_limited(db, email, request)
 
     _guard_login_email(email, db, request)
 
@@ -385,6 +391,8 @@ def otp_login(
     user = db.scalar(select(User).where(User.email == email))
 
     if not user:
+
+        record_failed_login(db, email)
 
         record_login_event(
 
@@ -410,6 +418,8 @@ def otp_login(
 
     except ValueError as e:
 
+        record_failed_login(db, email)
+
         record_login_event(
 
             db,
@@ -430,6 +440,8 @@ def otp_login(
 
 
 
+    record_successful_login(db, email)
+
     record_login_event(
 
         db,
@@ -447,7 +459,6 @@ def otp_login(
     set_auth_cookie(response, user.id)
 
     return user_to_out(user)
-
 
 
 

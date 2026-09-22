@@ -1,13 +1,16 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 14 Sep 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.25** (over-on-hand sales submit; v17.3.24 stock hints + 0-qty SKUs; v17.3.23 bill bags/kg dialog; v17.3.22 Notes board); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 22 Sep 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.28** (security hardening package: IDOR tests, API rate limits, gitleaks, log hygiene; RLS deferred); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
+**Repo snapshot:** `inventory-app-SPEC.md.txt`  
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.28** — Security hardening package (checklist gaps; **does not** unlock `ALLOW_COMPANY_REGISTRATION`). (1) Company isolation / IDOR: inventory create FK company asserts; JW receive + sales-return location company checks; notes use `company_id_for_user`; automated cross-company GET/mutate tests. Isolation remains **API `company_id` scoping** (Postgres RLS deferred — see Spec). (2) Light IP rate limits on OTP login/request, company register (when enabled), payment create, dashboard-bundle — env-tunable, 429 message. Login email lockout (v15.5) unchanged. (3) `.gitignore` dumps/env variants; CI **gitleaks** + `scripts/scan_secrets.sh`. (4) Header/body log sanitize helpers; audit metadata redacts OTP/tokens; no request-logging middleware that prints Authorization/cookies. (5) Confirm User/Auth payloads still omit passwords (v17.3.6). See **Spec v17.3.28** below.
+- **v17.3.26** — Sales stock hint: Available / Reserved are **this SKU only** (product + brand + bag type + location + owned/job-work). Available = physical on hand (drops only on Deliver). Reserved = remaining on **other** open sales bills of that SKU (not the current bill). Packed bag type shows bags; loose shows kg. If reserved is 0, show Available only. No “Not delivered” line; no oldest-bill exclusion. No Alembic. See **Spec v17.3.26** below.
 - **v17.3.25** — Sales create: hydrate bag types before Submit so billed qty is not treated as 0 / “Invalid bag type”; over-on-hand warning banner (“You can still submit this bill”) does not block save. Stock still moves only on Deliver. No Alembic. See **Spec v17.3.25** below.
 - **v17.3.24** — Sales bill **stock hints** (display only) + 0-qty / missing-row SKUs. Create/edit uses master product/brand/bag search (not stock-at-location qty > 0). Hint: Available (on hand) / Reserved / Not delivered. Billing never changes on_hand; oldest open sales bill is excluded from reserved; 2+ open bills → reserved = on_hand − later_qty (can be negative). Over-on-hand create is a warning only (submit allowed). Fulfillment: first Deliver wins; other open dialogs refetch stock; deliver still cannot exceed physical on_hand. `GET /api/bills/sales-stock-hints` read helper. No Alembic. See **Spec v17.3.24** below.
 - **v17.3.23** — Bill **Total bags / Total kg** live on form next to Products billed; same counters on detail (+ print header). `BillListItemOut` adds computed `total_ordered_bags` / `total_ordered_kg` (sum of lines; no migration). List: hover bill number → “X bags · Y kg”; click → `BillDetailDialog` (Modal xl, maximize ≈ fullscreen) with Open full page / Edit / Pay / Print; refresh list after close. See **Spec v17.3.23** below.
@@ -123,12 +126,12 @@
 
 | Area | Spec | Implementation |
 |------|------|----------------|
-| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit; password policy; no plaintext passwords; idle logout; optional hide API docs |
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6**, **v17.3.28** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit + light API rate limits; password policy; no plaintext passwords; idle logout; optional hide API docs; gitleaks CI |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
 | Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
 | Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4**, **v17.3.8** | `account_id` money account; void + set-off; newest-first list + just-recorded highlight; Phase 2 responsive |
-| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7**, **v17.3.24**, **v17.3.25** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive; stock hints; over-on-hand submit |
+| Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7**, **v17.3.24**, **v17.3.25**, **v17.3.26** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive; stock hints; over-on-hand submit |
 | Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0**, **v17.3.9** | deliver/return; audit log; product + brand filters on bills list; Phase 3 responsive |
 | Inventory | v12.1–v12.3, v12.22, v13.2, **v14.0–v14.2**, **v14.2.1**, **v14.5.1**, **v14.5.2**, **v17.3.10** | owner filters; Detail view Owner→Product grouped rowspan; hide zero-kg rows by default; table header alignment; Phase 4 responsive |
 | Customers | v12.2, v13.2, **v14.0**, **v17.3.4** | `party_type`; `formatCustomerName` display |
@@ -311,7 +314,7 @@ No state library, router, or data-fetching library was added. Single `fetch`-bas
 | `/dashboard` | `DashboardPage` | Month KPIs: Sales / Purchase / Expenses (excl. Self Withdrawal) / Gross profit / Net profit; **v17.3.21** Money now snapshot row (independent of year/month); FY Apr–Mar strip + monthly table (Self WD + net columns); product qty breakdown (optional customer filter) + job-order qty table; top customers/locations qty-first; CSV export. No charts/MoM strip in UI. | **#9 v11.1** bill-date accrual; **v16.0.2** bundle; **v17.3.2** FY/JW; **v17.3.5** SW / net profit |
 | `/notes` | `NotesPage` | Soft paper Notes board; owner CRUD + per-note role visibility; others read-only when shared (**v17.3.22**). | — |
 | `/sales-bills`, `/purchase-bills` | `BillsListPage` | Summary cards; filter card; sales/purchase `PAGE_THEME`; table + mobile cards; **Add customer** dialog. **v17.3.23:** bill number hover bags·kg; click opens `BillDetailDialog` (not navigate). | **#13 v12.4** — payment + delivery filters, AND logic, clear filters, empty state. |
-| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. **v17.3.23:** live Total bags + Total kg beside Products billed. **v17.3.24:** sales master SKU search (0-qty OK); Available / Reserved / Not delivered hint; over-on-hand warning only. **v17.3.25:** hydrate bag types on Submit; warning does not block save. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
+| `/…/new`, `/…/edit` | `BillFormPage` | Customer `Select` + **Add customer** modal (`AddCustomerDialog`); two-column form, line items, totals, v5.5 validation. **v17.3.23:** live Total bags + Total kg beside Products billed. **v17.3.24:** sales master SKU search (0-qty OK). **v17.3.25:** hydrate bag types on Submit; warning does not block save. **v17.3.26:** Available / Reserved per SKU (bags or kg); reserved = other open bills only. | **#5 v5.5** adjustment ≥ 0, grand_total ≥ 0; **#18 v12.7** preview shown next to title. |
 | `/sales-bills/:id`, `/purchase-bills/:id` | `BillDetailPage` | Full redesign with `Tabs` (Overview / Payments / Fulfillment), big mono bill number, money card, payments tab with **Void** + `ConfirmDialog` (cascade explained), fulfillment tab with per-line history and **Void** (stock-reversal explained), `VoidPill` on voided rows. **v13.1:** Overview shows product lines; Lines tab removed; larger payment/fulfillment layouts. **v15.9:** **Void bill** when `void-precheck.can_void`; disable Edit / Record payment / fulfillment void when bill is voided. **v17.3.23:** header Total bags + Total kg; print header Ordered bags·kg. | **#4 v5.4** payment void cascade; **#14 v12.5** fulfillment void with stock reverse; **v15.9** conditional bill void; statuses recomputed from active entries. |
 | `/payments`, `/payments/new`, `/…/:id/payment` | `PaymentsPage`, `PaymentPage` | New listing with `Table` + per-row Void; record form with bill snapshot, set-off allocation preview, balance-mode autofill, validation banners. **v13.1:** full-row sales/purchase tint via `BILL_TYPE_THEME`. | **#4 v5.4** void from list; **v5.2** set-off allocations. |
 | `/fulfillment`, `/fulfillment/deliver/:id`, `/fulfillment/return/:id` | `FulfillmentPage`, `FulfillmentDeliverPage`, `FulfillmentReturnPage` | New `PageHeader` + grouped bill cards; deliver/receive/return via `FulfillmentActionDialog` modal. Deep-link routes redirect to `/fulfillment?action=…`. **v13.1:** sales/purchase row colors; bill grouping by number + customer. **v17.3.24:** no soft-lock on open; refetch on_hand after another deliver (first Deliver wins); API still rejects over physical. | **#12 v12.3** row-locked stock mutations (server-side). |
@@ -3384,6 +3387,53 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Ops (Lightsail):** Postgres must be the Compose service `db` (override `POSTGRES_COMPOSE_SERVICE`). `pg_dump` is the image binary (`postgres:16-alpine`). The API process user must be able to run `docker compose exec` and `docker compose cp` against that project. No Alembic migration.
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
+
+## Spec v17.3.28 — Security hardening package (IDOR, rate limits, secrets, logs)
+
+**Goal:** Close checklist gaps without opening public company registration or weakening allowlists.
+
+### 1) IDOR / company isolation
+- API loaders already scope get-by-id / mutate by `company_id` for bills, payments, customers, inventory, job work, fulfillment, notes, cash book.
+- Hardened: inventory create asserts Product/Brand/Location/BagType company; JW receive asserts Location company; sales-return location must match bill company; notes use `company_id_for_user`.
+- **Tenant isolation layer:** application-level `company_id` filters (`app/core/tenant.py`). Postgres **RLS is deferred** — a full RLS pilot risks breaking single-tenant Raj Agro until session `SET` / role plumbing is designed; document here rather than ship half-baked policies.
+
+### 2) Light API rate limiting
+- Keep v15.5 per-email login/signup lockout.
+- Add per-IP sliding-window limits (`app/core/rate_limit.py`): OTP login, OTP request (`POST /users/{id}/login-otp`), company register (when flag on), payment create, dashboard-bundle.
+- Env: `API_RATE_LIMIT_*` (0 disables a bucket). Clear `429` detail. Defaults high enough for a single operator’s bill/fulfillment work.
+
+### 3) Git secrets
+- `.gitignore`: `.env.*`, `*.dump` / `*.sql` / `*.bak`, credentials patterns.
+- CI job **gitleaks** on push/PR (`.gitleaks.toml`); local `scripts/scan_secrets.sh`. No production secrets in Actions env beyond `GITHUB_TOKEN`.
+
+### 4) Sensitive logs
+- No middleware currently dumps Authorization / Cookie / `X-Void-Authorization`.
+- `app/core/log_sanitize.py` redacts those headers and password/OTP body keys for any future access logging.
+- Audit metadata blocks password/OTP/token keys.
+
+### 5) Trim API responses
+- Reconfirmed: `UserOut` / `UserAdminOut` never include password/hash/plain (v17.3.6). No debug admin dumps added.
+
+### Tests
+- `tests.test_company_isolation_idor_v17328` — company B cannot GET/PATCH bill, GET/POST payment, GET customer, PUT inventory, GET job-work, PATCH note belonging to company A.
+- `tests.test_security_rate_limit_v17328` — rate limit + sanitize helpers.
+
+### Explicit out of scope
+- Enabling `ALLOW_COMPANY_REGISTRATION`; weakening `ALLOWED_EMAILS` / `REQUIRE_ALLOWED_EMAILS`; desktop-shell rewrite; full WAF/Cloudflare product; Postgres RLS (deferred).
+
+## Spec v17.3.26 — Sales stock hint: other-bill reserved, bags vs kg
+
+**Problem:** The v17.3.24 hint mixed “not delivered” with a reserved formula that excluded the oldest bill and could go negative. Operators need Available = godown qty for **this bag type**, and Reserved = what other open sales bills of **that same SKU** still need.
+
+**Solution:**
+- Scope is product + brand + bag type + location + owned vs job-work (customer). Do **not** mix other bag types.
+- **Available** = physical on hand of that SKU (drops only on Deliver). Packed bag type → bags (e.g. `Available 50 bags`). Loose → kg.
+- **Reserved** = remaining (ordered − delivered) on **other** open (non-void) sales bills of that SKU only — not the current bill. Packed → bags; loose → kg.
+- If reserved is 0, show **Available only**.
+- Examples: 50 bags on hand, bill A 100 → Available 50 bags only. Deliver 20 of A → on hand 30 bags, A remaining 80. Bill B 100 → Available 30 bags, Reserved 80 bags. Bill C 100 → Available 30 bags, Reserved 180 bags.
+- `GET /api/bills/sales-stock-hints` adds `on_hand_bags` and per-bill `remaining_bags`. Display-only; no Alembic.
+
+**Unchanged:** Create still does not write inventory; deliver cannot exceed physical on_hand; money math; olive brand; no desktop-shell.
 
 ## Spec v17.3.25 — Sales bill submit when qty > on_hand
 
