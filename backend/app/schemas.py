@@ -1044,6 +1044,7 @@ class SignupIn(BaseModel):
 class LoginIn(BaseModel):
     email: str
     password: str
+    captcha_token: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -1147,6 +1148,7 @@ class CompanyRegisterIn(BaseModel):
     owner_name: str | None = None
     email: str
     password: str
+    captcha_token: str | None = None
 
     @field_validator("company_name")
     @classmethod
@@ -1238,6 +1240,7 @@ class LoginOtpIn(BaseModel):
     email: str
     otp: str
     new_password: str | None = None
+    captcha_token: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -1258,6 +1261,12 @@ class LoginOtpIn(BaseModel):
         if len(code) != 6 or not code.isdigit():
             raise ValueError("Enter the 6-digit login code")
         return code
+
+
+class BotProtectionStatusOut(BaseModel):
+    enabled: bool
+    provider: Literal["turnstile"] | None = None
+    site_key: str | None = None
 
 
 class LoginOtpOut(BaseModel):

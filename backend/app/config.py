@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     login_otp_expire_minutes: int = 15
     login_max_failed_attempts: int = 5
     login_lockout_minutes: int = 15
+    # Light API rate limits (Spec v17.3.28) — per client IP, sliding window.
+    # Set a limit to 0 to disable that bucket. Defaults avoid blocking normal operators.
+    api_rate_limit_window_seconds: int = 60
+    api_rate_limit_otp_login: int = 20
+    api_rate_limit_otp_request: int = 30
+    api_rate_limit_company_register: int = 10
+    api_rate_limit_payment_create: int = 120
+    api_rate_limit_dashboard_bundle: int = 120
+    # Auth-only bot protection (Spec v17.3.29) — Cloudflare Turnstile. Default off for Raj Agro.
+    bot_protection_enabled: bool = False
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
     # Dev only — never true on production (Spec v15.7).
     allow_destructive_scripts: bool = False
     destructive_script_confirm: str = ""

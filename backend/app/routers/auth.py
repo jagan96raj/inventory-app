@@ -42,13 +42,15 @@ from app.database import get_db
 
 from app.models.entities import User
 
-from app.schemas import GoogleAuthIn, LoginIn, LoginOtpIn, SignupIn, UserOut
+from app.schemas import BotProtectionStatusOut, GoogleAuthIn, LoginIn, LoginOtpIn, SignupIn, UserOut
 
 from app.services.companies import get_default_company_id
 
 from app.services.login_history import LoginFailureReason, record_login_event
 
 from app.services.login_otp import INVALID_OTP, login_with_otp
+
+from app.services.bot_protection import bot_protection_public_status, require_captcha_token
 
 from app.services.login_rate_limit import (
 
@@ -200,6 +202,17 @@ def user_to_out(user: User) -> UserOut:
 
 
 
+@router.get("/bot-protection-status", response_model=BotProtectionStatusOut)
+
+def bot_protection_status():
+
+    """Public — whether Cloudflare Turnstile is required on auth forms (Spec v17.3.29)."""
+
+    return BotProtectionStatusOut(**bot_protection_public_status())
+
+
+
+
 @router.post("/signup", response_model=UserOut, status_code=201)
 
 def signup(
@@ -292,6 +305,8 @@ def login(
 
 ):
 
+    require_captcha_token(body.captcha_token)
+
     email = body.email.strip().lower()
 
     _raise_login_rate_limited(db, email, request)
@@ -376,7 +391,15 @@ def otp_login(
 
 ):
 
+    from app.core.rate_limit import rate_limit_otp_login
+
+    rate_limit_otp_login(request)
+
+    require_captcha_token(body.captcha_token)
+
     email = body.email.strip().lower()
+
+    _raise_login_rate_limited(db, email, request)
 
     _guard_login_email(email, db, request)
 
@@ -385,6 +408,8 @@ def otp_login(
     user = db.scalar(select(User).where(User.email == email))
 
     if not user:
+
+        record_failed_login(db, email)
 
         record_login_event(
 
@@ -410,6 +435,8 @@ def otp_login(
 
     except ValueError as e:
 
+        record_failed_login(db, email)
+
         record_login_event(
 
             db,
@@ -430,6 +457,8 @@ def otp_login(
 
 
 
+    record_successful_login(db, email)
+
     record_login_event(
 
         db,
@@ -447,7 +476,6 @@ def otp_login(
     set_auth_cookie(response, user.id)
 
     return user_to_out(user)
-
 
 
 

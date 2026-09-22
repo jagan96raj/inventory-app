@@ -2,7 +2,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { KeyRound, Lock, Mail } from "lucide-react";
 import AuthShell from "../components/AuthShell";
+import TurnstileWidget from "../components/TurnstileWidget";
 import { useAuth } from "../context/AuthContext";
+import { useBotProtectionStatus } from "../hooks/useBotProtectionStatus";
 import { api } from "../api/client";
 import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
@@ -22,6 +24,7 @@ type LoginMode = "password" | "otp";
 
 export default function LoginPage() {
   const { login, loginWithOtp, user, loading } = useAuth();
+  const { status: botStatus } = useBotProtectionStatus();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<LoginMode>("password");
@@ -29,11 +32,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [registrationAllowed, setRegistrationAllowed] = useState(false);
 
   const nextPath = searchParams.get("next") || "/";
+  const captchaRequired = botStatus.enabled && Boolean(botStatus.site_key);
 
   useEffect(() => {
     if (!loading && user) {
@@ -58,15 +63,24 @@ export default function LoginPage() {
     };
   }, []);
 
+  useEffect(() => {
+    setCaptchaToken(null);
+  }, [mode]);
+
   const handlePasswordSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
+    if (captchaRequired && !captchaToken) {
+      setError("Complete the security check and try again.");
+      return;
+    }
     setBusy(true);
     try {
-      await login(email.trim(), password);
+      await login(email.trim(), password, captchaToken);
       navigate(nextPath.startsWith("/") ? nextPath : "/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed");
+      setCaptchaToken(null);
     } finally {
       setBusy(false);
     }
@@ -82,16 +96,32 @@ export default function LoginPage() {
         return;
       }
     }
+    if (captchaRequired && !captchaToken) {
+      setError("Complete the security check and try again.");
+      return;
+    }
     setBusy(true);
     try {
-      await loginWithOtp(email.trim(), otp.trim(), newPassword.trim() || undefined);
+      await loginWithOtp(email.trim(), otp.trim(), newPassword.trim() || undefined, captchaToken);
       navigate(nextPath.startsWith("/") ? nextPath : "/", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "OTP sign-in failed");
+      setCaptchaToken(null);
     } finally {
       setBusy(false);
     }
   };
+
+  const captchaBlock =
+    captchaRequired && botStatus.site_key ? (
+      <div className="flex justify-center py-1">
+        <TurnstileWidget
+          key={mode}
+          siteKey={botStatus.site_key}
+          onToken={setCaptchaToken}
+        />
+      </div>
+    ) : null;
 
   return (
     <AuthShell
@@ -171,6 +201,7 @@ export default function LoginPage() {
               />
             )}
           </FormField>
+          {captchaBlock}
           <div className="flex justify-end">
             <button
               type="button"
@@ -184,7 +215,7 @@ export default function LoginPage() {
               Forgot password?
             </button>
           </div>
-          <Button type="submit" block size="lg" loading={busy}>
+          <Button type="submit" block size="lg" loading={busy} disabled={busy || (captchaRequired && !captchaToken)}>
             {busy ? "Signing in…" : "Sign in"}
           </Button>
         </form>
@@ -237,6 +268,7 @@ export default function LoginPage() {
               />
             )}
           </FormField>
+          {captchaBlock}
           <div className="flex justify-end">
             <button
               type="button"
@@ -251,7 +283,7 @@ export default function LoginPage() {
               Back to password login
             </button>
           </div>
-          <Button type="submit" block size="lg" loading={busy}>
+          <Button type="submit" block size="lg" loading={busy} disabled={busy || (captchaRequired && !captchaToken)}>
             {busy ? "Signing in…" : "Sign in with OTP"}
           </Button>
         </form>

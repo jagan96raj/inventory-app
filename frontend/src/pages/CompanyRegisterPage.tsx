@@ -2,7 +2,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Building2, Lock, Mail, MapPin, Phone, User } from "lucide-react";
 import AuthShell from "../components/AuthShell";
+import TurnstileWidget from "../components/TurnstileWidget";
 import { useAuth } from "../context/AuthContext";
+import { useBotProtectionStatus } from "../hooks/useBotProtectionStatus";
 import { api } from "../api/client";
 import Button from "../components/ui/Button";
 import FormField from "../components/ui/FormField";
@@ -31,6 +33,7 @@ const emptyAddress = (): AddressForm => ({
 
 export default function CompanyRegisterPage() {
   const { registerCompany, user, loading } = useAuth();
+  const { status: botStatus } = useBotProtectionStatus();
   const navigate = useNavigate();
   const [companyName, setCompanyName] = useState("");
   const [address, setAddress] = useState<AddressForm>(emptyAddress);
@@ -39,9 +42,12 @@ export default function CompanyRegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [registrationAllowed, setRegistrationAllowed] = useState<boolean | null>(null);
+
+  const captchaRequired = botStatus.enabled && Boolean(botStatus.site_key);
 
   const setAddr = (key: CompanyAddressFieldKey, value: string) =>
     setAddress((prev) => ({ ...prev, [key]: value }));
@@ -84,6 +90,11 @@ export default function CompanyRegisterPage() {
       return;
     }
 
+    if (captchaRequired && !captchaToken) {
+      setError("Complete the security check and try again.");
+      return;
+    }
+
     setBusy(true);
     try {
       await registerCompany({
@@ -98,10 +109,12 @@ export default function CompanyRegisterPage() {
         owner_name: ownerName.trim() || null,
         email: email.trim(),
         password,
+        captcha_token: captchaToken,
       });
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
+      setCaptchaToken(null);
     } finally {
       setBusy(false);
     }
@@ -262,7 +275,23 @@ export default function CompanyRegisterPage() {
             />
           )}
         </FormField>
-        <Button type="submit" block size="lg" loading={busy} disabled={closed || registrationAllowed === null}>
+        {captchaRequired && botStatus.site_key && !closed && (
+          <div className="flex justify-center py-1">
+            <TurnstileWidget siteKey={botStatus.site_key} onToken={setCaptchaToken} />
+          </div>
+        )}
+        <Button
+          type="submit"
+          block
+          size="lg"
+          loading={busy}
+          disabled={
+            closed ||
+            registrationAllowed === null ||
+            busy ||
+            (captchaRequired && !captchaToken)
+          }
+        >
           {busy ? "Creating company…" : "Create company"}
         </Button>
       </form>

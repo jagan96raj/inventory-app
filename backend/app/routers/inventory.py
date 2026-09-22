@@ -8,7 +8,13 @@ from app.core.auth import get_current_user
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.pagination import DEFAULT_LIMIT, clamp_limit, clamp_offset, page_dict, paginate_select
 from app.core.permissions import Permission, require_permission
-from app.core.tenant import company_id_for_user, require_entity_company, require_for_company, scope_query
+from app.core.tenant import (
+    assert_entity_company,
+    company_id_for_user,
+    require_entity_company,
+    require_for_company,
+    scope_query,
+)
 from app.core.void_auth import VOID_AUTH_HEADER, verify_void_authorization
 from app.database import get_db
 from app.models.entities import BagType, Brand, Customer, Inventory, InventoryOwnerType, Location, Product, User
@@ -194,6 +200,14 @@ def create_inventory(
     request_hash = hash_pydantic_body(body)
 
     def execute():
+        company_id = company_id_for_user(user)
+        try:
+            assert_entity_company(db.get(Product, body.product_id), company_id, "Product")
+            assert_entity_company(db.get(Brand, body.brand_id), company_id, "Brand")
+            assert_entity_company(db.get(Location, body.location_id), company_id, "Location")
+            assert_entity_company(db.get(BagType, body.bag_type_id), company_id, "Bag type")
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
         bt = db.get(BagType, body.bag_type_id)
         if not bt:
             raise HTTPException(400, "Invalid bag type")
@@ -201,7 +215,6 @@ def create_inventory(
             validate_bags_loose(bt, body.bag_count, body.loose_kg)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
-        company_id = company_id_for_user(user)
         existing = db.scalar(
             select(Inventory).where(
                 Inventory.company_id == company_id,

@@ -59,7 +59,17 @@ class AuditEntityType:
 def _sanitize_metadata(metadata: dict[str, Any] | None) -> dict[str, Any] | None:
     if not metadata:
         return None
-    blocked = {"password", "new_password", "password_hash", "password_plain", "void_password"}
+    blocked = {
+        "password",
+        "new_password",
+        "password_hash",
+        "password_plain",
+        "void_password",
+        "otp",
+        "id_token",
+        "authorization",
+        "authorization_password",
+    }
     return {k: v for k, v in metadata.items() if k not in blocked}
 
 

@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.idempotency import require_idempotency_key, run_idempotent_mutation
 from app.core.permissions import Permission, require_permission
+from app.core.rate_limit import rate_limit_otp_request
 from app.core.tenant import company_id_for_user, require_entity_company
 from app.database import get_db
 from app.models.entities import User, UserRole
@@ -106,9 +107,11 @@ def remove_user(
 @router.post("/{user_id}/login-otp", response_model=LoginOtpOut)
 def post_login_otp(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     actor: User = Depends(require_permission(Permission.USERS_MANAGE)),
 ):
+    rate_limit_otp_request(request)
     user = db.get(User, user_id)
     require_entity_company(user, company_id_for_user(actor), label="User")
     code, expires_at = generate_login_otp(db, user)

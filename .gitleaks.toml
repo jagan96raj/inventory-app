@@ -1,0 +1,18 @@
+# Gitleaks config for GrainTrack (Spec v17.3.28).
+# Fail CI on high-confidence secrets; allowlisted placeholders stay local to examples.
+
+title = "inventory-app"
+
+[allowlist]
+description = "Example / placeholder values"
+paths = [
+  '''\.env\.example$''',
+  '''frontend/\.env\.example$''',
+  '''.*\.md$''',
+  '''.*\.md\.txt$''',
+]
+regexes = [
+  '''change-me''',
+  '''ci-test-secret-not-for-production''',
+  '''inventory:inventory@''',
+]
