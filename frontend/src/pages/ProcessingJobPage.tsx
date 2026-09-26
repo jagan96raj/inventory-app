@@ -54,6 +54,7 @@ import { calcPreviewTotalKg, isLooseBagType } from "../lib/bagType";
 import { formatDate, formatDateTime, formatQtyKg } from "../lib/format";
 import {
   computeMassBalance,
+  PROCESSING_OUTPUT_TOLERANCE_KG,
   computeOutputLineCountsByBrand,
   computeProcessingEntryCounts,
   jobAvailableReprocessKg,
@@ -2596,8 +2597,8 @@ function MassBalancePanel({
   includesPending?: boolean;
 }) {
   const basisKg = balance.massBalanceInputKg;
-  const usedPct =
-    basisKg > 0 ? Math.min(100, (balance.totalOutflowKg / basisKg) * 100) : 0;
+  // Percentage is outflow ÷ input only. The submit allowance is not part of this ratio.
+  const usedPct = basisKg > 0 ? (balance.totalOutflowKg / basisKg) * 100 : 0;
   const warn = balance.allowanceRemainingKg < 0;
 
   return (
@@ -2628,8 +2629,8 @@ function MassBalancePanel({
       ) : (
         <p className="mt-2 text-sm text-ink-muted">
           {includesPending
-            ? "Includes unsaved entries in the open form. Allowance = fresh + reprocess + 100 − outflow (same in-side as misc)."
-            : "Committed batches only. Allowance = fresh + reprocess + 100 − outflow (same in-side as misc)."}
+            ? `Includes unsaved entries in the open form. Allowance = fresh + reprocess + ${PROCESSING_OUTPUT_TOLERANCE_KG} − outflow (same in-side as misc).`
+            : `Committed batches only. Allowance = fresh + reprocess + ${PROCESSING_OUTPUT_TOLERANCE_KG} − outflow (same in-side as misc).`}
         </p>
       )}
       {basisKg > 0 && (
@@ -2648,7 +2649,7 @@ function MassBalancePanel({
                 "h-full rounded-full transition-all",
                 warn ? "bg-warning-500" : "bg-gradient-to-r from-primary-500 to-primary-700"
               )}
-              style={{ width: `${usedPct}%` }}
+              style={{ width: `${Math.min(usedPct, 100)}%` }}
             />
           </div>
           <p className="mt-2 text-xs text-ink-subtle">
@@ -2657,7 +2658,7 @@ function MassBalancePanel({
               ? ` (fresh ${formatQtyKg(balance.freshInputKg)} + reprocess ${formatQtyKg(balance.reprocessInputKg)})`
               : ""}
             {" · "}
-            100 kg tolerance on submit.
+            {PROCESSING_OUTPUT_TOLERANCE_KG} kg tolerance on submit.
           </p>
         </div>
       )}

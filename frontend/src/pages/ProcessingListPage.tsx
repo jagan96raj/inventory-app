@@ -113,7 +113,7 @@ export default function ProcessingListPage() {
       <PageHeader
         eyebrow="Operations"
         title="Processing"
-        subtitle="Open a job per raw product and brand. Record batches incrementally — input, output, balance return, and waste. Mass-balance guard with 100 kg tolerance enforced on submit."
+        subtitle="Open a job per raw product and brand. Record batches incrementally — input, output, balance return, and waste. Mass-balance guard with 300 kg tolerance enforced on submit."
         actions={
           <div className="flex flex-wrap gap-2">
             <Link to="/histories/processing" className="hidden sm:inline-flex">

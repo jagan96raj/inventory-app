@@ -7,7 +7,7 @@ import type {
 } from "../api/client";
 import { calcPreviewTotalKg } from "./bagType";
 
-export const PROCESSING_OUTPUT_TOLERANCE_KG = 100;
+export const PROCESSING_OUTPUT_TOLERANCE_KG = 300;
 
 export function isActiveProcessingBatch(batch: ProcessingBatch): boolean {
   return batch.voided_at == null;

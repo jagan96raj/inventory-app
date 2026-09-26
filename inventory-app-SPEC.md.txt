@@ -1,7 +1,7 @@
 # Inventory & Billing — Requirements (Snapshot)
 
-**Last updated:** 22 Sep 2026
-**Spec range:** v5 (bills / payments / edit) through **v17.3.30** (public marketing landing at `rajagro.org`; v17.3.29 Nginx headers + Turnstile; v17.3.28 IDOR/rate limits/gitleaks; v17.3.27 customer Pay debit / Pay credit FIFO); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
+**Last updated:** 26 Sep 2026
+**Spec range:** v5 (bills / payments / edit) through **v17.3.31** (idle logout survives close/lock; processing allowance 300 kg; v17.3.30 public marketing landing at `rajagro.org`; v17.3.29 Nginx headers + Turnstile; v17.3.28 IDOR/rate limits/gitleaks; v17.3.27 customer Pay debit / Pay credit FIFO); inventory **v14.2.1**; money accounts **v17.2.0–v17.2.4**; backend **v12.21** + **v12.22** amendments
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
 **Local snapshot:** `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt`  
 **Desktop copy:** `C:\Users\Jagan Raj\Desktop\Inventory and Billing AI\inventory-app-SPEC.md.txt`  
@@ -9,6 +9,7 @@
 **Manual tests:** `TEST_PLAN.md`
 
 ## Changelog
+- **v17.3.31** — Two behavior fixes. (1) Idle logout persists last user activity (`mousemove` / `mousedown` / `keydown` / `click` / `touchstart` / `scroll`) in `localStorage` (`idle:lastActivity`). On load, if signed in and now − last activity **> 10 minutes**, `POST /api/auth/logout` and go to `/login` immediately — closing the app or locking the phone no longer resets the timer (JWT cookie is still 24h). The open-tab 10-minute check is unchanged. Background API polling is not activity. Fresh login/OTP/register stamps activity so the new session is not expired immediately. (2) Processing allowance **100 kg → 300 kg**: `PROCESSING_OUTPUT_TOLERANCE_KG` in `backend/app/services/processing/constants.py` and `frontend/src/lib/processingSummary.ts`. Submit may allow outflow up to input + 300 kg. Output percentage stays **outflow ÷ input × 100** and does **not** include the 300 kg (25000 kg in and 25000 kg out → 100%). UI copy updated. No Alembic. See **Spec v17.3.31** below.
 - **v17.3.30** — Public marketing homepage for apex **`rajagro.org`** (not the inventory app). Static site in repo `landing/` (zero JS, no build step): brand-first first viewport (wordmark + “Whole grain, honest weight.” + one support line + single CTA → `https://app.rajagro.org/login`); one below-fold section (What we trade + phone `73733 34343` + Coimbatore). Self-hosted Fraunces / Manrope / JetBrains Mono; olive `#737c50` / cream `#faf7f0` matching Aurora primary (v17.3.15); line-drawn wheat silhouette. Deploy: Nginx site for apex + www→apex 301 + Certbot; inventory at **`app.rajagro.org` untouched** (APIs/auth/DB/frontend unchanged). See **Spec v17.3.30** below and `landing/README.md`.
 - **v17.3.29** — Security follow-up: production **Nginx security headers** snippet for `app.rajagro.org` (`docs/nginx-security-headers.md`, `scripts/nginx-security-headers.snippet.conf`) — HSTS (after HTTPS), nosniff, DENY frames, Referrer-Policy, Permissions-Policy; CSP deferred Phase 2 with draft allowlist. FastAPI `SecurityHeadersMiddleware` mirrors non-CSP headers (HSTS when `COOKIE_SECURE`). Auth-only **Cloudflare Turnstile** behind `BOT_PROTECTION_ENABLED` (default false): Login, OTP login, company register; server verifies token; site key from `GET /api/auth/bot-protection-status`. No captcha on bills/payments/fulfillment. Does **not** open company registration. RLS still deferred. See **Spec v17.3.29** below.
 - **v17.3.28** — Security hardening package (checklist gaps; **does not** unlock `ALLOW_COMPANY_REGISTRATION`). (1) Company isolation / IDOR: inventory create FK company asserts; JW receive + sales-return location company checks; notes use `company_id_for_user`; automated cross-company GET/mutate tests. Isolation remains **API `company_id` scoping** (Postgres RLS deferred — see Spec). (2) Light IP rate limits on OTP login/request, company register (when enabled), payment create, dashboard-bundle — env-tunable, 429 message. Login email lockout (v15.5) unchanged. (3) `.gitignore` dumps/env variants; CI **gitleaks** + `scripts/scan_secrets.sh`. (4) Header/body log sanitize helpers; audit metadata redacts OTP/tokens; no request-logging middleware that prints Authorization/cookies. (5) Confirm User/Auth payloads still omit passwords (v17.3.6). See **Spec v17.3.28** below.
@@ -129,11 +130,11 @@
 
 | Area | Spec | Implementation |
 |------|------|----------------|
-| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6**, **v17.3.28**, **v17.3.29** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit + light API rate limits; optional Turnstile on auth; password policy; no plaintext passwords; idle logout; optional hide API docs; gitleaks CI; Nginx security headers |
+| Auth | v10, **v15.1**, **v15.4**, **v15.5**, **v15.6**, **v17.0.0**, **v17.3.5**, **v17.3.6**, **v17.3.28**, **v17.3.29**, **v17.3.31** | JWT httpOnly cookie; allowlist; logout revoke; login rate limit + light API rate limits; optional Turnstile on auth; password policy; no plaintext passwords; idle logout persisted across close/lock; optional hide API docs; gitleaks CI; Nginx security headers |
 | Marketing landing | **v17.3.30** | Static `landing/` for apex `rajagro.org` → CTA to `app.rajagro.org/login`; app domain unchanged |
 | Multi-tenant | **v17.0.0**–**v17.0.6** | Phase 1–5 + Profile company header; detailed address + GSTIN on `companies` |
 | Dashboard | v11.1, **v15.5.1**, **v16.0.2**, **v17.3.2**, **v17.3.5**, **v17.3.7**, **v17.3.21** | `dashboard-bundle` (+ FY, job work, Money now snapshot); expenses excl. Self Withdrawal; gross + net profit; qty-first UI; Phase 1 responsive |
-| Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive |
+| Processing | v9–v9.4, **v14.0**, **v14.4**–**v14.7**, **v15.5.1**, **v16.0**, **v17.3.0**, **v17.3.1**, **v17.3.9**, **v17.3.31** | list aggregates; snapshot UI; void reopen + close empty; Phase 3 responsive; mass-balance allowance **300 kg** |
 | Payments | v5.1–v5.4, v12.12, v13.2, **v17.2.1**–**v17.2.4**, **v17.3.4**, **v17.3.8**, **v17.3.27** | `account_id` money account; void + set-off; customer pay-balance FIFO; newest-first list + just-recorded highlight; Phase 2 responsive |
 | Bills | v5.5, v12.4, v12.7, v12.10–v12.14, v12.22, v13.2, **v14.0**, **v14.5.1**, **v17.0.7**, **v17.3.0**, **v17.3.4**, **v17.3.7**, **v17.3.24**, **v17.3.25**, **v17.3.26** | sales lines: `stock_source`; notes; list `product_id` filter; form UX; Phase 1 responsive; stock hints; over-on-hand submit |
 | Fulfillment | v6–v6.2, v12.5, v12.12, v13.2, **v14.0**, **v14.5.2**, **v17.3.0**, **v17.3.9** | deliver/return; audit log; product + brand filters on bills list; Phase 3 responsive |
@@ -1091,19 +1092,19 @@ Bills create/edit, payments create/void, fulfillment create/void/bill-event, inv
 
 - `backend/tests/test_idempotency_v1215.py`
 
-## Spec v9.3 — Processing mass-balance guard (100 kg tolerance)
+## Spec v9.3 — Processing mass-balance guard (allowance; live **300 kg** as of v17.3.31)
 
-- **Tolerance:** `PROCESSING_OUTPUT_TOLERANCE_KG = 100` — fixed allowance on top of cumulative **job input** (fresh + reprocess).
+- **Tolerance:** `PROCESSING_OUTPUT_TOLERANCE_KG = 300` (**v17.3.31**; was 100) — fixed allowance on top of cumulative **job input** (fresh + reprocess). Output percentage is outflow ÷ input × 100 and does **not** add this allowance.
 - **Fresh input (reporting):** sum `quantity_kg` where `input_source == fresh` only. Snapshot **Fresh in** uses this. **Excludes** `balance_reprocess`.
 - **Mass-balance input (allowance basis):** sum **all** input lines — fresh **+** `balance_reprocess`. Same “in” side as residual misc. Reprocess must count here because balance return already counts as outflow.
 - **Total outflow:** sum across committed batches **and** pending batch body:
   - all `processing_output_lines.quantity_kg`
   - all `processing_balance_return_lines.quantity_kg`
   - all waste fields: `dust_kg + stone_kg + sack_weight_waste_kg + powder_kg + miscellaneous_waste_kg`
-- **Allowance remaining:** `mass_balance_input_kg + 100 − total_outflow_kg` (= residual misc + 100 when waste bins align).
+- **Allowance remaining:** `mass_balance_input_kg + 300 − total_outflow_kg` (= residual misc + 300 when waste bins align).
 - **Validation** (`validate_processing_mass_balance`) — before `POST .../batches` and `POST .../complete`:
   1. If cumulative output + balance return (committed + pending) **> 0** and cumulative fresh input **== 0** → reject (must record fresh input before output or balance return).
-  2. If `total_outflow_kg > mass_balance_input_kg + 100` → reject (exceeds tolerance).
+  2. If `total_outflow_kg > mass_balance_input_kg + 300` → reject (exceeds tolerance).
 - **Input-only batches** are not blocked by this guard (they increase input without adding outflow).
 - **Complete (empty body):** re-validate committed batches only (no pending lines).
 - **UI:** live mass-balance basis (fresh + reprocess), **Total outflow**, **Allowance remaining** on Output tab and snapshot; disable Output submit and Complete when validation would fail. Inventory timing unchanged (incremental per batch).
@@ -1163,7 +1164,7 @@ Fresh input, balance return on Output tab, mass-balance v9.3, `net_balance_kg` f
   - **Input lines (optional):** subtract stock for job product + brand; location, bag type, bags/loose; `subtract_inventory` validation.
   - **Output lines (optional):** add stock for job product; `brand_id` per line; location, bag type, bags/loose; create inventory row if missing.
   - **Waste (optional, no inventory):** `dust_kg`, `stone_kg`, `sack_weight_waste_kg`, `miscellaneous_waste_kg`.
-  - Per commit: at least one input line, output line, or waste kg > 0. Per-batch incremental rules unchanged; **job-level** mass-balance guard with 100 kg tolerance — see **Spec v9.3**.
+  - Per commit: at least one input line, output line, or waste kg > 0. Per-batch incremental rules unchanged; **job-level** mass-balance guard with 300 kg tolerance — see **Spec v9.3** / **v17.3.31**.
 - **Actions:**
   - `POST .../batches` — apply inventory for current body; job stays open.
   - `POST .../complete` — if body has data: same as batch then complete; if empty: complete when ≥1 active batch **or** when zero active batches (**v17.3.1** Close empty process). Completed jobs reject new batches (400).
@@ -3403,6 +3404,28 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 
 **Unchanged:** Daily scheduled backups (v16.0.8); no in-app restore.
 
+## Spec v17.3.31 — Idle logout across close/lock + processing allowance 300 kg
+
+**Goal:** Two behavior fixes only. No schema, API, or unrelated UI changes.
+
+### 1) Idle logout survives close and phone lock
+- v17.3.5 tracked activity only in memory, so a reload reset the 10-minute clock while the JWT cookie lasted 24 hours.
+- Persist last user activity in `localStorage` key `idle:lastActivity` on `mousemove`, `mousedown`, `keydown`, `click`, `touchstart`, and `scroll`.
+- On app load, if the user is signed in and now − last activity is more than **10 minutes**, call `POST /api/auth/logout` and go to `/login` immediately.
+- The existing 10-minute interval check stays while the tab is open. Hidden time still counts; becoming hidden does not reset the clock and is not itself activity.
+- Background API polling is not user activity.
+- Login, OTP login, and company register stamp activity so a new sign-in is not logged out immediately.
+- Files: `frontend/src/hooks/useIdleLogout.ts`, `frontend/src/context/AuthContext.tsx`.
+
+### 2) Processing allowance 100 kg → 300 kg
+- `PROCESSING_OUTPUT_TOLERANCE_KG = 300` in `backend/app/services/processing/constants.py` and `frontend/src/lib/processingSummary.ts`.
+- Submit may allow total outflow up to mass-balance input (fresh + reprocess) + **300 kg**.
+- Output percentage stays **outflow ÷ input × 100**. The 300 kg allowance is not part of that ratio. Example: input 25000 kg and total output 25000 kg → **100%**.
+- UI copy on the processing list and the job mass-balance panel says 300 kg.
+- Tests: `backend/tests/test_processing_v93.py` (2000 kg input: 2290 kg outflow passes, 2310 kg fails).
+
+**Unchanged:** Bill money math, inventory timing, JWT lifetime, and the 10-minute idle limit itself. No Alembic.
+
 ## Spec v17.3.30 — Public marketing homepage (`rajagro.org`)
 
 **Goal:** Ship a brand-first public landing at the apex domain **`rajagro.org`** that markets Raj Agro and deep-links into the inventory product at **`https://app.rajagro.org/login`**. The inventory app (APIs, auth, DB, `frontend/`) must not change.
@@ -3774,6 +3797,7 @@ No migrations. No business rule changes. `submit_batch` / `complete_job` accept 
 **Solution — idle logout:**
 - While authenticated, after **10 minutes** wall-clock with no `mousemove` / `mousedown` / `keydown` / `click` / `touchstart` / `scroll`, call existing `POST /api/auth/logout` (revokes JWT) and navigate to `/login`.
 - Minimized / `document.visibilityState === "hidden"` does **not** log out immediately; hidden time still counts toward the 10 minutes (checked on interval + when becoming visible).
+- **v17.3.31:** last activity is stored in `localStorage` and checked on app load, so closing the app or locking the phone does not reset the 10 minutes. Background API polling is not activity.
 - Works in browser and Electron shell loading the site (`IdleSessionGuard` + `useIdleLogout`).
 
 **Files:** `backend/app/services/reports.py`, `backend/app/schemas.py`, `frontend/src/pages/DashboardPage.tsx`, `frontend/src/api/client.ts`, `frontend/src/hooks/useIdleLogout.ts`, `frontend/src/components/IdleSessionGuard.tsx`, `frontend/src/main.tsx`, `backend/tests/test_dashboard_bundle_v1602.py`.

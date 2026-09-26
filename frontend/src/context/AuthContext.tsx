@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type AuthUser } from "../api/client";
+import { recordIdleActivity } from "../hooks/useIdleLogout";
 
 export type CompanyRegisterInput = {
   company_name: string;
@@ -58,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const body: { email: string; password: string; captcha_token?: string } = { email, password };
     if (captchaToken) body.captcha_token = captchaToken;
     const me = await api.post<AuthUser>("/api/auth/login", body, { skipAuthRedirect: true });
+    recordIdleActivity();
     setUser(me);
   }, []);
 
@@ -70,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (newPassword) body.new_password = newPassword;
       if (captchaToken) body.captcha_token = captchaToken;
       const me = await api.post<AuthUser>("/api/auth/otp-login", body, { skipAuthRedirect: true });
+      recordIdleActivity();
       setUser(me);
     },
     []
@@ -77,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerCompany = useCallback(async (input: CompanyRegisterInput) => {
     const me = await api.post<AuthUser>("/api/companies/register", input, { skipAuthRedirect: true });
+    recordIdleActivity();
     setUser(me);
   }, []);
 

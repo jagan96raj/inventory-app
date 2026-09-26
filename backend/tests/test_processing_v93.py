@@ -5,7 +5,7 @@ Manual test checklist:
 2. Input 2000 kg → output 1950 + balance 15 + waste 15 → OK
 3. Second batch fresh 2000 + reprocess 15 → summary fresh still 4000;
    allowance basis = fresh + reprocess → output within allowance → OK
-4. Try outflow > (fresh + reprocess) + 100 → blocked on submit
+4. Try outflow > (fresh + reprocess) + 300 → blocked on submit
 """
 import unittest
 from decimal import Decimal
@@ -116,14 +116,14 @@ class ProcessingV93ValidationTests(unittest.TestCase):
             )
         self.assertIn("fresh input", str(ctx.exception).lower())
 
-    def test_fresh_2000_outflow_2110_fails_tolerance(self):
-        job = self._job([_batch(fresh_input=Decimal("2000"), output=Decimal("2110"))])
+    def test_fresh_2000_outflow_2310_fails_tolerance(self):
+        job = self._job([_batch(fresh_input=Decimal("2000"), output=Decimal("2310"))])
         with self.assertRaises(ValueError) as ctx:
             self._validate(job)
         self.assertIn("allowance", str(ctx.exception).lower())
 
-    def test_fresh_2000_outflow_2090_passes(self):
-        job = self._job([_batch(fresh_input=Decimal("2000"), output=Decimal("2090"))])
+    def test_fresh_2000_outflow_2290_passes(self):
+        job = self._job([_batch(fresh_input=Decimal("2000"), output=Decimal("2290"))])
         self._validate(job)
 
     def test_two_batch_unclean_reprocess_in_allowance_basis(self):
@@ -172,7 +172,7 @@ class ProcessingV93ValidationTests(unittest.TestCase):
         )
         # fresh=1000, input=1080, outflow=900+80+20+175=1175
         # old rule: 1175 > 1000+100 → fail
-        # new rule: 1175 <= 1080+100 → pass
+        # new rule: 1175 <= 1080+300 → pass
         self.assertEqual(compute_job_fresh_input_kg(job), Decimal("1000"))
         self.assertEqual(compute_job_mass_balance_input_kg(job), Decimal("1080"))
         self.assertEqual(compute_job_outflow_kg(job), Decimal("1175"))

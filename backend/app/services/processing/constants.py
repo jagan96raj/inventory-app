@@ -1,7 +1,7 @@
 """Processing message constants and tolerances."""
 from decimal import Decimal
 
-PROCESSING_OUTPUT_TOLERANCE_KG = Decimal("100")
+PROCESSING_OUTPUT_TOLERANCE_KG = Decimal("300")
 
 BALANCE_REPROCESS_NO_RETURN_MSG = (
     "No unclean balance returned in this job yet; use From stock only"

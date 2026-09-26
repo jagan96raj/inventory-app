@@ -1,8 +1,23 @@
 # Manual test plan
 
 **Project:** `C:\Users\Jagan Raj\Projects\inventory-app`  
-**Last updated:** 22 Sep 2026 — covers Spec v5.4 through **v17.3.30**; backend v12.21 + v12.22  
+**Last updated:** 26 Sep 2026 — covers Spec v5.4 through **v17.3.31**; backend v12.21 + v12.22  
 **Full spec:** `REQUIREMENTS.md` · Desktop: `inventory-app-SPEC.md.txt` · Local: `C:\Users\Jagan Raj\inventory-app-SPEC.md.txt` · Repo: `inventory-app-SPEC.md.txt`
+
+## v17.3.31 — Idle logout persistence + 300 kg processing allowance
+
+### Idle logout
+1. Sign in, use the app, then lock the phone or close the app for more than 10 minutes. Reopen: session ends and `/login` loads (`POST /api/auth/logout`).
+2. Sign in, use the app, close it, reopen within 10 minutes: still signed in.
+3. Leave a tab open with no pointer/keyboard/touch/scroll for 10 minutes: still logs out (existing check).
+4. Background refreshes while idle do not reset the timer.
+5. After an idle logout, sign in again: the new session is not logged out immediately.
+
+### Processing allowance
+1. `python -m unittest tests.test_processing_v93` — 2000 kg input with 2290 kg outflow passes; 2310 kg outflow is rejected.
+2. On a processing job, mass-balance copy says **300 kg** (list subtitle and job panel).
+3. Outflow up to input + 300 kg can be submitted; more than that is blocked.
+4. Output percentage is outflow ÷ input × 100. Input 25000 kg and output 25000 kg shows **100%** (the 300 kg allowance is not in the percentage).
 
 ## v17.3.30 — Marketing landing (`rajagro.org`)
 
